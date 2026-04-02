@@ -39,82 +39,7 @@ The system follows a **closed-loop adaptive security pipeline**, where every att
 
 ![System Architecture](docs/architecture.png)
 
-### 🔁 Flow Explanation
-
-1. **🌐 Incoming Traffic**
-
-   * Requests enter through the internet into the system.
-
-2. **🚦 Traffic Gateway**
-
-   * Inspects packets
-   * Classifies IPs (trusted / unknown / malicious)
-   * Routes suspicious traffic to honeypot
-
-3. **🧬 CVE Threat Intelligence**
-
-   * Continuously ingests:
-
-     * NVD
-     * MITRE
-     * ExploitDB
-     * CISA KEV
-   * Generates vulnerability-driven attack profiles
-
-4. **🎭 Adaptive Honeypot**
-
-   * Dynamically deploys:
-
-     * Web apps
-     * Auth portals
-     * Databases
-     * SSH environments
-   * Tailored based on current threat landscape
-
-5. **🧾 Session Logging**
-
-   * Captures attacker behavior
-   * Stores interaction logs
-
-6. **🤖 ML Analytics Engine**
-
-   * Extracts features:
-
-     * Temporal
-     * Statistical
-     * Semantic
-     * Network-level
-   * Predicts:
-
-     * Threat level
-     * Attack type
-
-7. **⚡ Response & Mitigation**
-
-   * Executes defensive actions:
-
-     * IP blocking
-     * Rate limiting
-     * Session isolation
-
-8. **📊 Monitoring Dashboard**
-
-   * Displays:
-
-     * Live attacks
-     * Alerts
-     * Analytics insights
-
 ---
-
-### 🔥 Key Insight
-
-> This system forms a **feedback loop**:
->
-> Attack → Learn → Adapt → Stronger Defense
-
-Every attacker unknowingly trains the system to become harder to attack next time.
-
 
 ## 📁 Project Structure
 
@@ -140,58 +65,6 @@ adaptive-honeypot-ml-CAPSTONE/
 
 ---
 
-## ⚙️ Key Features
-
-### 🛡️ Traffic Gateway
-
-* Deep packet inspection
-* IP classification (trusted / unknown / malicious)
-* Transparent proxying
-
-### 🧬 CVE Intelligence Engine
-
-* Integrates multiple feeds (NVD, MITRE, ExploitDB, CISA)
-* Generates vulnerability profiles
-* Predicts emerging threats
-
-### 🎭 Adaptive Honeypot
-
-* SSH, Web, DB emulation
-* Dynamically configured based on threat type
-* Realistic attacker interaction
-
-### 🤖 ML Analytics
-
-* Feature extraction (temporal, semantic, statistical, network)
-* CNN-LSTM hybrid model
-* Real-time threat scoring
-
-### 🚨 Response System
-
-* IP blocking
-* Rate limiting
-* Session isolation
-* Automated mitigation actions
-
-### 📊 Monitoring Dashboard
-
-* Real-time attack visualization
-* Logs and alerts
-* Threat analytics
-
----
-
-## 🧪 Tech Stack
-
-* **Language:** Python
-* **ML:** TensorFlow / PyTorch (CNN + LSTM)
-* **Backend:** Flask / FastAPI
-* **Database:** MongoDB / PostgreSQL
-* **Streaming:** MQTT / Sockets
-* **Deployment:** Docker
-
----
-
 ## ▶️ Getting Started
 
 ### 1. Clone the Repository
@@ -207,20 +80,147 @@ cd adaptive-honeypot-ml-CAPSTONE
 pip install -r requirements.txt
 ```
 
-### 3. Run the System
+---
+
+# 🚦 Module 1 Demo: Traffic Gateway (Stage 1)
+
+This demo showcases:
+
+* Traffic interception
+* Zero-trust routing
+* Honeypot redirection
+* Rate limiting and blocking
+* Live monitoring dashboard
+
+---
+
+## ⚙️ Step 1 — Start Fake Honeypot
 
 ```bash
-python main.py
+python fake_web.py
 ```
+
+Expected:
+
+```
+Running on http://127.0.0.1:8081
+```
+
+---
+
+## ⚙️ Step 2 — Start Traffic Gateway
+
+```bash
+python -m traffic_gateway.inspection_gateway
+```
+
+Expected:
+
+```
+[GATEWAY_STARTED]
+honeypots=['web://127.0.0.1:8081']
+```
+
+---
+
+## ⚙️ Step 3 — Start Live Dashboard
+
+```bash
+python dashboard/backend.py --host 0.0.0.0
+```
+
+Open in browser:
+
+```
+http://localhost:5000
+```
+
+---
+
+## 🌐 Step 4 — Send Traffic (Local Test)
+
+```bash
+curl http://localhost:8080/
+```
+
+Expected logs:
+
+```
+[CONN_RECEIVED]
+[CONN_ROUTED → honeypot]
+[PROXY_CONNECTED]
+[CONN_CLOSED]
+```
+
+---
+
+## 💻 Step 5 — Multi-Laptop Demo (LAN Setup)
+
+Find your IP:
+
+```bash
+ipconfig
+```
+
+Example:
+
+```
+192.168.1.5
+```
+
+From other laptops:
+
+```bash
+curl http://192.168.1.5:8080/
+```
+
+---
+
+## 🔥 Step 6 — Simulate Attack (Rate Limiting)
+
+```bash
+for /l %i in (1,1,30) do curl http://192.168.1.5:8080/
+```
+
+Expected:
+
+```
+[RATE_LIMITED]
+[CONN_REJECTED]
+```
+
+---
+
+## 🎯 What This Demonstrates
+
+* All incoming traffic is intercepted
+* Zero-trust model routes suspicious traffic to honeypot
+* Transparent proxy simulates real service
+* Session data is logged for ML pipeline
+* Repeated requests trigger automatic blocking
+
+---
+
+## ⚠️ Backup (Dashboard Demo Mode)
+
+```bash
+python dashboard/backend.py --demo
+```
+
+---
+
+## 🧠 Key Concept
+
+> Traffic → Gateway → Classification → Honeypot → Logging → Scoring → Blocking
 
 ---
 
 ## 📈 Future Enhancements
 
-* 🔥 Reinforcement learning for adaptive defense
-* 🌐 Distributed honeypot network
-* 🧠 LLM-based attacker intent analysis
-* 📡 Integration with SIEM systems
+* Reinforcement learning for adaptive defense
+* Distributed honeypot network
+* LLM-based attack interpretation
+* SIEM integration
 
 ---
 

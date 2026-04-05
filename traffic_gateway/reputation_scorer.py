@@ -128,7 +128,7 @@ def score_ip(ip: str) -> Tuple[float, str]:
     reasoning = (
         f"entropy={sig_entropy:.2f} volume={sig_volume:.2f} "
         f"honeypot={sig_honeypot:.2f} duration={sig_duration:.2f} "
-        f"freq={sig_freq:.2f} → weighted={score:.3f} "
+        f"freq={sig_freq:.2f} -> weighted={score:.3f} "
         f"(sample={stats.get('sample_size', 0)} sessions)"
     )
 

@@ -1,0 +1,469 @@
+{"ts": "2026-04-01T05:06:20.345110+00:00", "event": "GATEWAY_STARTED", "ip": "system", "listening_on": "0.0.0.0:8080", "real_backend": "web://127.0.0.1:8000", "honeypot_count": 4, "honeypots": ["ssh://127.0.0.1:2222", "web://127.0.0.1:8081", "auth://127.0.0.1:8082", "db://127.0.0.1:8083"]}
+{"ts": "2026-04-01T08:13:09.626008+00:00", "event": "GATEWAY_STARTED", "ip": "system", "listening_on": "0.0.0.0:8080", "real_backend": "web://127.0.0.1:8000", "honeypot_count": 4, "honeypots": ["ssh://127.0.0.1:2222", "web://127.0.0.1:8081", "auth://127.0.0.1:8082", "db://127.0.0.1:8083"]}
+{"ts": "2026-04-01T08:14:14.633371+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-01T08:14:14.635378+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "unknown", "target_type": "honeypot", "target": "ssh://127.0.0.1:2222", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-01T08:14:16.657165+00:00", "event": "PROXY_ERROR", "ip": "127.0.0.1", "error": "connection_refused", "target": "ssh://127.0.0.1:2222"}
+{"ts": "2026-04-01T08:14:16.659201+00:00", "event": "IP_CLASSIFIED", "ip": "127.0.0.1", "old_status": "unknown", "new_status": "suspicious", "reason": "Auto-suspicious post-session: score=0.500", "risk_score": 0.5}
+{"ts": "2026-04-01T08:14:16.659201+00:00", "event": "IP_SUSPICIOUS", "ip": "127.0.0.1", "score": 0.5, "reasoning": "No session history; defaulting to neutral score."}
+{"ts": "2026-04-01T08:26:36.844371+00:00", "event": "GATEWAY_STARTED", "ip": "system", "listening_on": "0.0.0.0:8080", "real_backend": "web://127.0.0.1:8000", "honeypot_count": 1, "honeypots": ["web://127.0.0.1:8081"]}
+{"ts": "2026-04-01T08:26:55.278916+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:26:55.278916+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:26:57.306653+00:00", "event": "PROXY_ERROR", "ip": "127.0.0.1", "error": "connection_refused", "target": "web://127.0.0.1:8081"}
+{"ts": "2026-04-01T08:29:57.445492+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:29:57.445492+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:29:57.447498+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000001", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:29:57.461218+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000001", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:29:57.462463+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 \u2192 weighted=0.429 (sample=1 sessions)"}
+{"ts": "2026-04-01T08:37:26.140462+00:00", "event": "GATEWAY_STARTED", "ip": "system", "listening_on": "0.0.0.0:8080", "real_backend": "web://127.0.0.1:8000", "honeypot_count": 1, "honeypots": ["web://127.0.0.1:8081"]}
+{"ts": "2026-04-01T08:37:54.108843+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:37:54.108843+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:37:54.112879+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000001", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:37:54.124909+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000001", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.012, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:37:54.125925+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=1 sessions)"}
+{"ts": "2026-04-01T08:38:22.728337+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:22.728337+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:22.728337+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000002", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:22.743997+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000002", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.016, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:22.744964+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=2 sessions)"}
+{"ts": "2026-04-01T08:38:22.956626+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:22.956626+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:22.958630+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000003", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:22.972722+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000003", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:22.974197+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=3 sessions)"}
+{"ts": "2026-04-01T08:38:23.170507+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:23.170507+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:23.177241+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000004", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:23.190273+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000004", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.013, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:23.191436+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=4 sessions)"}
+{"ts": "2026-04-01T08:38:23.398439+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:23.398439+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:23.403535+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000005", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:23.417880+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000005", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:23.417880+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=5 sessions)"}
+{"ts": "2026-04-01T08:38:23.626925+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:23.626925+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:23.626925+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000006", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:23.643035+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000006", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.016, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:23.643978+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=6 sessions)"}
+{"ts": "2026-04-01T08:38:23.851724+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:23.851724+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:23.851724+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000007", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:23.864127+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000007", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.012, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:23.864127+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=7 sessions)"}
+{"ts": "2026-04-01T08:38:24.085585+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:24.085585+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:24.085585+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000008", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:24.112277+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000008", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.027, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:24.114125+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=8 sessions)"}
+{"ts": "2026-04-01T08:38:24.313778+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:24.313778+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:24.313778+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000009", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:24.348361+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000009", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.035, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:24.348361+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=9 sessions)"}
+{"ts": "2026-04-01T08:38:24.544752+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:24.544752+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:24.544752+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000010", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:24.563531+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000010", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.019, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:24.563531+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=10 sessions)"}
+{"ts": "2026-04-01T08:38:24.761333+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:24.761333+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:24.761333+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000011", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:24.780142+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000011", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.019, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:24.780142+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=11 sessions)"}
+{"ts": "2026-04-01T08:38:24.980382+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:24.980382+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:24.980382+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000012", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:24.996575+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000012", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.016, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:24.996575+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=12 sessions)"}
+{"ts": "2026-04-01T08:38:25.208816+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:25.208816+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:25.208816+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000013", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:25.246280+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000013", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.037, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:25.246280+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=13 sessions)"}
+{"ts": "2026-04-01T08:38:25.433343+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:25.433343+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:25.433343+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000014", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:25.446737+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000014", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.013, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:25.447673+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=14 sessions)"}
+{"ts": "2026-04-01T08:38:25.649808+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:25.649808+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:25.649808+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000015", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:25.663201+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000015", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.013, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:25.664227+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=15 sessions)"}
+{"ts": "2026-04-01T08:38:25.871681+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:25.871681+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:25.871681+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000016", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:25.888302+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000016", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.017, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:25.889596+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=16 sessions)"}
+{"ts": "2026-04-01T08:38:26.085072+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:26.085072+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:26.085072+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000017", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:26.113144+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000017", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.028, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:26.113144+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=17 sessions)"}
+{"ts": "2026-04-01T08:38:26.313516+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:26.313516+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:26.315547+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000018", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:26.329006+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000018", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.013, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:26.330006+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=18 sessions)"}
+{"ts": "2026-04-01T08:38:26.541806+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:26.541806+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:26.543813+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000019", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:26.579119+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000019", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.035, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:26.580384+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=19 sessions)"}
+{"ts": "2026-04-01T08:38:26.771462+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:26.771462+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T08:38:26.771462+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000020", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T08:38:26.795041+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000020", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.024, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T08:38:26.795041+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=20 sessions)"}
+{"ts": "2026-04-01T08:38:27.001307+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T08:38:27.001307+00:00", "event": "RATE_LIMITED", "ip": "127.0.0.1", "reason": "window_exceeded", "connections_in_window": 20, "window_sec": 60, "block_sec": 300}
+{"ts": "2026-04-01T08:38:27.001307+00:00", "event": "CONN_REJECTED", "ip": "127.0.0.1", "reason": "rate_limited"}
+{"ts": "2026-04-01T09:02:01.035162+00:00", "event": "GATEWAY_STARTED", "ip": "system", "listening_on": "0.0.0.0:8080", "real_backend": "web://127.0.0.1:8000", "honeypot_count": 1, "honeypots": ["web://127.0.0.1:8081"]}
+{"ts": "2026-04-01T09:02:41.898279+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:02:41.898279+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:02:41.900375+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000001", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:02:41.914153+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000001", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:02:41.915455+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=1 sessions)"}
+{"ts": "2026-04-01T09:03:26.829303+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:26.829303+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:26.829303+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000002", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:26.845071+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000002", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.016, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:26.845071+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=2 sessions)"}
+{"ts": "2026-04-01T09:03:27.045761+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:27.045761+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:27.045761+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000003", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:27.061478+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000003", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.016, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:27.062851+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=3 sessions)"}
+{"ts": "2026-04-01T09:03:27.260945+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:27.260945+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:27.260945+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000004", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:27.276696+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000004", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.016, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:27.278092+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=4 sessions)"}
+{"ts": "2026-04-01T09:03:27.474969+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:27.474969+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:27.474969+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000005", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:27.490960+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000005", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.016, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:27.492447+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=5 sessions)"}
+{"ts": "2026-04-01T09:03:27.703440+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:27.703440+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:27.703440+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000006", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:27.730344+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000006", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.027, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:27.730344+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=6 sessions)"}
+{"ts": "2026-04-01T09:03:27.936558+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:27.938270+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:27.938270+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000007", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:27.955352+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000007", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.017, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:27.955352+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=7 sessions)"}
+{"ts": "2026-04-01T09:03:28.160728+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:28.160728+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:28.160728+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000008", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:28.179936+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000008", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.019, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:28.179936+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=8 sessions)"}
+{"ts": "2026-04-01T09:03:28.375906+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:28.375906+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:28.375906+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000009", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:28.388382+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000009", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.012, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:28.388720+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=9 sessions)"}
+{"ts": "2026-04-01T09:03:28.607392+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:28.607392+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:28.607392+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000010", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:28.621669+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000010", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:28.622473+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=10 sessions)"}
+{"ts": "2026-04-01T09:03:28.827286+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:28.827286+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:28.827286+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000011", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:28.854911+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000011", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.028, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:28.854911+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=11 sessions)"}
+{"ts": "2026-04-01T09:03:29.065962+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:29.065962+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:29.065962+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000012", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:29.096757+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000012", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.031, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:29.096757+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=12 sessions)"}
+{"ts": "2026-04-01T09:03:29.299065+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:29.301072+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:29.301072+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000013", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:29.322178+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000013", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.021, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:29.322178+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=13 sessions)"}
+{"ts": "2026-04-01T09:03:29.519700+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:29.519700+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:29.519700+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000014", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:29.535500+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000014", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.016, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:29.536606+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=14 sessions)"}
+{"ts": "2026-04-01T09:03:29.737876+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:29.737876+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:29.737876+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000015", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:29.755131+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000015", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.017, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:29.755131+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=15 sessions)"}
+{"ts": "2026-04-01T09:03:29.966091+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:29.966091+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:29.966091+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000016", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:30.003355+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000016", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.037, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:30.004137+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=16 sessions)"}
+{"ts": "2026-04-01T09:03:30.202915+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:30.202915+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:30.202915+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000017", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:30.237124+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000017", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.034, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:30.238678+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=17 sessions)"}
+{"ts": "2026-04-01T09:03:30.426538+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:30.426538+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:30.426538+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000018", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:30.446677+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000018", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.02, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:30.446677+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=18 sessions)"}
+{"ts": "2026-04-01T09:03:30.651072+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:30.651072+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:30.653096+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000019", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:30.671360+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000019", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.018, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:30.672211+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=19 sessions)"}
+{"ts": "2026-04-01T09:03:30.866483+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:30.866483+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:03:30.866483+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000020", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:03:30.887765+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000020", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.021, "bytes_in": 78, "bytes_out": 206, "entropy": 4.7358}
+{"ts": "2026-04-01T09:03:30.887765+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=20 sessions)"}
+{"ts": "2026-04-01T09:03:31.086422+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:03:31.086422+00:00", "event": "RATE_LIMITED", "ip": "127.0.0.1", "reason": "window_exceeded", "connections_in_window": 20, "window_sec": 60, "block_sec": 300}
+{"ts": "2026-04-01T09:03:31.086422+00:00", "event": "CONN_REJECTED", "ip": "127.0.0.1", "reason": "rate_limited"}
+{"ts": "2026-04-01T09:05:35.294922+00:00", "event": "GATEWAY_STARTED", "ip": "system", "listening_on": "0.0.0.0:8080", "real_backend": "web://127.0.0.1:8000", "honeypot_count": 1, "honeypots": ["web://127.0.0.1:8081"]}
+{"ts": "2026-04-01T09:05:47.157607+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:05:47.157607+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:05:47.157607+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000001", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:05:47.193295+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000001", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.036, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:05:47.194300+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=1 sessions)"}
+{"ts": "2026-04-01T09:06:01.016761+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:01.016761+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:01.018767+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000002", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:01.032623+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000002", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:01.033600+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=2 sessions)"}
+{"ts": "2026-04-01T09:06:01.231274+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:01.231274+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:01.233281+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000003", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:01.247274+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000003", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:01.248229+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=3 sessions)"}
+{"ts": "2026-04-01T09:06:01.459043+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:01.460345+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:01.461397+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000004", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:01.475152+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000004", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:01.476166+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=4 sessions)"}
+{"ts": "2026-04-01T09:06:01.685993+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:01.685993+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:01.685993+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000005", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:01.697775+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000005", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.012, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:01.698619+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=5 sessions)"}
+{"ts": "2026-04-01T09:06:01.900495+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:01.900495+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:01.902501+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000006", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:01.916581+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000006", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:01.917698+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=6 sessions)"}
+{"ts": "2026-04-01T09:06:02.117575+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:02.117575+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:02.120082+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000007", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:02.134081+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000007", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:02.135157+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=7 sessions)"}
+{"ts": "2026-04-01T09:06:02.337172+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:02.339178+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:02.341183+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000008", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:02.352957+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000008", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.012, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:02.353842+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=8 sessions)"}
+{"ts": "2026-04-01T09:06:02.566710+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:02.566710+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:02.566710+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000009", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:02.581037+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000009", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:02.582115+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=9 sessions)"}
+{"ts": "2026-04-01T09:06:02.796329+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:02.796329+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:02.796329+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000010", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:02.822756+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000010", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.026, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:02.823522+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=10 sessions)"}
+{"ts": "2026-04-01T09:06:03.037350+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:03.037350+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:03.039357+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000011", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:03.072069+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000011", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.033, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:03.073358+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=11 sessions)"}
+{"ts": "2026-04-01T09:06:03.255700+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:03.255700+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:03.255700+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000012", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:03.279567+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000012", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.024, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:03.279567+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=12 sessions)"}
+{"ts": "2026-04-01T09:06:03.483664+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:03.483664+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:03.483664+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000013", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:03.513963+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000013", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.03, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:03.513963+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=13 sessions)"}
+{"ts": "2026-04-01T09:06:03.711020+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:03.711020+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:03.711020+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000014", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:03.755253+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000014", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.044, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:03.756728+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=14 sessions)"}
+{"ts": "2026-04-01T09:06:03.942137+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:03.943318+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:03.943318+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000015", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:03.956298+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000015", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.013, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:03.956659+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=15 sessions)"}
+{"ts": "2026-04-01T09:06:04.171486+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:04.172063+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:04.172063+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000016", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:04.186753+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000016", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.015, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:04.187616+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=16 sessions)"}
+{"ts": "2026-04-01T09:06:04.404858+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:04.404858+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:04.404858+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000017", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:04.438704+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000017", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.034, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:04.439908+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=17 sessions)"}
+{"ts": "2026-04-01T09:06:04.627005+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:04.627005+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:04.627005+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000018", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:04.647507+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000018", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.021, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:04.647507+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=18 sessions)"}
+{"ts": "2026-04-01T09:06:04.851965+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:04.851965+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:04.851965+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000019", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:04.873175+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000019", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.021, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:04.873759+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=19 sessions)"}
+{"ts": "2026-04-01T09:06:05.072674+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:05.072674+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-01T09:06:05.072674+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000020", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-01T09:06:05.106878+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000020", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.034, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-01T09:06:05.107900+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=20 sessions)"}
+{"ts": "2026-04-01T09:06:05.309570+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-01T09:06:05.309570+00:00", "event": "RATE_LIMITED", "ip": "127.0.0.1", "reason": "window_exceeded", "connections_in_window": 20, "window_sec": 60, "block_sec": 300}
+{"ts": "2026-04-01T09:06:05.309570+00:00", "event": "CONN_REJECTED", "ip": "127.0.0.1", "reason": "rate_limited"}
+{"ts": "2026-04-03T07:39:48.422524+00:00", "event": "GATEWAY_STARTED", "ip": "system", "listening_on": "0.0.0.0:8080", "real_backend": "web://127.0.0.1:8000", "honeypot_count": 1, "honeypots": ["web://127.0.0.1:8081"]}
+{"ts": "2026-04-03T07:40:27.841926+00:00", "event": "CONN_RECEIVED", "ip": "127.0.0.1", "active_connections": 1, "ip_status": "suspicious"}
+{"ts": "2026-04-03T07:40:27.841926+00:00", "event": "CONN_ROUTED", "ip": "127.0.0.1", "ip_status": "suspicious", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "suspicious_redirect"}
+{"ts": "2026-04-03T07:40:27.841926+00:00", "event": "PROXY_CONNECTED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000001", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:40:27.857859+00:00", "event": "CONN_CLOSED", "ip": "127.0.0.1", "session_id": "127.0.0.1_000001", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.016, "bytes_in": 78, "bytes_out": 196, "entropy": 4.7358}
+{"ts": "2026-04-03T07:40:27.859342+00:00", "event": "ML_ASSESSMENT", "ip": "127.0.0.1", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=1 sessions)"}
+{"ts": "2026-04-03T07:44:41.112473+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:44:41.112473+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:44:41.113474+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000002", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:44:41.133156+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000002", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.02, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:44:41.134142+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=1 sessions)"}
+{"ts": "2026-04-03T07:46:47.415858+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.415858+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.420658+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000003", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.431817+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.431817+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.431817+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000004", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.437571+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000003", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.017, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.438435+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=2 sessions)"}
+{"ts": "2026-04-03T07:46:47.452633+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.452633+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.454751+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000005", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.456680+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000004", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.025, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.456680+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=3 sessions)"}
+{"ts": "2026-04-03T07:46:47.465595+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.465595+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.465595+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000006", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.469209+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000005", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.470457+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=4 sessions)"}
+{"ts": "2026-04-03T07:46:47.481989+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000006", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.016, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.482448+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=5 sessions)"}
+{"ts": "2026-04-03T07:46:47.482448+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.484455+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.484968+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000007", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.495640+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.495640+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.498077+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000008", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.498559+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000007", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.501064+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=6 sessions)"}
+{"ts": "2026-04-03T07:46:47.515309+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000008", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.017, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.515309+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=7 sessions)"}
+{"ts": "2026-04-03T07:46:47.523196+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.524205+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.525203+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000009", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.537685+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.540005+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.541624+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000010", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.541624+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000009", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.016, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.542681+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=8 sessions)"}
+{"ts": "2026-04-03T07:46:47.555702+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.555702+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.557605+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000011", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.557605+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000010", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.016, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.558601+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=9 sessions)"}
+{"ts": "2026-04-03T07:46:47.570145+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.570145+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.573535+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000012", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.574540+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000011", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.017, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.574540+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=10 sessions)"}
+{"ts": "2026-04-03T07:46:47.587663+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000012", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.014, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.588685+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=11 sessions)"}
+{"ts": "2026-04-03T07:46:47.590873+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.590873+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.590873+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000013", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.611744+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.611744+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.611744+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000014", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.623429+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000013", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.033, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.623429+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=12 sessions)"}
+{"ts": "2026-04-03T07:46:47.635646+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000014", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.024, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.635646+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=13 sessions)"}
+{"ts": "2026-04-03T07:46:47.635646+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.635646+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.638526+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000015", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.651377+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.651377+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.651377+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000016", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.653560+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000015", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.015, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.653560+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=14 sessions)"}
+{"ts": "2026-04-03T07:46:47.676525+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000016", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.025, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.676525+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=15 sessions)"}
+{"ts": "2026-04-03T07:46:47.677525+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.678526+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.678526+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000017", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.702354+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.702354+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.703359+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000018", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.707206+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000017", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.029, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.708058+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=16 sessions)"}
+{"ts": "2026-04-03T07:46:47.715021+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000018", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.012, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.716080+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=17 sessions)"}
+{"ts": "2026-04-03T07:46:47.717163+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.718159+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.718908+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000019", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.743103+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.743103+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.745872+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000020", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.752344+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000019", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.033, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.753537+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=18 sessions)"}
+{"ts": "2026-04-03T07:46:47.768415+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.768415+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.768415+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000021", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.768415+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000020", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.023, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.768415+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=19 sessions)"}
+{"ts": "2026-04-03T07:46:47.793242+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.793242+00:00", "event": "CONN_ROUTED", "ip": "192.168.0.109", "ip_status": "unknown", "target_type": "honeypot", "target": "web://127.0.0.1:8081", "reason": "unknown_zero_trust_redirect"}
+{"ts": "2026-04-03T07:46:47.794323+00:00", "event": "PROXY_CONNECTED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000022", "target": "web://127.0.0.1:8081", "type": "honeypot"}
+{"ts": "2026-04-03T07:46:47.799308+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000021", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.031, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.799308+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.429, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.16 -> weighted=0.429 (sample=20 sessions)"}
+{"ts": "2026-04-03T07:46:47.825488+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 2, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.825488+00:00", "event": "RATE_LIMITED", "ip": "192.168.0.109", "reason": "window_exceeded", "connections_in_window": 20, "window_sec": 60, "block_sec": 300}
+{"ts": "2026-04-03T07:46:47.826522+00:00", "event": "CONN_REJECTED", "ip": "192.168.0.109", "reason": "rate_limited"}
+{"ts": "2026-04-03T07:46:47.835307+00:00", "event": "CONN_CLOSED", "ip": "192.168.0.109", "session_id": "192.168.0.109_000022", "target": "honeypot", "target_addr": "127.0.0.1:8081", "duration_sec": 0.041, "bytes_in": 82, "bytes_out": 196, "entropy": 4.698}
+{"ts": "2026-04-03T07:46:47.836066+00:00", "event": "ML_ASSESSMENT", "ip": "192.168.0.109", "score": 0.4302, "reasoning": "entropy=0.30 volume=0.45 honeypot=0.60 duration=0.70 freq=0.17 -> weighted=0.430 (sample=20 sessions)"}
+{"ts": "2026-04-03T07:46:47.856133+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.857131+00:00", "event": "RATE_LIMITED", "ip": "192.168.0.109", "reason": "hard_block", "unblocks_in_sec": 300.0}
+{"ts": "2026-04-03T07:46:47.857131+00:00", "event": "CONN_REJECTED", "ip": "192.168.0.109", "reason": "rate_limited"}
+{"ts": "2026-04-03T07:46:47.869147+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.873074+00:00", "event": "RATE_LIMITED", "ip": "192.168.0.109", "reason": "hard_block", "unblocks_in_sec": 300.0}
+{"ts": "2026-04-03T07:46:47.873074+00:00", "event": "CONN_REJECTED", "ip": "192.168.0.109", "reason": "rate_limited"}
+{"ts": "2026-04-03T07:46:47.894746+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.894746+00:00", "event": "RATE_LIMITED", "ip": "192.168.0.109", "reason": "hard_block", "unblocks_in_sec": 299.9}
+{"ts": "2026-04-03T07:46:47.894746+00:00", "event": "CONN_REJECTED", "ip": "192.168.0.109", "reason": "rate_limited"}
+{"ts": "2026-04-03T07:46:47.918894+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.920248+00:00", "event": "RATE_LIMITED", "ip": "192.168.0.109", "reason": "hard_block", "unblocks_in_sec": 299.9}
+{"ts": "2026-04-03T07:46:47.920248+00:00", "event": "CONN_REJECTED", "ip": "192.168.0.109", "reason": "rate_limited"}
+{"ts": "2026-04-03T07:46:47.931999+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.931999+00:00", "event": "RATE_LIMITED", "ip": "192.168.0.109", "reason": "hard_block", "unblocks_in_sec": 299.9}
+{"ts": "2026-04-03T07:46:47.931999+00:00", "event": "CONN_REJECTED", "ip": "192.168.0.109", "reason": "rate_limited"}
+{"ts": "2026-04-03T07:46:47.954570+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.954570+00:00", "event": "RATE_LIMITED", "ip": "192.168.0.109", "reason": "hard_block", "unblocks_in_sec": 299.9}
+{"ts": "2026-04-03T07:46:47.954570+00:00", "event": "CONN_REJECTED", "ip": "192.168.0.109", "reason": "rate_limited"}
+{"ts": "2026-04-03T07:46:47.968939+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.969270+00:00", "event": "RATE_LIMITED", "ip": "192.168.0.109", "reason": "hard_block", "unblocks_in_sec": 299.9}
+{"ts": "2026-04-03T07:46:47.970109+00:00", "event": "CONN_REJECTED", "ip": "192.168.0.109", "reason": "rate_limited"}
+{"ts": "2026-04-03T07:46:47.982459+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.983458+00:00", "event": "RATE_LIMITED", "ip": "192.168.0.109", "reason": "hard_block", "unblocks_in_sec": 299.8}
+{"ts": "2026-04-03T07:46:47.983458+00:00", "event": "CONN_REJECTED", "ip": "192.168.0.109", "reason": "rate_limited"}
+{"ts": "2026-04-03T07:46:47.995334+00:00", "event": "CONN_RECEIVED", "ip": "192.168.0.109", "active_connections": 1, "ip_status": "unknown"}
+{"ts": "2026-04-03T07:46:47.995334+00:00", "event": "RATE_LIMITED", "ip": "192.168.0.109", "reason": "hard_block", "unblocks_in_sec": 299.8}
+{"ts": "2026-04-03T07:46:47.995334+00:00", "event": "CONN_REJECTED", "ip": "192.168.0.109", "reason": "rate_limited"}

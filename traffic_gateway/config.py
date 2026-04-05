@@ -41,12 +41,17 @@ class GatewayConfig:
 
     # ── Honeypot targets (all other IPs are silently proxied here) ──────────
     # Gateway round-robins across these so load is spread across emulators.
-    HONEYPOT_TARGETS: List[Target] = field(default_factory=lambda: [
-        Target("127.0.0.1", 2222, "ssh"),    # Cowrie SSH honeypot
-        Target("127.0.0.1", 8081, "web"),    # fake web-app emulator
-        Target("127.0.0.1", 8082, "auth"),   # fake auth-portal emulator
-        Target("127.0.0.1", 8083, "db"),     # fake database emulator
-    ])
+    
+    #HONEYPOT_TARGETS: List[Target] = field(default_factory=lambda: [
+    #    Target("127.0.0.1", 2222, "ssh"),    # Cowrie SSH honeypot
+    #    Target("127.0.0.1", 8081, "web"),    # fake web-app emulator
+    #    Target("127.0.0.1", 8082, "auth"),   # fake auth-portal emulator
+    #    Target("127.0.0.1", 8083, "db"),     # fake database emulator
+    #])
+    
+    HONEYPOT_TARGETS = [
+    Target("127.0.0.1", 8081, "web")
+    ]
 
     # ── Rate limiting (sliding-window per IP) ────────────────────────────────
     RATE_LIMIT_MAX_CONN:  int = 20     # max new connections within window

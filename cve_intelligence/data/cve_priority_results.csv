@@ -1,0 +1,2 @@
+cve_id,published,last_modified,vuln_status,description,cvss_score,cvss_version,cwe,references,is_kev,kev_name,kev_date_added,kev_action,epss_score,cwe_description,severity,days_old,cvss_norm,epss_norm,attack_type,classify_method,priority_score,priority_tier
+CVE-2023-99999,2023-01-01 00:00:00+00:00,2023-01-01 00:00:00+00:00,Analyzed,Sample SQL Injection for pipeline testing,9.8,3.1,CWE-89,[],0,,,,0.4387,SQL Injection,Critical,1260,0.9800000000000001,0.4387,SQL Injection,CWE,0.5455,P3 - Medium

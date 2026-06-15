@@ -32,6 +32,8 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 

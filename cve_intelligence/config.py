@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import os
 from typing import Dict, List, Tuple
+from dotenv import load_dotenv
+
+load_dotenv() # load .env file if present 
 
 # ── API Credentials (set via environment) ─────────────────────────────────────
 NVD_API_KEY: str | None = os.environ.get("NVD_API_KEY")  # None → unauthenticated (slower)

@@ -66,6 +66,7 @@ def fetch_epss_scores(
                 config.EPSS_API_URL,
                 params=params,
                 timeout=config.REQUEST_TIMEOUT,
+                
             )
             resp.raise_for_status()
             data = resp.json()

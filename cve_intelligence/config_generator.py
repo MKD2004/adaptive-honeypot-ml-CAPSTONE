@@ -213,7 +213,7 @@ class HoneypotConfigGenerator:
 
         size_kb = output_path.stat().st_size / 1024
         logger.info(
-            "Profiles saved → %s  (%.1f KB, %d entries)",
+            "Profiles saved -> %s  (%.1f KB, %d entries)",
             output_path, size_kb, len(profiles),
         )
 
@@ -244,6 +244,6 @@ class HoneypotConfigGenerator:
 
         export_df.to_csv(output_path, index=False)
         logger.info(
-            "CSV saved → %s  (%d rows, %d columns)",
+            "CSV saved -> %s  (%d rows, %d columns)",
             output_path, len(export_df), len(columns),
         )

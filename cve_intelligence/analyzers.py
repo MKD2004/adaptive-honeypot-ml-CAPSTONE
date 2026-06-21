@@ -252,10 +252,17 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce", utc=True)
 
-    # b. CVSS fill
+    # b. CVSS fill — KEV CVEs without scores get 8.0 (conservative high),
+    #    non-KEV CVEs get the column median. This prevents KEV-confirmed
+    #    but NVD-unscored CVEs from being artificially deprioritized.
     if "cvss_score" in df.columns:
-        median = df["cvss_score"].median()
-        df["cvss_score"] = df["cvss_score"].fillna(median)
+        median = df["cvss_score"].dropna().median()
+        if pd.isna(median):
+            median = 5.0
+        kev_mask = df.get("is_kev", pd.Series(0, index=df.index)) == 1
+        cvss_missing = df["cvss_score"].isna()
+        df.loc[cvss_missing & kev_mask, "cvss_score"] = 8.0
+        df.loc[cvss_missing & ~kev_mask, "cvss_score"] = median
     else:
         df["cvss_score"] = 0.0
 
@@ -303,9 +310,12 @@ def compute_priority(df: pd.DataFrame) -> pd.DataFrame:
     Compute composite priority scores and tier labels.
 
     Formula:
-        priority = W_CVSS * cvss_norm + W_EPSS * epss_norm + W_KEV * is_kev
+        base = W_CVSS * cvss_norm + W_EPSS * epss_norm + W_KEV * is_kev
 
-    Weights are defined in config.py and are independently tunable.
+    KEV floor: any CVE confirmed exploited in the wild (is_kev=1) gets
+    a minimum score of TIER_P2 (0.55). KEV membership is the single
+    strongest real-world signal — a KEV CVE with no CVSS score should
+    never rank below a non-KEV CVE with a high CVSS.
 
     Args:
         df: DataFrame with 'cvss_norm', 'epss_norm', 'is_kev' columns.
@@ -315,11 +325,16 @@ def compute_priority(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
 
-    df["priority_score"] = (
+    is_kev = df["is_kev"].fillna(0).astype(float)
+
+    base_score = (
         config.W_CVSS * df["cvss_norm"]
         + config.W_EPSS * df["epss_norm"]
-        + config.W_KEV  * df["is_kev"].fillna(0).astype(float)
-    ).round(4)
+        + config.W_KEV  * is_kev
+    )
+
+    kev_floor = is_kev * config.TIER_P2
+    df["priority_score"] = base_score.clip(lower=kev_floor).round(4)
 
     df["priority_tier"] = df["priority_score"].apply(priority_tier)
 

@@ -160,7 +160,7 @@ class NVDClient:
         # result-set size issues that can produce unexpected 404s.
         chunks = self._build_date_chunks(start_date, end_date)
         logger.info(
-            "Fetching CVEs for %s → %s across %d chunk(s) (max %d total).",
+            "Fetching CVEs for %s -> %s across %d chunk(s) (max %d total).",
             _format_nvd_date(start_date),
             _format_nvd_date(end_date),
             len(chunks),
@@ -264,7 +264,7 @@ class NVDClient:
         """
         start_str = _format_nvd_date(start_date)
         end_str   = _format_nvd_date(end_date)
-        logger.info("  NVD chunk: %s → %s", start_str, end_str)
+        logger.info("  NVD chunk: %s -> %s", start_str, end_str)
 
         # Minimal, honest headers — no User-Agent spoofing.
         # NVD's documented access method is the API key; the key is
@@ -310,7 +310,7 @@ class NVDClient:
                     # 404 from NVD v2.0 typically means the date window
                     # returned zero results, not a missing endpoint.
                     logger.info(
-                        "NVD returned 404 for chunk %s → %s (no CVEs in window).",
+                        "NVD returned 404 for chunk %s -> %s (no CVEs in window).",
                         start_str, end_str,
                     )
                     break

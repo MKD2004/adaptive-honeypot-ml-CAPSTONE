@@ -4,11 +4,4 @@ __pycache__/
 venv/
 .idea/
 .vscode/
-logs/honeypot_dataset/data/
-honeypot_dataset/venv/
-*.npy
-*.pkl
-*.parquet
-tabsyn/data/honeypot_sessions/
-tabsyn/tabsyn/vae/ckpt/
-tabsyn/synthetic/
+logs/

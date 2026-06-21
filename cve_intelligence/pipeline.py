@@ -32,6 +32,8 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -41,7 +43,6 @@ import pandas as pd
 from cve_intelligence import config
 from cve_intelligence import analyzers
 from cve_intelligence.clients.nvd       import NVDClient
-from cve_intelligence.clients.cveorg    import CVEOrgClient
 from cve_intelligence.clients.cisa      import CISAClient
 from cve_intelligence.clients.exploitdb import ExploitDBClient
 from cve_intelligence.clients.mitre     import MITREClient
@@ -49,7 +50,7 @@ from cve_intelligence.config_generator  import HoneypotConfigGenerator
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
 logging.basicConfig(
-    format="%(asctime)s [%(levelname)-8s] %(name)s - %(message)s",
+    format="%(asctime)s [%(levelname)-8s] %(name)s — %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     level=logging.INFO,
     stream=sys.stdout,
@@ -96,77 +97,32 @@ class CVEIntelligencePipeline:
 
         # Instantiate clients and generator
         self._nvd      = NVDClient()
-        self._cveorg   = CVEOrgClient()
         self._cisa     = CISAClient()
         self._mitre    = MITREClient() if include_mitre else None
         self._exploitdb = ExploitDBClient() if include_exploitdb else None
         self._generator = HoneypotConfigGenerator()
 
-    # ==========================================================════════════════
+    # ══════════════════════════════════════════════════════════════════════════
     # Stage runners (each returns the DataFrame it produces/enriches)
-    # ==========================================================════════════════
+    # ══════════════════════════════════════════════════════════════════════════
     def _stage_fetch(self) -> pd.DataFrame:
-        """Stage 1 & 2: Fetch from NVD (primary) + CVE.org (fallback) + KEV-seeded."""
-        logger.info("-- Stage 1/2: Fetch & Parse ----------------------------------")
+        """Stage 1 & 2: Fetch from NVD + CISA, parse into DataFrame."""
+        logger.info("── Stage 1/2: Fetch & Parse ─────────────────────────────")
 
-        # 1. Try NVD first
         raw_cves = self._nvd.fetch_last_n_days(days=self.lookback_days)
         records  = self._nvd.parse(raw_cves)
-        is_fallback = len(records) <= 1 and any(
-            r.get("cve_id") == "CVE-2023-99999" for r in records
-        )
-
-        if is_fallback:
-            logger.warning("NVD returned only fallback data. Trying CVE.org...")
-            records = []
-
-        # 2. CVE.org fallback for recent CVEs
-        if not records:
-            logger.info("Fetching from CVE.org as NVD fallback...")
-            raw_cveorg = self._cveorg.fetch_recent(
-                days=self.lookback_days, max_results=self.top_n * 5
-            )
-            records = self._cveorg.parse(raw_cveorg)
-            if records:
-                logger.info("CVE.org fallback: %d CVEs loaded.", len(records))
-            else:
-                logger.warning("CVE.org also returned no results.")
-
-        # 3. KEV-seeded: fetch CVE.org details for recent KEV entries
-        #    This ensures actively-exploited CVEs always appear even if
-        #    neither NVD nor CVE.org recent-query returned them.
-        try:
-            kev_df = self._cisa.fetch_dataframe()
-            if not kev_df.empty and "kev_date_added" in kev_df.columns:
-                cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=self.lookback_days * 2)
-                kev_df["_added"] = pd.to_datetime(kev_df["kev_date_added"], errors="coerce", utc=True)
-                recent_kev = kev_df[kev_df["_added"] >= cutoff]
-                existing_ids = {r["cve_id"] for r in records}
-                missing_kev = [
-                    cid for cid in recent_kev["cve_id"].tolist()
-                    if cid not in existing_ids
-                ]
-                if missing_kev:
-                    logger.info("Fetching %d KEV CVEs missing from NVD/CVE.org...", len(missing_kev))
-                    kev_records = self._cveorg.fetch_kev_details(missing_kev[:50])
-                    records.extend(kev_records)
-                    logger.info("Added %d KEV-seeded records.", len(kev_records))
-        except Exception as exc:
-            logger.warning("KEV-seeded fetch failed (non-fatal): %s", exc)
-
-        df = pd.DataFrame(records)
+        df       = pd.DataFrame(records)
 
         if df.empty:
-            logger.error("All sources returned no data.")
+            logger.warning("NVD returned no records after parsing.")
             return df
 
-        df = df.drop_duplicates(subset="cve_id", keep="first").reset_index(drop=True)
-        logger.info("Total CVEs after dedup: %d", len(df))
+        logger.info("NVD: %d CVEs loaded into DataFrame.", len(df))
         return df
 
     def _stage_enrich_kev(self, df: pd.DataFrame) -> pd.DataFrame:
         """Stage 3a: Mark KEV status and merge KEV metadata."""
-        logger.info("-- Stage 3a: CISA KEV Enrichment -------------------------")
+        logger.info("── Stage 3a: CISA KEV Enrichment ──────────────────────")
 
         kev_df  = self._cisa.fetch_dataframe()
         kev_ids = set(kev_df["cve_id"].tolist()) if not kev_df.empty else set()
@@ -187,14 +143,14 @@ class CVEIntelligencePipeline:
 
     def _stage_enrich_epss(self, df: pd.DataFrame) -> pd.DataFrame:
         """Stage 3b: Fetch real EPSS scores, fill gaps with simulation."""
-        logger.info("-- Stage 3b: EPSS Enrichment -----------------------------")
+        logger.info("── Stage 3b: EPSS Enrichment ──────────────────────────")
         return analyzers.enrich_epss(df)
 
     def _stage_enrich_mitre(self, df: pd.DataFrame) -> pd.DataFrame:
         """Stage 3c: Enrich with MITRE CWE descriptions (optional)."""
         if self._mitre is None:
             return df
-        logger.info("-- Stage 3c: MITRE CWE Enrichment ------------------------")
+        logger.info("── Stage 3c: MITRE CWE Enrichment ─────────────────────")
         records = df.to_dict(orient="records")
         records = self._mitre.enrich_records(records)
         return pd.DataFrame(records)
@@ -203,7 +159,7 @@ class CVEIntelligencePipeline:
         """Stage 3d: Add ExploitDB exploit count column (optional)."""
         if self._exploitdb is None:
             return df
-        logger.info("-- Stage 3d: ExploitDB Enrichment ------------------------")
+        logger.info("── Stage 3d: ExploitDB Enrichment ─────────────────────")
         edb_ids = self._exploitdb.cve_ids_with_exploits()
         df = df.copy()
         df["edb_exploit_count"] = df["cve_id"].apply(
@@ -215,28 +171,28 @@ class CVEIntelligencePipeline:
 
     def _stage_preprocess(self, df: pd.DataFrame) -> pd.DataFrame:
         """Stage 4: Normalise types, fill nulls, derive features."""
-        logger.info("-- Stage 4: Preprocessing --------------------------------")
+        logger.info("── Stage 4: Preprocessing ──────────────────────────────")
         return analyzers.preprocess(df)
 
     def _stage_classify(self, df: pd.DataFrame) -> pd.DataFrame:
         """Stage 5: Attack-type classification."""
-        logger.info("-- Stage 5: Attack Classification ------------------------")
+        logger.info("── Stage 5: Attack Classification ──────────────────────")
         return analyzers.apply_attack_classification(df)
 
     def _stage_score(self, df: pd.DataFrame) -> pd.DataFrame:
         """Stage 6: Priority scoring and sorting."""
-        logger.info("-- Stage 6: Priority Scoring -----------------------------")
+        logger.info("── Stage 6: Priority Scoring ───────────────────────────")
         df = analyzers.compute_priority(df)
         return analyzers.sort_by_priority(df)
 
     def _stage_generate_configs(self, df: pd.DataFrame) -> pd.DataFrame:
         """Stage 7: Generate honeypot configs."""
-        logger.info("-- Stage 7: Config Generation ----------------------------")
+        logger.info("── Stage 7: Config Generation ──────────────────────────")
         return self._generator.generate_all(df)
 
     def _stage_filter_trending(self, df: pd.DataFrame) -> pd.DataFrame:
         """Stage 8: Filter to trending CVEs."""
-        logger.info("-- Stage 8: Trending Filter ------------------------------")
+        logger.info("── Stage 8: Trending Filter ────────────────────────────")
         return analyzers.filter_trending(df, window_days=self.trending_window)
 
     def _stage_export(
@@ -245,7 +201,7 @@ class CVEIntelligencePipeline:
         df_trending: pd.DataFrame,
     ) -> List[dict]:
         """Stage 9: Write JSON (and optionally CSV) to disk."""
-        logger.info("-- Stage 9: Export ---------------------------------------")
+        logger.info("── Stage 9: Export ─────────────────────────────────────")
 
         profiles = self._generator.build_trending_profiles(df_sorted, df_trending)
         self._generator.save_to_disk(profiles, self.output_path)
@@ -255,19 +211,19 @@ class CVEIntelligencePipeline:
 
         return profiles
 
-    # ==========================================================════════════════
+    # ══════════════════════════════════════════════════════════════════════════
     # Summary printer
-    # ==========================================================════════════════
+    # ══════════════════════════════════════════════════════════════════════════
     def _print_summary(
         self,
         df_sorted: pd.DataFrame,
         df_trending: pd.DataFrame,
         profiles: List[dict],
     ) -> None:
-        divider = "=" * 60
-        thin    = "-" * 60
+        divider = "═" * 60
+        thin    = "─" * 60
         logger.info("\n%s", divider)
-        logger.info("  CVE Intelligence Pipeline -- Summary")
+        logger.info("  CVE Intelligence Pipeline — Summary")
         logger.info(divider)
         logger.info("  Total CVEs processed       : %d", len(df_sorted))
         logger.info(
@@ -286,7 +242,7 @@ class CVEIntelligencePipeline:
             "  Unique attack types        : %d",
             int(df_sorted["attack_type"].nunique()),
         )
-        logger.info("  Trending CVEs (<=%d days)  : %d", self.trending_window, len(df_trending))
+        logger.info("  Trending CVEs (≤%d days)   : %d", self.trending_window, len(df_trending))
         logger.info("  Profiles exported          : %d", len(profiles))
         logger.info("  Output path                : %s", self.output_path)
         logger.info(thin)
@@ -295,7 +251,7 @@ class CVEIntelligencePipeline:
         logger.info("  Top-5 Priority CVEs:")
         logger.info("  %-20s %-22s %-8s %-8s %s",
                     "CVE ID", "Attack Type", "CVSS", "Priority", "Tier")
-        logger.info("  %s", "-" * 56)
+        logger.info("  %s", "─" * 56)
         for _, row in df_sorted.head(5).iterrows():
             logger.info(
                 "  %-20s %-22s %-8.1f %-8.4f %s",
@@ -307,9 +263,9 @@ class CVEIntelligencePipeline:
             )
         logger.info("%s\n", divider)
 
-    # ==========================================================════════════════
+    # ══════════════════════════════════════════════════════════════════════════
     # Main entry point
-    # ==========================================================════════════════
+    # ══════════════════════════════════════════════════════════════════════════
     def run(self) -> Dict[str, Any]:
         """
         Execute the complete pipeline end-to-end.
@@ -320,11 +276,11 @@ class CVEIntelligencePipeline:
               'df_trending'  — trending subset (may be empty)
               'profiles'     — list of profile dicts written to JSON
         """
-        logger.info("==========================================================")
-        logger.info("  CVE Intelligence Pipeline -- Starting")
+        logger.info("══════════════════════════════════════════════════════════")
+        logger.info("  CVE Intelligence Pipeline — Starting")
         logger.info("  Lookback: %d days | Trending window: %d days",
                     self.lookback_days, self.trending_window)
-        logger.info("==========================================================")
+        logger.info("══════════════════════════════════════════════════════════")
 
         # Stages
         df = self._stage_fetch()
@@ -353,9 +309,9 @@ class CVEIntelligencePipeline:
         }
 
 
-# ==========================================================════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 # CLI entry point
-# ==========================================================════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="CVE Intelligence Pipeline — generates honeypot configs from live threat feeds.",

@@ -26,6 +26,7 @@ from cve_intelligence.pipeline         import CVEIntelligencePipeline
 from cve_intelligence.config_generator import HoneypotConfigGenerator
 from cve_intelligence.clients          import (
     NVDClient,
+    CVEOrgClient,
     CISAClient,
     ExploitDBClient,
     MITREClient,
@@ -35,6 +36,7 @@ __all__ = [
     "CVEIntelligencePipeline",
     "HoneypotConfigGenerator",
     "NVDClient",
+    "CVEOrgClient",
     "CISAClient",
     "ExploitDBClient",
     "MITREClient",

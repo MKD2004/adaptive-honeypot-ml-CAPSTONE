@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  cowrie:
+    image: cowrie/cowrie:latest
+    container_name: cowrie-honeypot
+    restart: unless-stopped
+    ports:
+      - "2222:2222"     # SSH honeypot
+      - "2223:2223"     # Telnet honeypot
+    volumes:
+      - ./logs:/cowrie/cowrie-git/var/log/cowrie
+      - ./cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+    environment:
+      - COWRIE_TELNET_ENABLED=yes

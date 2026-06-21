@@ -68,7 +68,7 @@ class CISAClient:
         """
         logger.info("Fetching CISA KEV catalog from %s", self._url)
         try:
-            resp = requests.get(self._url, timeout=config.REQUEST_TIMEOUT, verify=False)
+            resp = requests.get(self._url, timeout=config.REQUEST_TIMEOUT)
             resp.raise_for_status()
             data = resp.json()
         except requests.exceptions.HTTPError as exc:

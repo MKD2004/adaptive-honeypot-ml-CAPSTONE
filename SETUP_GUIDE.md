@@ -1,9 +1,19 @@
 # College PC Setup Guide
 
-Fresh-machine setup for the Adaptive Honeypot / HoneySynth-1M project.
-Covers **both Windows and Ubuntu** since you won't know which one you're
-allocated until you sit down — read the OS-specific section that matches
-your machine, everything else is shared.
+Machine setup for the Adaptive Honeypot / HoneySynth-1M project — covers
+two different situations, pick the one that matches what you're actually
+doing:
+
+- **Your own laptop, already cloned** (e.g. the new laptop you're
+  bringing to college) — you mostly need Step 0 + Step 1B (pull) +
+  Step 2, not a fresh clone.
+- **A machine with nothing on it yet** (a college lab PC you get
+  allocated, or a laptop that's never had this repo) — the full Step 0
+  → Step 1A (clone) → Step 2 flow.
+
+Covers **both Windows and Ubuntu** since college lab machines can be
+either — read the OS-specific section that matches your machine, everything
+else is shared.
 
 Repo: `https://github.com/MKD2004/adaptive-honeypot-ml-CAPSTONE`
 Branch to use: `feature/ml-analytics` (this is where all current work
@@ -17,10 +27,16 @@ Two things are currently sitting on this laptop only, not in GitHub.
 Skip either one and the college PC setup breaks or silently uses stale
 data.
 
-### 0.1 — Code that isn't pushed yet
+### 0.1 — Code that has to be pushed
 
-These files exist only in this laptop's working tree right now (checked
-via `git status` — they show as untracked/modified, not committed):
+Without these committed and pushed, getting the code onto the target
+machine (by clone *or* pull) gets you the *old* environment — no setup
+script, no VRAM patch, no record of the class-coverage fix.
+
+**Status: done.** Committed as `83c63d4` and pushed to
+`origin/feature/ml-analytics` already — this step doesn't need repeating
+unless you make further local changes on this laptop before transferring.
+Record of what's now safely on GitHub:
 
 ```
 setup.sh
@@ -31,28 +47,13 @@ honeypot_dataset/src/generators/fill_missing_classes.py
 .gitignore                                    (fix to the logs/ pattern)
 TEAM_BRIEFING.md
 SESSION_NOTES.md
+SETUP_GUIDE.md
 ```
 
-Without these committed and pushed, cloning the repo on the college PC
-gets you the *old* environment — no setup script, no VRAM patch, no
-record of the class-coverage fix. Commit and push them:
-
-```bash
-git add setup.sh setup.ps1 honeypot_dataset/docs/ \
-        honeypot_dataset/src/generators/fill_missing_classes.py \
-        .gitignore TEAM_BRIEFING.md SESSION_NOTES.md
-git commit -m "Add college-PC setup scripts, TabSyn VRAM patch, and class-coverage fix"
-git push origin feature/ml-analytics
-```
-
-**Do not include** `INTERVIEW_PREP.md` or `PANEL_REVIEW_UPDATE.md` in
-that commit — you asked for those to stay local/personal, not go into
-the repo. `data/synthetic/` and `tabsyn/` also should not be
-added/committed — they're build output and a third-party clone
-respectively, both correctly excluded already.
-
-*(I can run the commit + push above for you right now if you say so —
-otherwise treat this as your own checklist item.)*
+`INTERVIEW_PREP.md` and `PANEL_REVIEW_UPDATE.md` were deliberately left
+out of that commit — personal/local reference only, not for the repo.
+`data/synthetic/` and `tabsyn/` were also left out — build output and a
+third-party clone respectively, both correctly gitignored/untracked.
 
 ### 0.2 — Data that git will never carry
 
@@ -98,7 +99,14 @@ is convenient.
 
 ---
 
-## Step 1 — Clone the repo (both OS)
+## Step 1 — Get the code onto the target machine
+
+Pick 1A or 1B depending on whether the machine already has the repo.
+Either way, **Step 0.2's data transfer still applies afterward** — `git`
+never carries the data files, whether you clone fresh or pull an
+existing checkout.
+
+### 1A — Fresh machine, nothing cloned yet
 
 ```bash
 git clone https://github.com/MKD2004/adaptive-honeypot-ml-CAPSTONE.git
@@ -106,12 +114,39 @@ cd adaptive-honeypot-ml-CAPSTONE
 git checkout feature/ml-analytics
 ```
 
-Then drop in the data files from Step 0.2 at their exact paths, and copy
-your `.env` file into the repo root.
+### 1B — Already cloned (e.g. your own laptop from an earlier setup)
+
+Check for local changes before pulling — don't pull over uncommitted
+work you don't recognize:
+
+```powershell
+cd path\to\adaptive-honeypot-ml-CAPSTONE
+git status
+```
+
+If that's clean (or anything shown is safe to stash), fetch and sync to
+the branch with the current work:
+
+```powershell
+git fetch origin
+git checkout feature/ml-analytics   # skip if already on this branch
+git pull origin feature/ml-analytics
+```
+
+If `git status` showed changes you don't want to lose:
+`git stash` first, pull, then `git stash pop` to bring them back —
+don't discard anything blind.
+
+**Either way, then:** drop in the data files from Step 0.2 at their exact
+paths, and copy your `.env` file into the repo root. If the machine
+already has some of these files from an earlier sync, don't assume
+they're current — re-run the Step 3 verification below on them rather
+than trusting an old copy, especially `y_real.npy` (an old copy may only
+have 10/45 classes).
 
 ---
 
-## Step 2A — Windows college PC
+## Step 2A — Windows
 
 ```powershell
 # If PowerShell blocks the script:
@@ -133,7 +168,7 @@ If Python 3.11 isn't already on the machine, install it from
 python.org first — the script fails fast with a clear message rather
 than silently using the wrong version.
 
-## Step 2B — Ubuntu college PC
+## Step 2B — Ubuntu
 
 Two things Ubuntu needs that Windows doesn't, both common enough to
 handle upfront:

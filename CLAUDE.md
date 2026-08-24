@@ -68,13 +68,30 @@ python -m src.validators.quality_checks        # dataset validation
 - `pipeline.py:extract_all()` orchestrates all 6 extractors into a single 128-d vector
 - `pipeline.py:build_feature_matrix()` converts a DataFrame into `(X, y)` arrays ready for training
 
-When asked to "run notebook X", always execute the existing .ipynb file 
-in place using `jupyter nbconvert --to notebook --execute --inplace`. 
-Never create a new .py script or a copy of the notebook as a substitute. 
-If a notebook execution fails, fix the cells inside the original .ipynb 
+When asked to "run notebook X", always execute the existing .ipynb file
+in place using `jupyter nbconvert --to notebook --execute --inplace`.
+Never create a new .py script or a copy of the notebook as a substitute.
+If a notebook execution fails, fix the cells inside the original .ipynb
 file directly rather than creating a workaround file.
 
-echo "
-When asked to run notebook X, always execute the existing .ipynb file 
-in place using jupyter nbconvert --to notebook --execute --inplace. 
-Never create a new .py script or copy of the notebook as a substitute." >> CLAUDE.md
+Use the venv interpreter explicitly for all commands in `honeypot_dataset/`:
+`honeypot_dataset/venv/Scripts/python.exe`. The system `python` (3.14, on PATH)
+does not have pandas/torch/jupyter installed — only the venv does.
+
+## Reference Docs
+
+These live at repo root, are session/reference material, and are **not committed**:
+- `STATUS.md` — current pipeline stage, update at the end of every session
+- `DECISIONS.md` — why things were built a certain way; check before redoing something
+- `ERRORS.md` — bugs already hit and fixed; check before re-debugging the same crash
+- `SCHEMA.md` — full 45 micro-state / 128-feature reference for writing prompts fast
+- `HARDWARE.md` — laptop vs. college GPU specs and the config/batch-size implications
+
+## Current Status (2026-08-11)
+
+Notebook 01 (process real data): **done** — 737,319 real sessions, 22/45 micro-states
+covered (label-mapping bugs fixed, see ERRORS.md).
+Notebook 02 (feature extraction): **in progress** — 3 NaN-handling crash bugs found and
+fixed in `src/extractors/` (see ERRORS.md), re-running.
+Notebooks 03-05: not started. CUDA torch installed and verified on the laptop GPU.
+See `STATUS.md` for the live/detailed version of this.

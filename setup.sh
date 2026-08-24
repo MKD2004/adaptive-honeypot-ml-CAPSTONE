@@ -11,6 +11,14 @@
 #
 # Override the TabSyn repo to clone with:
 #   TABSYN_REPO_URL=... ./setup.sh
+# Override the Python interpreter used to build the venv (default: auto-detect,
+# preferring python3.11) with:
+#   PYTHON_BIN=python3.12 ./setup.sh
+# Override the PyTorch wheel index (default: cu121, built for x86_64 + older
+# GPU generations) with:
+#   TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128 ./setup.sh
+# e.g. on an aarch64 Blackwell/GB10 box (NVIDIA DGX Spark), cu121 has no
+# aarch64 wheel and the driver is CUDA 13-class anyway — use cu128 there.
 set -uo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,6 +27,7 @@ cd "$PROJECT_ROOT"
 VENV_DIR="$PROJECT_ROOT/venv"
 TABSYN_DIR="$PROJECT_ROOT/tabsyn"
 TABSYN_REPO_URL="${TABSYN_REPO_URL:-https://github.com/amazon-science/tabsyn.git}"
+TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu121}"
 
 log()  { printf '\n\033[1;34m[setup]\033[0m %s\n' "$1"; }
 warn() { printf '\033[1;33m[setup][warn]\033[0m %s\n' "$1" >&2; }
@@ -26,24 +35,44 @@ err()  { printf '\033[1;31m[setup][error]\033[0m %s\n' "$1" >&2; }
 
 fail_step() { err "$1"; exit 1; }
 
-# ── 1. Check Python 3.11 ─────────────────────────────────────────────────
-log "Checking for Python 3.11..."
+# ── 1. Check Python ──────────────────────────────────────────────────────
 PYTHON311=""
-for candidate in python3.11 python3.11.exe; do
-    if command -v "$candidate" >/dev/null 2>&1; then
-        PYTHON311="$candidate"
-        break
+if [ -n "${PYTHON_BIN:-}" ]; then
+    log "Using PYTHON_BIN override: $PYTHON_BIN"
+    if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+        fail_step "PYTHON_BIN=$PYTHON_BIN not found on PATH."
     fi
-done
+    PYTHON311="$PYTHON_BIN"
+else
+    log "Checking for Python 3.11..."
+    for candidate in python3.11 python3.11.exe; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            PYTHON311="$candidate"
+            break
+        fi
+    done
+
+    if [ -z "$PYTHON311" ] && command -v python3 >/dev/null 2>&1; then
+        PY3_MINOR="$(python3 -c 'import sys; print(sys.version_info[1])' 2>/dev/null || echo 0)"
+        if [ "$PY3_MINOR" -ge 10 ] 2>/dev/null; then
+            warn "python3.11 not found — falling back to $(python3 --version 2>&1) on PATH."
+            warn "This project's default torch install targets cu121, which is built for"
+            warn "Python 3.11 specifically. If the pip install below fails, pin the wheel"
+            warn "index explicitly: TORCH_INDEX_URL=... ./setup.sh (and/or PYTHON_BIN=...)."
+            PYTHON311="python3"
+        fi
+    fi
+fi
 
 if [ -z "$PYTHON311" ]; then
-    err "Python 3.11 not found on PATH."
-    err "CUDA PyTorch (cu121) wheels aren't published for every Python version —"
-    err "this project standardises on 3.11 specifically so the GPU build installs cleanly."
+    err "No suitable Python found on PATH (looked for python3.11, then python3 >= 3.10)."
+    err "CUDA PyTorch wheels aren't published for every Python version —"
+    err "this project standardises on 3.11 by default so the GPU build installs cleanly."
     err ""
     err "Install it with one of:"
     err "  Ubuntu/Debian:  sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt update && sudo apt install python3.11 python3.11-venv"
     err "  pyenv:          pyenv install 3.11.9"
+    err "Or point at whatever Python 3 you do have: PYTHON_BIN=python3.12 ./setup.sh"
     exit 1
 fi
 log "Found $("$PYTHON311" --version 2>&1) ($PYTHON311)"
@@ -66,7 +95,7 @@ source "$VENV_DIR/bin/activate" || warn "Could not source activate script — co
 
 "$VENV_PY" -m pip install --upgrade pip -q || fail_step "pip upgrade failed."
 
-# ── 4. Install CUDA PyTorch (cu121) ──────────────────────────────────────
+# ── 4. Install CUDA PyTorch ───────────────────────────────────────────────
 if "$VENV_PY" -c "
 import sys
 try:
@@ -79,11 +108,11 @@ sys.exit(0 if torch.cuda.is_available() else 1)
 else
     if ! command -v nvidia-smi >/dev/null 2>&1; then
         warn "nvidia-smi not found — no NVIDIA driver detected on this machine."
-        warn "Installing the cu121 wheel anyway; it will run CPU-only here."
+        warn "Installing the $TORCH_INDEX_URL wheel anyway; it will run CPU-only here."
     fi
-    log "Installing CUDA PyTorch (cu121)..."
-    "$VENV_PY" -m pip install torch --index-url https://download.pytorch.org/whl/cu121 -q \
-        || fail_step "torch (cu121) install failed."
+    log "Installing CUDA PyTorch ($TORCH_INDEX_URL)..."
+    "$VENV_PY" -m pip install torch --index-url "$TORCH_INDEX_URL" -q \
+        || fail_step "torch install from $TORCH_INDEX_URL failed. Wrong wheel index for this arch/GPU? Try overriding TORCH_INDEX_URL."
 fi
 
 # ── 5. Install all requirements ──────────────────────────────────────────

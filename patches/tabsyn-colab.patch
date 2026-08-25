@@ -30,7 +30,7 @@ index 6e98757..088b53b 100644
      model.train()
  
 diff --git a/tabsyn/vae/main.py b/tabsyn/vae/main.py
-index 56bc544..4db11c5 100644
+index 56bc544..3de04a9 100644
 --- a/tabsyn/vae/main.py
 +++ b/tabsyn/vae/main.py
 @@ -94,7 +94,7 @@ def main(args):
@@ -54,7 +54,7 @@ index 56bc544..4db11c5 100644
      best_train_loss = float('inf')
  
      current_lr = optimizer.param_groups[0]['lr']
-@@ -122,7 +122,77 @@ def main(args):
+@@ -122,7 +122,84 @@ def main(args):
  
      beta = max_beta
      start_time = time.time()
@@ -69,6 +69,13 @@ index 56bc544..4db11c5 100644
 +    _ckpt_every  = int(os.environ.get('TABSYN_CKPT_EVERY', '0') or '0')
 +    if _ckpt_dir:
 +        os.makedirs(_ckpt_dir, exist_ok=True)
++
++    # Optional early stop: end training once val_mse stays <= a target for a few
++    # consecutive epochs (0/unset disables -> runs the full num_epochs). Breaking
++    # the loop lets the post-loop block still save encoder/decoder/train_z.
++    _target_mse = float(os.environ.get('TABSYN_TARGET_VAL_MSE', '0') or '0')
++    _target_patience = int(os.environ.get('TABSYN_TARGET_PATIENCE', '3') or '3')
++    _below_count = 0
 +
 +    # --- Full-state crash-safe checkpoint/resume (env-var driven) ---
 +    # Unlike the weights-only periodic checkpoints above, this saves EVERYTHING
@@ -133,7 +140,7 @@ index 56bc544..4db11c5 100644
          pbar = tqdm(train_loader, total=len(train_loader))
          pbar.set_description(f"Epoch {epoch+1}/{num_epochs}")
  
-@@ -163,10 +233,26 @@ def main(args):
+@@ -163,10 +240,26 @@ def main(args):
          '''
          model.eval()
          with torch.no_grad():
@@ -164,7 +171,7 @@ index 56bc544..4db11c5 100644
  
              scheduler.step(val_loss)
              new_lr = optimizer.param_groups[0]['lr']
-@@ -188,7 +274,33 @@ def main(args):
+@@ -188,7 +281,50 @@ def main(args):
  
  
          # print('epoch: {}, beta = {:.6f}, Train MSE: {:.6f}, Train CE:{:.6f}, Train KL:{:.6f}, Train ACC:{:6f}'.format(epoch, beta, num_loss, cat_loss, kl_loss, train_acc.item()))
@@ -196,10 +203,27 @@ index 56bc544..4db11c5 100644
 +
 +        # Full-state save every epoch (atomic) so an interrupted long run resumes.
 +        _save_state(epoch)
++
++        # Optional target-based early stop (val_mse <= target for N in a row).
++        if _target_mse > 0:
++            _below_count = _below_count + 1 if val_mse_loss <= _target_mse else 0
++            if _below_count >= _target_patience:
++                _msg = ('EARLY STOP at epoch {e}/{tot}: val_mse {vm:.6f} <= target '
++                        '{tg:.6f} for {n} consecutive epochs'.format(
++                            e=epoch + 1, tot=num_epochs, vm=val_mse_loss,
++                            tg=_target_mse, n=_below_count))
++                print(_msg)
++                if _epoch_log:
++                    try:
++                        with open(_epoch_log, 'a') as _f:
++                            _f.write(time.strftime('%Y-%m-%d %H:%M:%S') + ' | ' + _msg + '\n')
++                    except Exception:
++                        pass
++                break
  
      end_time = time.time()
      print('Training time: {:.4f} mins'.format((end_time - start_time)/60))
-@@ -201,12 +313,17 @@ def main(args):
+@@ -201,17 +337,34 @@ def main(args):
          torch.save(pre_encoder.state_dict(), encoder_save_path)
          torch.save(pre_decoder.state_dict(), decoder_save_path)
  
@@ -221,6 +245,23 @@ index 56bc544..4db11c5 100644
  
          np.save(f'{ckpt_dir}/train_z.npy', train_z)
  
+         print('Successfully save pretrained embeddings in disk!')
+ 
++    # Clear completion marker so a watcher/user can tell the run finished cleanly
++    # (whether it hit num_epochs or early-stopped) and the diffusion-stage inputs
++    # (encoder.pt/decoder.pt/train_z.npy) are all on disk.
++    if _epoch_log:
++        try:
++            with open(_epoch_log, 'a') as _f:
++                _f.write(time.strftime('%Y-%m-%d %H:%M:%S') +
++                         ' | VAE DONE | encoder.pt/decoder.pt/train_z.npy saved to ' +
++                         f'{ckpt_dir}\n')
++        except Exception:
++            pass
++
+ if __name__ == '__main__':
+ 
+     parser = argparse.ArgumentParser(description='Variational Autoencoder')
 diff --git a/zero.py b/zero.py
 new file mode 100644
 index 0000000..f28bbb3

@@ -30,7 +30,7 @@ index 6e98757..088b53b 100644
      model.train()
  
 diff --git a/tabsyn/vae/main.py b/tabsyn/vae/main.py
-index 56bc544..581aae1 100644
+index 56bc544..4db11c5 100644
 --- a/tabsyn/vae/main.py
 +++ b/tabsyn/vae/main.py
 @@ -94,7 +94,7 @@ def main(args):
@@ -54,10 +54,11 @@ index 56bc544..581aae1 100644
      best_train_loss = float('inf')
  
      current_lr = optimizer.param_groups[0]['lr']
-@@ -122,7 +122,19 @@ def main(args):
+@@ -122,7 +122,77 @@ def main(args):
  
      beta = max_beta
      start_time = time.time()
+-    for epoch in range(num_epochs):
 +
 +    # --- Colab overnight-run instrumentation (env-var driven, no-op if unset) ---
 +    # TABSYN_EPOCH_LOG  : file (on Drive) to append one "epoch|loss|time" line/epoch
@@ -69,12 +70,70 @@ index 56bc544..581aae1 100644
 +    if _ckpt_dir:
 +        os.makedirs(_ckpt_dir, exist_ok=True)
 +
-     for epoch in range(num_epochs):
++    # --- Full-state crash-safe checkpoint/resume (env-var driven) ---
++    # Unlike the weights-only periodic checkpoints above, this saves EVERYTHING
++    # needed to continue a beta-annealed run exactly: model + optimizer +
++    # scheduler + beta + patience + best_train_loss + epoch counter. Written
++    # atomically every epoch to TABSYN_STATE_CKPT (default: {ckpt_dir}/resume_state.pt).
++    # If that file exists at startup (and TABSYN_RESUME != '0'), we load it and
++    # continue from the next epoch.
++    _state_ckpt = os.environ.get('TABSYN_STATE_CKPT', '')
++    if not _state_ckpt and _ckpt_dir:
++        _state_ckpt = os.path.join(_ckpt_dir, 'resume_state.pt')
++    _resume_on = os.environ.get('TABSYN_RESUME', '1') != '0'
++    start_epoch = 0
++
++    def _save_state(ep):
++        if not _state_ckpt:
++            return
++        try:
++            payload = {
++                'epoch': ep,
++                'model': model.state_dict(),
++                'optimizer': optimizer.state_dict(),
++                'scheduler': scheduler.state_dict(),
++                'beta': beta,
++                'patience': patience,
++                'best_train_loss': best_train_loss,
++                'current_lr': current_lr,
++                'num_epochs': num_epochs,
++            }
++            tmp = _state_ckpt + '.tmp'
++            torch.save(payload, tmp)
++            os.replace(tmp, _state_ckpt)   # atomic — survives a crash mid-write
++        except Exception as _sv_err:
++            print('WARN: resume-state save failed:', _sv_err)
++
++    if _resume_on and _state_ckpt and os.path.isfile(_state_ckpt):
++        try:
++            ck = torch.load(_state_ckpt, map_location=device)
++            model.load_state_dict(ck['model'])
++            optimizer.load_state_dict(ck['optimizer'])
++            scheduler.load_state_dict(ck['scheduler'])
++            beta = ck['beta']
++            patience = ck['patience']
++            best_train_loss = ck['best_train_loss']
++            current_lr = ck.get('current_lr', current_lr)
++            start_epoch = int(ck['epoch']) + 1
++            print(f'RESUMED from {_state_ckpt}: continuing at epoch {start_epoch+1}/'
++                  f'{num_epochs} (beta={beta:.6f}, best_val={best_train_loss:.6f})')
++            if _epoch_log:
++                try:
++                    with open(_epoch_log, 'a') as _f:
++                        _f.write(time.strftime('%Y-%m-%d %H:%M:%S') +
++                                 f' | RESUME from epoch {start_epoch} | beta={beta:.6f}\n')
++                except Exception:
++                    pass
++        except Exception as _rs_err:
++            print('WARN: resume-state load failed, starting fresh:', _rs_err)
++            start_epoch = 0
++
++    for epoch in range(start_epoch, num_epochs):
 +        epoch_t0 = time.time()
          pbar = tqdm(train_loader, total=len(train_loader))
          pbar.set_description(f"Epoch {epoch+1}/{num_epochs}")
  
-@@ -163,10 +175,26 @@ def main(args):
+@@ -163,10 +233,26 @@ def main(args):
          '''
          model.eval()
          with torch.no_grad():
@@ -105,7 +164,7 @@ index 56bc544..581aae1 100644
  
              scheduler.step(val_loss)
              new_lr = optimizer.param_groups[0]['lr']
-@@ -188,7 +216,30 @@ def main(args):
+@@ -188,7 +274,33 @@ def main(args):
  
  
          # print('epoch: {}, beta = {:.6f}, Train MSE: {:.6f}, Train CE:{:.6f}, Train KL:{:.6f}, Train ACC:{:6f}'.format(epoch, beta, num_loss, cat_loss, kl_loss, train_acc.item()))
@@ -134,10 +193,13 @@ index 56bc544..581aae1 100644
 +                print('Checkpoint saved:', _ck)
 +            except Exception as _ck_err:
 +                print('WARN: checkpoint save failed:', _ck_err)
++
++        # Full-state save every epoch (atomic) so an interrupted long run resumes.
++        _save_state(epoch)
  
      end_time = time.time()
      print('Training time: {:.4f} mins'.format((end_time - start_time)/60))
-@@ -201,12 +252,17 @@ def main(args):
+@@ -201,12 +313,17 @@ def main(args):
          torch.save(pre_encoder.state_dict(), encoder_save_path)
          torch.save(pre_decoder.state_dict(), decoder_save_path)
  

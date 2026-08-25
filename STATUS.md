@@ -50,6 +50,16 @@ by a 2→4 epoch resume test, and folded into `patches/tabsyn-colab.patch`.
 - If interrupted: just relaunch the same command — it auto-resumes from
   `resume_state.pt`. Does NOT auto-start diffusion.
 
+**Update (2026-08-26 02:47): VAE training COMPLETE — target met, auto-stopped.**
+Early-stopped at epoch 79/500 (val_mse 0.000807 <= target 0.000847 for 3
+consecutive epochs; best val_mse 0.000722 at epoch 77). beta annealed
+0.010 -> 0.007 -> 0.0049 -> 0.00343. ~5h wall on ASUS at batch 512 (vs ~30h for a
+full 500). Process exited clean. Final artifacts saved to
+`tabsyn/tabsyn/vae/ckpt/honeypot_sessions/`: model.pt, encoder.pt, decoder.pt,
+train_z.npy (2.8GB). Periodic/resume checkpoints in `tabsyn/vae_run_local/`
+(model_epoch0050.pt, resume_state.pt) + full per-epoch log in
+`vae_run_local/status.txt`. Diffusion was NOT started (by design).
+
 ---
 
 ## (session 1) 2026-08-11
@@ -63,7 +73,8 @@ by a 2→4 epoch resume test, and folded into `patches/tabsyn-colab.patch`.
 | 03_tabsyn_generation (data prep, cell 3.1) | ✅ Done | `tabsyn/data/honeypot_sessions/` prepared: 886,549 train / 98,506 test rows. Only 22/45 classes present (same gap as notebook 01/02 — cell 3's oversampling loop only touches classes present in the data). `info.json` still says `n_classes: 45` but the model's actual `category_embeddings` are sized `[22, 4]`. **Open question, see DECISIONS.md — not yet resolved.** |
 | 03_tabsyn_generation (VAE timing test) | ✅ Done | 3-epoch test run on this laptop (RTX 3050, batch 512): **~140 sec/epoch measured**. Hit and fixed 5 real bugs in the vendored `tabsyn/` code along the way (missing deps, ignored CLI args, 3x unbatched-forward-pass OOM, torch version-skew crash) — see ERRORS.md. Extrapolated full-run estimates: 500 epochs ≈ **19.4 hours**, 1000 ≈ 38.9h, 4000 (the old broken hardcoded default) ≈ 155h. |
 | 03_tabsyn_generation (real VAE run, 500 epochs) | ⏳ Deferred to college | 22/45-class scope confirmed correct by design (see DECISIONS.md) — no data-prep changes needed. Laptop run would be ~19.4h; user decided to run VAE on the college RTX 4500 Ada instead. All 5 bug fixes from today are in the vendored `tabsyn/` code itself, so they carry over — should NOT need rediscovering at college. |
-| 03_tabsyn_generation (diffusion) | ⏳ Deferred to college | Same session as VAE now. Diffusion also had the hardcoded-epoch bug (was always 10,001 epochs, not the notebook's intended 2,000) — now fixed, same pattern as VAE. Its own unbatched-eval-OOM risk has NOT been explicitly checked/fixed (lower priority since college has 24GB, but worth a quick look before a real run there). |
+| 03_tabsyn_generation (VAE, real run) | ✅ DONE (2026-08-26, ASUS) | 45-class VAE early-stopped at epoch 79, val_mse 0.000807 (< 0.000847 target). Artifacts at `tabsyn/tabsyn/vae/ckpt/honeypot_sessions/`. See the 2026-08-26 update below. |
+| 03_tabsyn_generation (diffusion) | ⏳ NOT started (next step) | VAE inputs (encoder/decoder/train_z) are ready. Diffusion still has its hardcoded-epoch bug fixed, but its own unbatched-eval-OOM risk has NOT been checked — on the 4GB ASUS this MUST be verified/fixed before a run (VAE needed 3 such fixes). Prefer DGX for diffusion. Does not auto-start. |
 | 04_great_generation | ⏳ Not started | |
 | 05_assembly_validation | ⏳ Not started | |
 

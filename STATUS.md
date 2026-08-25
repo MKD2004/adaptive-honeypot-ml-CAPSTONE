@@ -27,10 +27,28 @@ no local GPU training). Decision reversed to 45-class TabSyn (see DECISIONS.md).
   extractor NaN fixes, `.gitattributes` LF rule for *.patch.
 - ASUS power locked for overnight: AC sleep/monitor = never, lid-close = do nothing.
 
-**Training status: NOT yet started.** The notebook is built, validated, and pushed,
-but running it is a browser action on Colab (needs data uploaded to Drive first —
-see "Immediate next step"). Do not report VAE training as started until the user has
-run 03b and `tabsyn_status.txt` shows a START line.
+**Update (2026-08-25 ~21:52): VAE training is now RUNNING LOCALLY on the ASUS.**
+The Colab run crashed at ~5h/epoch 111 (checkpoint saved at epoch 100 only). Because
+TabSyn's checkpoints were weights-only (no beta/optimizer state), that run could not
+be cleanly resumed — the beta-annealing schedule that drove the loss down was lost.
+Decision (user's call): run a FRESH VAE on the ASUS laptop itself (secondary to DGX,
+which wasn't reachable). Before launching, added full-state crash-safe checkpoint/
+resume to `vae/main.py` (model+optimizer+scheduler+beta+patience+epoch), validated
+by a 2→4 epoch resume test, and folded into `patches/tabsyn-colab.patch`.
+
+- Data: prepared the 45-class merged set LOCALLY (same seeds as Colab): 1,387,698
+  train / 154,189 test rows at `tabsyn/data/honeypot_sessions/`. `category_embeddings`
+  is `[45, 4]` (confirmed 45-class, not the old `[22, 4]`).
+- Run: `main.py --method vae --epochs 500 --training_batch_size 512`, detached
+  (PID in `tabsyn/vae_run_local/train.pid`), logging to
+  `tabsyn/vae_run_local/status.txt`, checkpoints (every 50 + `resume_state.pt` every
+  epoch) in `tabsyn/vae_run_local/checkpoints/`.
+- Measured: **215.9 s/epoch** at batch 512 (no OOM) → ~30h for 500 epochs. At batch
+  512 there are 2711 steps/epoch (vs Colab's 339 at 4096), so it optimizes ~8x faster
+  per epoch — epoch 1 val_mse 0.006 already beats Colab's epoch-1 0.036. Likely hits
+  the 0.000847 target well before epoch 500.
+- If interrupted: just relaunch the same command — it auto-resumes from
+  `resume_state.pt`. Does NOT auto-start diffusion.
 
 ---
 

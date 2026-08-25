@@ -5,6 +5,32 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-08-25 — Run the VAE on the ASUS laptop after the Colab crash; add full-state resume first
+
+**Decision (user's call):** After the Colab VAE crashed at ~5h/epoch 111, run a
+FRESH 500-epoch VAE on the ASUS laptop itself — explicitly accepting that ASUS is
+normally forbidden from local GPU training and is secondary to the DGX (which was
+not reachable at the time). Not a resume of the Colab run.
+
+**Why not resume the Colab checkpoint:** the only saved artifact was
+`model_epoch0100.pt` = weights only. The beta-annealing schedule (0.01 -> 0.0034 by
+epoch 104), the Adam/optimizer state, and the patience counter — all of which drove
+val_mse down the staircase — were never saved. Warm-starting from weights alone
+resets beta to 0.01 and re-climbs the whole staircase, so it salvages little.
+
+**Why add full-state checkpointing before launching:** a ~30h local run WILL get
+interrupted. So `vae/main.py` now saves model+optimizer+scheduler+beta+patience+
+best_loss+epoch atomically every epoch to `resume_state.pt`, and resumes from it on
+restart (env-var driven; validated 2->4 epoch resume test). Folded into
+`patches/tabsyn-colab.patch`. This is exactly what the Colab run lacked.
+
+**How to apply:** the run lives at `tabsyn/vae_run_local/`. To resume after any
+interruption, relaunch the same `main.py --method vae --epochs 500
+--training_batch_size 512` with the same TABSYN_* env vars — it auto-continues from
+`resume_state.pt`. batch=512 is the 4GB-safe size (4096 OOMs); at 512 epoch 1 already
+beats Colab's epoch-1 loss because there are 8x more steps/epoch.
+
+
 ## 2026-08-25 — Merge simulated sessions into TabSyn input to cover all 45 classes (reverses the 2026-08-11 "22/45 correct by design" call)
 
 **Decision (user's call, option 3 of 3):** For the Colab overnight VAE run, TabSyn

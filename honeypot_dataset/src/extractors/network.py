@@ -33,6 +33,19 @@ def _byte_entropy(sizes: list) -> float:
     return float(-np.sum(arr * np.log2(arr)))
 
 
+def _safe_int(v, default: int) -> int:
+    # Handles None and NaN (fields absent for some real-data sources become
+    # NaN after pd.concat, not None — and NaN is truthy, so `v or default` doesn't catch it)
+    if v is None:
+        return default
+    try:
+        if isinstance(v, float) and v != v:
+            return default
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def extract_network(session: dict) -> np.ndarray:
     """
     Extract 28 network features.
@@ -64,8 +77,8 @@ def extract_network(session: dict) -> np.ndarray:
     mps_out  = float(np.mean(pkt_sizes_out)) if pkt_sizes_out else bo  / po
     pse_in   = _byte_entropy(pkt_sizes_in)
 
-    dst_port = int(session.get("dst_port", 22) or 22)
-    src_port = int(session.get("src_port", 0)  or 0)
+    dst_port = _safe_int(session.get("dst_port"), 22)
+    src_port = _safe_int(session.get("src_port"), 0)
     protocol = str(session.get("protocol","ssh") or "ssh").lower()
     flags    = str(session.get("tcp_flags","") or "").upper()
 

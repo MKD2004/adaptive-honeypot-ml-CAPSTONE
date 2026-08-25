@@ -60,7 +60,8 @@ def extract_temporal(session: dict) -> np.ndarray:
     n_cmds    = int(session.get("n_commands",  0) or 0)
 
     # Inter-arrival times
-    ts_list: List[float] = session.get("event_timestamps", [])
+    ts_list = session.get("event_timestamps")
+    ts_list = list(ts_list) if ts_list is not None else []
     if len(ts_list) >= 2:
         ts  = np.array(sorted(ts_list), dtype=np.float64)
         iat = np.diff(ts)

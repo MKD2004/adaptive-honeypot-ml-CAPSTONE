@@ -1,0 +1,212 @@
+diff --git a/tabsyn/main.py b/tabsyn/main.py
+index 6e98757..088b53b 100644
+--- a/tabsyn/main.py
++++ b/tabsyn/main.py
+@@ -32,7 +32,7 @@ def main(args):
+     train_data = train_z
+ 
+ 
+-    batch_size = 4096
++    batch_size = getattr(args, 'training_batch_size', 4096)
+     train_loader = DataLoader(
+         train_data,
+         batch_size = batch_size,
+@@ -40,7 +40,7 @@ def main(args):
+         num_workers = 4,
+     )
+ 
+-    num_epochs = 10000 + 1
++    num_epochs = getattr(args, 'epochs', 10000 + 1)
+ 
+     denoise_fn = MLPDiffusion(in_dim, 1024).to(device)
+     print(denoise_fn)
+@@ -51,7 +51,7 @@ def main(args):
+     model = Model(denoise_fn = denoise_fn, hid_dim = train_z.shape[1]).to(device)
+ 
+     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=0)
+-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.9, patience=20, verbose=True)
++    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.9, patience=20)
+ 
+     model.train()
+ 
+diff --git a/tabsyn/vae/main.py b/tabsyn/vae/main.py
+index 56bc544..581aae1 100644
+--- a/tabsyn/vae/main.py
++++ b/tabsyn/vae/main.py
+@@ -94,7 +94,7 @@ def main(args):
+     X_test_num = X_test_num.float().to(device)
+     X_test_cat = X_test_cat.to(device)
+ 
+-    batch_size = 4096
++    batch_size = getattr(args, 'training_batch_size', 4096)
+     train_loader = DataLoader(
+         train_data,
+         batch_size = batch_size,
+@@ -112,9 +112,9 @@ def main(args):
+     pre_decoder.eval()
+ 
+     optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WD)
+-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.95, patience=10, verbose=True)
++    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.95, patience=10)
+ 
+-    num_epochs = 4000
++    num_epochs = getattr(args, 'epochs', 4000)
+     best_train_loss = float('inf')
+ 
+     current_lr = optimizer.param_groups[0]['lr']
+@@ -122,7 +122,19 @@ def main(args):
+ 
+     beta = max_beta
+     start_time = time.time()
++
++    # --- Colab overnight-run instrumentation (env-var driven, no-op if unset) ---
++    # TABSYN_EPOCH_LOG  : file (on Drive) to append one "epoch|loss|time" line/epoch
++    # TABSYN_CKPT_DIR   : dir  (on Drive) to copy periodic model checkpoints into
++    # TABSYN_CKPT_EVERY : checkpoint interval in epochs (0/unset disables)
++    _epoch_log   = os.environ.get('TABSYN_EPOCH_LOG', '')
++    _ckpt_dir    = os.environ.get('TABSYN_CKPT_DIR', '')
++    _ckpt_every  = int(os.environ.get('TABSYN_CKPT_EVERY', '0') or '0')
++    if _ckpt_dir:
++        os.makedirs(_ckpt_dir, exist_ok=True)
++
+     for epoch in range(num_epochs):
++        epoch_t0 = time.time()
+         pbar = tqdm(train_loader, total=len(train_loader))
+         pbar.set_description(f"Epoch {epoch+1}/{num_epochs}")
+ 
+@@ -163,10 +175,26 @@ def main(args):
+         '''
+         model.eval()
+         with torch.no_grad():
+-            Recon_X_num, Recon_X_cat, mu_z, std_z = model(X_test_num, X_test_cat)
+-
+-            val_mse_loss, val_ce_loss, val_kl_loss, val_acc = compute_loss(X_test_num, X_test_cat, Recon_X_num, Recon_X_cat, mu_z, std_z)
+-            val_loss = val_mse_loss.item() * 0 + val_ce_loss.item()    
++            # Chunked eval: running the full test set through attention in one
++            # forward pass OOMs once the test set is large (e.g. 4GB cards with
++            # a ~100k-row test split) -- accumulate loss over batches instead.
++            n_test = X_test_num.shape[0]
++            total_mse = total_ce = total_kl = total_acc = 0.0
++            total_n = 0
++            for i in range(0, n_test, batch_size):
++                chunk_num = X_test_num[i:i + batch_size]
++                chunk_cat = X_test_cat[i:i + batch_size]
++                r_num, r_cat, mu_c, std_c = model(chunk_num, chunk_cat)
++                c_mse, c_ce, c_kl, c_acc = compute_loss(chunk_num, chunk_cat, r_num, r_cat, mu_c, std_c)
++                n = chunk_num.shape[0]
++                total_mse += c_mse.item() * n
++                total_ce  += (c_ce.item() if not isinstance(c_ce, int) else c_ce) * n
++                total_kl  += c_kl.item() * n
++                total_acc += c_acc.item() * n
++                total_n   += n
++            val_mse_loss, val_ce_loss, val_kl_loss, val_acc = (
++                total_mse / total_n, total_ce / total_n, total_kl / total_n, total_acc / total_n)
++            val_loss = val_mse_loss * 0 + val_ce_loss
+ 
+             scheduler.step(val_loss)
+             new_lr = optimizer.param_groups[0]['lr']
+@@ -188,7 +216,30 @@ def main(args):
+ 
+ 
+         # print('epoch: {}, beta = {:.6f}, Train MSE: {:.6f}, Train CE:{:.6f}, Train KL:{:.6f}, Train ACC:{:6f}'.format(epoch, beta, num_loss, cat_loss, kl_loss, train_acc.item()))
+-        print('epoch: {}, beta = {:.6f}, Train MSE: {:.6f}, Train CE:{:.6f}, Train KL:{:.6f}, Val MSE:{:.6f}, Val CE:{:.6f}, Train ACC:{:6f}, Val ACC:{:6f}'.format(epoch, beta, num_loss, cat_loss, kl_loss, val_mse_loss.item(), val_ce_loss.item(), train_acc.item(), val_acc.item() ))
++        print('epoch: {}, beta = {:.6f}, Train MSE: {:.6f}, Train CE:{:.6f}, Train KL:{:.6f}, Val MSE:{:.6f}, Val CE:{:.6f}, Train ACC:{:6f}, Val ACC:{:6f}'.format(epoch, beta, num_loss, cat_loss, kl_loss, val_mse_loss, val_ce_loss, train_acc.item(), val_acc ))
++
++        # --- Colab overnight-run instrumentation (see block before the loop) ---
++        _epoch_secs = time.time() - epoch_t0
++        if _epoch_log:
++            try:
++                with open(_epoch_log, 'a') as _f:
++                    _f.write(
++                        '{ts} | epoch {e}/{tot} | train_mse {tr:.6f} | '
++                        'val_mse {vm:.6f} | best_val {bv:.6f} | beta {b:.6f} | '
++                        '{sec:.1f}s\n'.format(
++                            ts=time.strftime('%Y-%m-%d %H:%M:%S'),
++                            e=epoch + 1, tot=num_epochs, tr=num_loss,
++                            vm=val_mse_loss, bv=best_train_loss, b=beta,
++                            sec=_epoch_secs))
++            except Exception as _log_err:
++                print('WARN: epoch-log write failed:', _log_err)
++        if _ckpt_dir and _ckpt_every and ((epoch + 1) % _ckpt_every == 0):
++            try:
++                _ck = os.path.join(_ckpt_dir, 'model_epoch{:04d}.pt'.format(epoch + 1))
++                torch.save(model.state_dict(), _ck)
++                print('Checkpoint saved:', _ck)
++            except Exception as _ck_err:
++                print('WARN: checkpoint save failed:', _ck_err)
+ 
+     end_time = time.time()
+     print('Training time: {:.4f} mins'.format((end_time - start_time)/60))
+@@ -201,12 +252,17 @@ def main(args):
+         torch.save(pre_encoder.state_dict(), encoder_save_path)
+         torch.save(pre_decoder.state_dict(), decoder_save_path)
+ 
+-        X_train_num = X_train_num.to(device)
+-        X_train_cat = X_train_cat.to(device)
+-
+         print('Successfully load and save the model!')
+ 
+-        train_z = pre_encoder(X_train_num, X_train_cat).detach().cpu().numpy()
++        # Chunked encode: same OOM risk as eval above, but for the whole
++        # training set (larger, so it's an even bigger unbatched allocation).
++        n_train = X_train_num.shape[0]
++        z_chunks = []
++        for i in range(0, n_train, batch_size):
++            chunk_num = X_train_num[i:i + batch_size].to(device)
++            chunk_cat = X_train_cat[i:i + batch_size].to(device)
++            z_chunks.append(pre_encoder(chunk_num, chunk_cat).detach().cpu().numpy())
++        train_z = np.concatenate(z_chunks, axis=0)
+ 
+         np.save(f'{ckpt_dir}/train_z.npy', train_z)
+ 
+diff --git a/zero.py b/zero.py
+new file mode 100644
+index 0000000..f28bbb3
+--- /dev/null
++++ b/zero.py
+@@ -0,0 +1,45 @@
++# Minimal local shim for the "zero" ML-training-utility API that TabSyn's
++# vendored src/ package expects (src/deep.py, src/util.py). NOT the PyPI
++# "zero" package (a linear circuit simulator that squats this name) --
++# pip has no installable version of the original Yandex Research "zero"
++# library, so this replaces it. Only implements what's actually referenced:
++# zero.random.get_state/set_state, zero.iter_batches, zero.hardware.get_gpus_info.
++# Shadows the PyPI package because Python puts the running script's own
++# directory (tabsyn/) ahead of site-packages on sys.path.
++import random as _random
++
++import numpy as _np
++import torch as _torch
++
++
++class random:
++    @staticmethod
++    def get_state():
++        return (_random.getstate(), _np.random.get_state(), _torch.get_rng_state())
++
++    @staticmethod
++    def set_state(state):
++        py_state, np_state, torch_state = state
++        _random.setstate(py_state)
++        _np.random.set_state(np_state)
++        _torch.set_rng_state(torch_state)
++
++
++def iter_batches(batch, chunk_size):
++    n = len(batch)
++    for i in range(0, n, chunk_size):
++        if isinstance(batch, (tuple, list)):
++            yield type(batch)(x[i:i + chunk_size] for x in batch)
++        else:
++            yield batch[i:i + chunk_size]
++
++
++class hardware:
++    @staticmethod
++    def get_gpus_info():
++        if not _torch.cuda.is_available():
++            return []
++        return [{
++            "name": _torch.cuda.get_device_name(i),
++            "memory_total": _torch.cuda.get_device_properties(i).total_memory,
++        } for i in range(_torch.cuda.device_count())]

@@ -1,5 +1,5 @@
 diff --git a/tabsyn/main.py b/tabsyn/main.py
-index 6e98757..088b53b 100644
+index 6e98757..8c8ac81 100644
 --- a/tabsyn/main.py
 +++ b/tabsyn/main.py
 @@ -32,7 +32,7 @@ def main(args):
@@ -20,7 +20,7 @@ index 6e98757..088b53b 100644
  
      denoise_fn = MLPDiffusion(in_dim, 1024).to(device)
      print(denoise_fn)
-@@ -51,7 +51,7 @@ def main(args):
+@@ -51,15 +51,75 @@ def main(args):
      model = Model(denoise_fn = denoise_fn, hid_dim = train_z.shape[1]).to(device)
  
      optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=0)
@@ -29,6 +29,154 @@ index 6e98757..088b53b 100644
  
      model.train()
  
+     best_loss = float('inf')
+     patience = 0
+     start_time = time.time()
+-    for epoch in range(num_epochs):
+-        
++
++    # --- Crash-safe checkpoint/resume + logging + early stop (env-var driven;
++    #     mirrors the VAE instrumentation). All no-ops when the vars are unset. ---
++    _epoch_log   = os.environ.get('TABSYN_EPOCH_LOG', '')
++    _ckpt_dir    = os.environ.get('TABSYN_CKPT_DIR', '')
++    _ckpt_every  = int(os.environ.get('TABSYN_CKPT_EVERY', '0') or '0')
++    if _ckpt_dir:
++        os.makedirs(_ckpt_dir, exist_ok=True)
++    _state_ckpt = os.environ.get('TABSYN_STATE_CKPT', '')
++    if not _state_ckpt and _ckpt_dir:
++        _state_ckpt = os.path.join(_ckpt_dir, 'diff_resume_state.pt')
++    _resume_on = os.environ.get('TABSYN_RESUME', '1') != '0'
++    # Optional target-loss early stop (diffusion training loss). 0/unset disables.
++    _target_loss = float(os.environ.get('TABSYN_TARGET_LOSS', '0') or '0')
++    _target_patience = int(os.environ.get('TABSYN_TARGET_PATIENCE', '3') or '3')
++    _below_count = 0
++    # Convergence early stop: stop after N epochs with no new best (upstream: 500).
++    _converge_patience = int(os.environ.get('TABSYN_CONVERGE_PATIENCE', '500') or '500')
++    start_epoch = 0
++
++    def _save_state(ep):
++        if not _state_ckpt:
++            return
++        try:
++            payload = {
++                'epoch': ep, 'model': model.state_dict(),
++                'optimizer': optimizer.state_dict(), 'scheduler': scheduler.state_dict(),
++                'best_loss': best_loss, 'patience': patience,
++                'below_count': _below_count, 'num_epochs': num_epochs,
++            }
++            tmp = _state_ckpt + '.tmp'
++            torch.save(payload, tmp)
++            os.replace(tmp, _state_ckpt)   # atomic — survives a crash mid-write
++        except Exception as _sv_err:
++            print('WARN: diffusion resume-state save failed:', _sv_err)
++
++    if _resume_on and _state_ckpt and os.path.isfile(_state_ckpt):
++        try:
++            ck = torch.load(_state_ckpt, map_location=device)
++            model.load_state_dict(ck['model'])
++            optimizer.load_state_dict(ck['optimizer'])
++            scheduler.load_state_dict(ck['scheduler'])
++            best_loss = ck['best_loss']
++            patience = ck['patience']
++            _below_count = ck.get('below_count', 0)
++            start_epoch = int(ck['epoch']) + 1
++            print('RESUMED diffusion from {}: epoch {}/{} (best_loss={:.6f})'.format(
++                _state_ckpt, start_epoch + 1, num_epochs, best_loss))
++            if _epoch_log:
++                try:
++                    with open(_epoch_log, 'a') as _f:
++                        _f.write(time.strftime('%Y-%m-%d %H:%M:%S') +
++                                 f' | DIFFUSION RESUME from epoch {start_epoch}\n')
++                except Exception:
++                    pass
++        except Exception as _rs_err:
++            print('WARN: diffusion resume load failed, starting fresh:', _rs_err)
++            start_epoch = 0
++
++    for epoch in range(start_epoch, num_epochs):
++        epoch_t0 = time.time()
++
+         pbar = tqdm(train_loader, total=len(train_loader))
+         pbar.set_description(f"Epoch {epoch+1}/{num_epochs}")
+ 
+@@ -89,8 +149,58 @@ def main(args):
+             torch.save(model.state_dict(), f'{ckpt_path}/model.pt')
+         else:
+             patience += 1
+-            if patience == 500:
+-                print('Early stopping')
++
++        # --- per-epoch instrumentation (mirrors VAE) ---
++        _epoch_secs = time.time() - epoch_t0
++        if _epoch_log:
++            try:
++                with open(_epoch_log, 'a') as _f:
++                    _f.write('{ts} | epoch {e}/{tot} | loss {l:.6f} | best {b:.6f} | '
++                             'patience {p} | {sec:.1f}s\n'.format(
++                                 ts=time.strftime('%Y-%m-%d %H:%M:%S'), e=epoch + 1,
++                                 tot=num_epochs, l=curr_loss, b=best_loss,
++                                 p=patience, sec=_epoch_secs))
++            except Exception as _le:
++                print('WARN: epoch-log write failed:', _le)
++        if _ckpt_dir and _ckpt_every and ((epoch + 1) % _ckpt_every == 0):
++            try:
++                _ck = os.path.join(_ckpt_dir, 'model_epoch{:05d}.pt'.format(epoch + 1))
++                torch.save(model.state_dict(), _ck)
++                print('Checkpoint saved:', _ck)
++            except Exception as _ce:
++                print('WARN: checkpoint save failed:', _ce)
++        # Full-state save every epoch (atomic) so an interrupted run resumes.
++        _save_state(epoch)
++
++        # Convergence early stop: no new best for _converge_patience epochs.
++        if patience >= _converge_patience:
++            _msg = ('EARLY STOP (convergence) at epoch {e}/{tot}: no improvement '
++                    'for {n} epochs (best_loss {b:.6f})'.format(
++                        e=epoch + 1, tot=num_epochs, n=_converge_patience, b=best_loss))
++            print(_msg)
++            if _epoch_log:
++                try:
++                    with open(_epoch_log, 'a') as _f:
++                        _f.write(time.strftime('%Y-%m-%d %H:%M:%S') + ' | ' + _msg + '\n')
++                except Exception:
++                    pass
++            break
++
++        # Optional target-loss early stop (loss <= target for N in a row).
++        if _target_loss > 0:
++            _below_count = _below_count + 1 if curr_loss <= _target_loss else 0
++            if _below_count >= _target_patience:
++                _msg = ('EARLY STOP at epoch {e}/{tot}: loss {l:.6f} <= target '
++                        '{tg:.6f} for {n} consecutive epochs'.format(
++                            e=epoch + 1, tot=num_epochs, l=curr_loss,
++                            tg=_target_loss, n=_below_count))
++                print(_msg)
++                if _epoch_log:
++                    try:
++                        with open(_epoch_log, 'a') as _f:
++                            _f.write(time.strftime('%Y-%m-%d %H:%M:%S') + ' | ' + _msg + '\n')
++                    except Exception:
++                        pass
+                 break
+ 
+         if epoch % 1000 == 0:
+@@ -99,6 +209,16 @@ def main(args):
+     end_time = time.time()
+     print('Time: ', end_time - start_time)
+ 
++    # Completion marker so a watcher/user can tell the diffusion run finished.
++    if _epoch_log:
++        try:
++            with open(_epoch_log, 'a') as _f:
++                _f.write(time.strftime('%Y-%m-%d %H:%M:%S') +
++                         ' | DIFFUSION DONE | best_loss {:.6f} | model.pt saved to '.format(best_loss) +
++                         f'{ckpt_path}\n')
++        except Exception:
++            pass
++
+ if __name__ == '__main__':
+ 
+     parser = argparse.ArgumentParser(description='Training of TabSyn')
 diff --git a/tabsyn/vae/main.py b/tabsyn/vae/main.py
 index 56bc544..3de04a9 100644
 --- a/tabsyn/vae/main.py

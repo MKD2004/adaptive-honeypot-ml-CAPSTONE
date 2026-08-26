@@ -1,5 +1,5 @@
 diff --git a/tabsyn/main.py b/tabsyn/main.py
-index 6e98757..8c8ac81 100644
+index 6e98757..defcbe0 100644
 --- a/tabsyn/main.py
 +++ b/tabsyn/main.py
 @@ -32,7 +32,7 @@ def main(args):
@@ -20,7 +20,7 @@ index 6e98757..8c8ac81 100644
  
      denoise_fn = MLPDiffusion(in_dim, 1024).to(device)
      print(denoise_fn)
-@@ -51,15 +51,75 @@ def main(args):
+@@ -51,15 +51,79 @@ def main(args):
      model = Model(denoise_fn = denoise_fn, hid_dim = train_z.shape[1]).to(device)
  
      optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=0)
@@ -52,6 +52,10 @@ index 6e98757..8c8ac81 100644
 +    _below_count = 0
 +    # Convergence early stop: stop after N epochs with no new best (upstream: 500).
 +    _converge_patience = int(os.environ.get('TABSYN_CONVERGE_PATIENCE', '500') or '500')
++    # Gradient clipping (max grad norm). 0/unset = off (upstream behavior). The
++    # unclipped lr=1e-3 config diverges on this data at batch 4096 (loss collapses
++    # to a flat ~0.744 around epoch 63); clipping to ~1.0 prevents that spike.
++    _grad_clip = float(os.environ.get('TABSYN_GRAD_CLIP', '0') or '0')
 +    start_epoch = 0
 +
 +    def _save_state(ep):
@@ -99,7 +103,16 @@ index 6e98757..8c8ac81 100644
          pbar = tqdm(train_loader, total=len(train_loader))
          pbar.set_description(f"Epoch {epoch+1}/{num_epochs}")
  
-@@ -89,8 +149,58 @@ def main(args):
+@@ -76,6 +140,8 @@ def main(args):
+ 
+             optimizer.zero_grad()
+             loss.backward()
++            if _grad_clip > 0:
++                torch.nn.utils.clip_grad_norm_(model.parameters(), _grad_clip)
+             optimizer.step()
+ 
+             pbar.set_postfix({"Loss": loss.item()})
+@@ -89,8 +155,58 @@ def main(args):
              torch.save(model.state_dict(), f'{ckpt_path}/model.pt')
          else:
              patience += 1
@@ -160,7 +173,7 @@ index 6e98757..8c8ac81 100644
                  break
  
          if epoch % 1000 == 0:
-@@ -99,6 +209,16 @@ def main(args):
+@@ -99,6 +215,16 @@ def main(args):
      end_time = time.time()
      print('Time: ', end_time - start_time)
  

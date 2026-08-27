@@ -91,3 +91,41 @@ per-machine files (`ASUS.md`, your `<MACHINE>.md`).
 **Which are shared/project-wide** (identical meaning on every machine — read, but
 don't fork or edit without asking): `CLAUDE.md`, `README.md`, `SCHEMA.md`,
 `DECISIONS.md`, `ERRORS.md`, and this `TEAMMATES.md`.
+
+---
+
+## Copy-paste prompts for Claude Code (use these — same for everyone)
+
+### A) Fresh session (paste as your FIRST message in a new Claude Code session)
+
+```
+This is a shared capstone repo; GitHub main is the single source of truth.
+Before anything else:
+1. Run: git pull origin main
+2. Read these files fully and treat them as binding: CLAUDE.md, TEAMMATES.md,
+   DECISIONS.md, ERRORS.md, SCHEMA.md, STATUS.md, and this machine's file
+   (DGX.md on the college DGX; ASUS.md/<MACHINE>.md on a laptop).
+3. Follow TEAMMATES.md's HARD RULES exactly. In particular: do NOT run or edit
+   the dataset pipeline (honeypot_dataset/), do NOT run or edit any notebook
+   (01-05, 03b), do NOT touch tabsyn/, and do NOT write MT3 code. If I ask for
+   any of those and I am not the dataset owner, refuse and tell me why.
+My role on this machine: <e.g. CNN-LSTM + DistilBERT baseline in ml_analytics/>.
+Do not run any heavy training or notebook until I explicitly say so.
+First: summarize the current status from STATUS.md and tell me what is safe for
+me to work on. Then wait for my instruction.
+```
+
+### B) After every `git pull` (paste before you write/change any code)
+
+```
+I just ran: git pull origin main
+Before you write or change any code, re-read CLAUDE.md, TEAMMATES.md,
+DECISIONS.md, ERRORS.md, and STATUS.md, then tell me:
+(1) what changed since last time that affects my module,
+(2) any new rule, interface, schema, or file-layout change I must follow,
+(3) confirm you will stay within TEAMMATES.md's rules and my assigned module.
+Then wait - do not start coding yet.
+```
+
+Keeping these identical across the team is what prevents Claude Code sessions from
+drifting into "different versions" of the project.

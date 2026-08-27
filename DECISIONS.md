@@ -277,3 +277,13 @@ even though notebook 03 cell 5 is written to run both stages back-to-back
 (`run_tabsyn_step("vae", ...)` then `run_tabsyn_step("tabsyn", ...)`). Either run
 the VAE step in isolation (call `main.py --method vae` directly) or edit the cell
 to stop after Stage 1 until diffusion is explicitly greenlit.
+
+## 2026-08-28 — Adversarial AUC ~0.998 is a benign pipeline fingerprint, not poor fidelity
+
+Full analysis in `FIDELITY_ANALYSIS.md`. Summary: real-vs-real control = 0.50
+(metric is calibrated), so the ~0.998 is real signal; it is NOT from the synthetic
+Cowrie (CIC/UNSW-only = 0.9979) and is stamped at BOTH the VAE round-trip (AUC 1.0)
+and the diffusion latent stage (AUC 1.0), VAE-first. It lives in fine joint
+structure — marginals match to ~3 decimals, VAE MSE 0.0008 — so downstream utility
+is strong (TSTR macro-F1 0.99 on real CIC/UNSW classes). Report utility (TSTR), not
+adversarial AUC alone, as the fidelity metric. Distinguishable != not useful.

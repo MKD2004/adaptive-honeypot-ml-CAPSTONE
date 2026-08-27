@@ -46,9 +46,43 @@ re-apply the TabSyn fixes.
   TabSyn, `git checkout cb5ac0f`, then `git apply patches/tabsyn-colab.patch`.
   That gives you every fix: VRAM batching, CLI wiring, `zero.py` shim, resume,
   early-stop, gradient clipping, batched sampling.
-- The dataset artifacts (`X_real.npy`, `y_real.npy`, `semantic_pca.pkl`,
-  `train_z.npy`, `tabsyn/data/honeypot_sessions/`) are git-ignored too — transfer
-  them from the laptop (see `SETUP.md`'s `college_transfer/` list).
+- The dataset artifacts below are git-ignored — they will NOT arrive via
+  `git pull`. Transfer the zips from the laptop and unzip to the paths in the
+  manifest.
+
+## Transfer manifest (what to copy from the laptop and where to put it)
+
+`git clone` gets all the CODE (notebooks, `configs/`, `src/`, `patches/`,
+`ml_analytics/`, the `.md` docs). Only the **data** must be transferred manually.
+All destination paths are **relative to the repo root** on the DGX.
+
+| Transfer this (from laptop repo root) | Unzip / place at (DGX, repo-relative) | Needed for |
+|---|---|---|
+| **`honeysynth_final.zip`** | `honeypot_dataset/data/final/` | **CNN-LSTM baseline + MT3 training — the PRIMARY artifact.** Frozen splits + scaler. |
+| `real_dataset_Xy.zip` (`X_real.npy`, `y_real.npy`) | `honeypot_dataset/data/processed/` | GReaT (notebook 04) later; also the 22-class real-only fallback |
+| `honeypot_dataset/data/processed/semantic_pca.pkl` | `honeypot_dataset/data/processed/` | only if re-extracting features / GReaT semantic branch |
+
+**Unzip commands (from the repo root on the DGX):**
+```bash
+mkdir -p honeypot_dataset/data/final honeypot_dataset/data/processed
+unzip honeysynth_final.zip -d honeypot_dataset/data/final/
+unzip real_dataset_Xy.zip  -d honeypot_dataset/data/processed/   # if doing GReaT / fallback
+```
+
+**What the models train on:** everything in `honeypot_dataset/data/final/` —
+```
+X_train.npy (756k) / X_val.npy / X_test_synth.npy / X_test_real.npy  + matching y_*.npy
+feature_scaler.pkl   <- BOTH CNN-LSTM and MT3 must load this same scaler (do not re-fit)
+dataset_card.json / quality_report.json
+```
+Evaluate on **`X_test_real`** (60k, 21 real classes) as the headline metric;
+`X_test_synth` (60k, 45 classes) shows full-taxonomy behavior. Same splits + same
+scaler for both models = a fair baseline-vs-MT3 comparison.
+
+**Only needed if you also run TabSyn/GReaT here** (not for the baseline): apply the
+patch (`git checkout cb5ac0f` + `git apply patches/tabsyn-colab.patch` in a fresh
+tabsyn clone), and transfer `tabsyn/tabsyn/vae/ckpt/honeypot_sessions/train_z.npy`
+(2.8 GB) + `tabsyn/data/honeypot_sessions/` only if re-sampling TabSyn.
 
 ## Running jobs here — ALWAYS launch detached
 

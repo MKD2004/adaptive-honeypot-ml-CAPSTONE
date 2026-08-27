@@ -105,11 +105,17 @@ back. The code and the shared docs above are byte-identical everywhere; only the
 system-specific files differ per machine. Read this machine's `<MACHINE>.md` for its
 role. Do not edit shared files locally without pushing — that is how sessions drift.
 
-## Current Status (2026-08-11)
+## Current Status (2026-08-27)
 
-Notebook 01 (process real data): **done** — 737,319 real sessions, 22/45 micro-states
-covered (label-mapping bugs fixed, see ERRORS.md).
-Notebook 02 (feature extraction): **in progress** — 3 NaN-handling crash bugs found and
-fixed in `src/extractors/` (see ERRORS.md), re-running.
-Notebooks 03-05: not started. CUDA torch installed and verified on the laptop GPU.
-See `STATUS.md` for the live/detailed version of this.
+**`STATUS.md` is the live, detailed source — this is only a coarse snapshot.**
+
+- Notebook 01 (process real data): **done** — 737,319 real sessions, 22/45 micro-states.
+- Notebook 02 (feature extraction): **done** — `X_real.npy`/`y_real.npy`/`semantic_pca.pkl`.
+- Notebook 03 (TabSyn): **in progress** — 45-class data prepped (real + simulator merge,
+  1.39M rows); **VAE done** (early-stopped epoch 79, val_mse 0.000807); **diffusion running**
+  on the ASUS (grad-clip fix after a run-1 collapse). Sampling (720k) is the next step.
+- Notebook 04 (GReaT): **deferred** for the review-freeze (add later; runs on DGX).
+- Notebook 05 (assembly): **edited to be GReaT-optional**, not yet run.
+
+Review plan (2026-08-27): freeze dataset at real + TabSyn, train CNN-LSTM baseline + MT3
+on the DGX, compare. Real-only (22-class) is the fallback. See `DECISIONS.md`/`STATUS.md`.

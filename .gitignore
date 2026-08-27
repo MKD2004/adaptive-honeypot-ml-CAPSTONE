@@ -10,3 +10,4 @@ honeypot_dataset/venv/
 *.pkl
 *.parquet
 tabsyn/
+*.zip

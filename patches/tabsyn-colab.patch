@@ -191,10 +191,10 @@ index 6e98757..defcbe0 100644
  
      parser = argparse.ArgumentParser(description='Training of TabSyn')
 diff --git a/tabsyn/sample.py b/tabsyn/sample.py
-index bfded1c..44956df 100644
+index bfded1c..8d10dbd 100644
 --- a/tabsyn/sample.py
 +++ b/tabsyn/sample.py
-@@ -33,13 +33,30 @@ def main(args):
+@@ -33,16 +33,40 @@ def main(args):
      '''
      start_time = time.time()
  
@@ -205,7 +205,17 @@ index bfded1c..44956df 100644
 +    # TABSYN_SAMPLE_BATCH-sized chunks, moving each to CPU, and accumulate.
 +    # TABSYN_N_SAMPLE overrides the count (default = train_z.shape[0]); this also
 +    # makes upstream's ignored --num-samples effectively controllable via env.
++    # Batched sample+decode: upstream ran ALL num_samples rows through the 50-step
++    # sampler AND then the attention VAE-decoder in one shot -> two full-dataset
++    # allocations (a ~2.9GB latent tensor on GPU, and a ~48GB attention tensor on
++    # CPU for 720k rows: 720000*129*129*4). Process each TABSYN_SAMPLE_BATCH-sized
++    # chunk end-to-end (sample -> split_num_cat_target/decode -> recover_data) and
++    # accumulate the recovered DataFrames, so neither the GPU nor CPU ever sees the
++    # whole set at once. TABSYN_N_SAMPLE overrides the count (upstream ignored
++    # --num-samples). Default batch is small (20k) because the decoder attention
++    # tensor scales as batch*n_tokens^2.
 +    import os
++    import pandas as pd
 +    num_samples = int(os.environ.get('TABSYN_N_SAMPLE', '0') or '0') or train_z.shape[0]
      sample_dim = in_dim
 -
@@ -213,24 +223,27 @@ index bfded1c..44956df 100644
 -    x_next = x_next * 2 + mean.to(device)
 -
 -    syn_data = x_next.float().cpu().numpy()
-+    sample_bs = int(os.environ.get('TABSYN_SAMPLE_BATCH', '50000') or '50000')
+-    syn_num, syn_cat, syn_target = split_num_cat_target(syn_data, info, num_inverse, cat_inverse, args.device) 
+-
+-    syn_df = recover_data(syn_num, syn_cat, syn_target, info)
++    sample_bs = int(os.environ.get('TABSYN_SAMPLE_BATCH', '20000') or '20000')
 +
 +    mean_dev = mean.to(device)
-+    chunks = []
++    dfs = []
 +    done = 0
 +    while done < num_samples:
 +        n = min(sample_bs, num_samples - done)
 +        xb = sample(model.denoise_fn_D, n, sample_dim, device=device)
 +        xb = xb * 2 + mean_dev
-+        chunks.append(xb.float().cpu())
++        syn_data = xb.float().cpu().numpy()
++        s_num, s_cat, s_target = split_num_cat_target(syn_data, info, num_inverse, cat_inverse, args.device)
++        dfs.append(recover_data(s_num, s_cat, s_target, info))
 +        done += n
-+        print(f'  sampled {done}/{num_samples}')
-+    x_next = torch.cat(chunks, 0)
-+
-+    syn_data = x_next.numpy()
-     syn_num, syn_cat, syn_target = split_num_cat_target(syn_data, info, num_inverse, cat_inverse, args.device) 
++        print(f'  sampled+decoded {done}/{num_samples}', flush=True)
++    syn_df = pd.concat(dfs, ignore_index=True)
  
-     syn_df = recover_data(syn_num, syn_cat, syn_target, info)
+     idx_name_mapping = info['idx_name_mapping']
+     idx_name_mapping = {int(key): value for key, value in idx_name_mapping.items()}
 diff --git a/tabsyn/vae/main.py b/tabsyn/vae/main.py
 index 56bc544..3de04a9 100644
 --- a/tabsyn/vae/main.py

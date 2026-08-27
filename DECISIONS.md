@@ -5,6 +5,40 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-08-27 — Freeze the dataset at real + TabSyn for the review; GReaT + all models on DGX
+
+**Decision (user's call):** For the review in ~2 days (CNN-LSTM baseline vs MT3
+comparison), FREEZE the training dataset at **real + TabSyn** and skip GReaT for
+now. Add GReaT later only if time allows. The three heavy jobs — GReaT fine-tuning,
+the CNN-LSTM+DistilBERT baseline, and MT3 — all run on the **college DGX Spark
+(GB10)**, not the laptop.
+
+**Why:**
+- A baseline-vs-MT3 comparison only needs both models trained/evaluated on the
+  SAME frozen dataset. GReaT is +20% additive diversity and (as written) trains on
+  real-only data = 22 classes, so it doesn't change the comparison methodology.
+- GReaT is ~6-7h on a 24GB GPU and impractical on the 4GB laptop — not worth the
+  deadline risk.
+- The real critical path is **MT3 (not yet written)**, not GReaT.
+
+**Fallbacks, in order:**
+1. Preferred: real + TabSyn, 45 classes (once diffusion + sampling finish + quality
+   check passes). Total ~960k (240k real + 720k TabSyn).
+2. If TabSyn sampling or quality fails: **real-only** (`X_real.npy`, 22 classes),
+   already on disk — a comparison that can start immediately.
+
+**Enabling changes made 2026-08-27:**
+- `notebook 05` made **GReaT-optional** (auto-detects `X_great.npy`; assembles
+  real+TabSyn with no error when it's absent).
+- `tabsyn/tabsyn/sample.py` **batched** (`TABSYN_SAMPLE_BATCH` / `TABSYN_N_SAMPLE`)
+  — upstream sampled all 1.39M rows in one ~2.9GB GPU tensor and would OOM the 4GB
+  card. Folded into `patches/tabsyn-colab.patch`.
+
+**How to apply:** diffusion finishes -> run TabSyn sampling -> notebook 05 (real+
+TabSyn splits) -> transfer the frozen dataset to the DGX -> train CNN-LSTM + MT3
+there. GReaT (notebook 04) is deferred; do NOT block the review on it.
+
+
 ## 2026-08-25 — Run the VAE on the ASUS laptop after the Colab crash; add full-state resume first
 
 **Decision (user's call):** After the Colab VAE crashed at ~5h/epoch 111, run a

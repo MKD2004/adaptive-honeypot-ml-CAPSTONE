@@ -75,13 +75,23 @@ train_z.npy (2.8GB). Periodic/resume checkpoints in `tabsyn/vae_run_local/`
 | 03_tabsyn_generation (real VAE run, 500 epochs) | ⏳ Deferred to college | 22/45-class scope confirmed correct by design (see DECISIONS.md) — no data-prep changes needed. Laptop run would be ~19.4h; user decided to run VAE on the college RTX 4500 Ada instead. All 5 bug fixes from today are in the vendored `tabsyn/` code itself, so they carry over — should NOT need rediscovering at college. |
 | 03_tabsyn_generation (VAE, real run) | ✅ DONE (2026-08-26, ASUS) | 45-class VAE early-stopped at epoch 79, val_mse 0.000807 (< 0.000847 target). Artifacts at `tabsyn/tabsyn/vae/ckpt/honeypot_sessions/`. See the 2026-08-26 update below. |
 | 03_tabsyn_generation (diffusion) | ▶️ RUNNING (2026-08-26, ASUS) | OOM audit done: diffusion has NO unbatched-full-dataset forward (no per-epoch eval, no final full encode; train_z stays on CPU; MLP not attention) — safe at batch 4096 on the 4GB card. num_workers=4 shares memory (workers ~300-450MB, not 2.8GB each). Measured ~32s/epoch. Added crash-safe resume + early stop (in patch). Running 2000-epoch cap, convergence auto-stop at 200 no-improve → ~16-17h worst case. Run dir `tabsyn/diff_run_local/`; final model.pt -> `tabsyn/tabsyn/ckpt/honeypot_sessions/`. |
-| 04_great_generation | ⏳ Not started | |
-| 05_assembly_validation | ⏳ Not started | |
+| 03 sampling (720k) | ⏳ Next | `sample.py` now batched (`TABSYN_SAMPLE_BATCH`/`TABSYN_N_SAMPLE`) so it won't OOM the 4GB card. Run after diffusion finishes. Analytical estimate ~10-20 min; real timing to be measured once diffusion frees the GPU. |
+| 04_great_generation | ⏸️ DEFERRED (review-freeze) | Skipped for the 2-day review; add later only if time. Runs on DGX (GB10), ~6-7h. See DECISIONS.md 2026-08-27. |
+| 05_assembly_validation | 🛠️ Edited, not run | Made **GReaT-optional** (cells 3/5/7 auto-detect `X_great.npy`; assemble real+TabSyn when absent → ~960k). Run after sampling. |
 
 ## Environment
 
 - venv at `honeypot_dataset/venv/` has torch `2.13.0+cu126` (CUDA-enabled, verified working — see HARDWARE.md). System Python 3.14 does NOT have the project deps; always use the venv interpreter.
 - Raw data present: Cowrie (`data/raw/cowrie_logs/cowrie.json`, 15,000 sessions), CIC-IDS2017 (8/8 CSVs), UNSW-NB15 (both files).
+
+## Review plan (2026-08-27, ~2-day deadline)
+
+Freeze dataset at **real + TabSyn** (skip GReaT); train CNN-LSTM baseline + MT3 on
+the **DGX (GB10)** and compare. Steps: diffusion finishes → TabSyn sampling (720k)
+→ notebook 05 (real+TabSyn, GReaT-optional) → transfer frozen dataset to DGX →
+train both models. Fallback if TabSyn fails: real-only `X_real.npy` (22 classes),
+already on disk. GReaT deferred. See DECISIONS.md 2026-08-27. **MT3 is unwritten =
+the real critical path** — do not block on GReaT.
 
 ## Immediate next step (2026-08-25)
 

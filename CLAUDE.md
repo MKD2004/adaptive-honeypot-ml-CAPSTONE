@@ -80,12 +80,30 @@ does not have pandas/torch/jupyter installed — only the venv does.
 
 ## Reference Docs
 
-These live at repo root, are session/reference material, and are **not committed**:
-- `STATUS.md` — current pipeline stage, update at the end of every session
+Reference material at repo root. As of 2026-08-27 these ARE committed (they sync
+project state/rules across machines):
+
+**Shared / identical on every machine** (never fork locally; change once + push):
+- `SCHEMA.md` — full 45 micro-state / 128-feature reference for writing prompts fast
 - `DECISIONS.md` — why things were built a certain way; check before redoing something
 - `ERRORS.md` — bugs already hit and fixed; check before re-debugging the same crash
-- `SCHEMA.md` — full 45 micro-state / 128-feature reference for writing prompts fast
-- `HARDWARE.md` — laptop vs. college GPU specs and the config/batch-size implications
+- `TEAMMATES.md` — HARD RULES for collaborators + any AI assistant (do NOT run/edit
+  the dataset pipeline, notebooks, or `tabsyn/`; stay in your assigned module)
+
+**System-specific** (each machine has/uses its own — do not follow another
+machine's copy):
+- `STATUS.md` — current pipeline stage; entries are machine-tagged. Update at end of session.
+- `HARDWARE.md` — per-machine GPU/VRAM/venv specs + config/batch-size implications
+- `SETUP.md` — per-machine environment setup (OS/GPU-dependent)
+- `ASUS.md` / `DGX.md` / `<MACHINE>.md` — that machine's role + work log
+
+## Multi-machine sync (read before working)
+
+**GitHub `main` is the single source of truth.** Every Claude Code on every machine
+(ASUS/Dell laptops, DGX server) MUST `git pull` before working and push its changes
+back. The code and the shared docs above are byte-identical everywhere; only the
+system-specific files differ per machine. Read this machine's `<MACHINE>.md` for its
+role. Do not edit shared files locally without pushing — that is how sessions drift.
 
 ## Current Status (2026-08-11)
 

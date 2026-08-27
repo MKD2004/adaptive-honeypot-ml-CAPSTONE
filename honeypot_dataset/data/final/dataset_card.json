@@ -1,0 +1,32 @@
+{
+ "dataset_name": "HoneySynth-1M",
+ "total_sessions": 960000,
+ "real_sessions": 240000,
+ "real_pct": 25.0,
+ "tabsyn_sessions": 720000,
+ "tabsyn_pct": 75.0,
+ "great_sessions": 0,
+ "great_pct": 0.0,
+ "n_features": 128,
+ "n_classes": 45,
+ "n_feature_groups": 6,
+ "mitre_techniques": 45,
+ "mitre_tactics": 9,
+ "min_samples_per_class": 7410,
+ "max_samples_per_class": 226999,
+ "adversarial_auc": 0.9982,
+ "tstr_macro_f1": 0.6553,
+ "privacy_note": "DP-SGD recommended for public release (epsilon=10, delta=1e-6)",
+ "provenance_note": "CORRECTED 2026-08-28: real data = CIC-IDS2017 + UNSW-NB15 only (13/45 classes, network flows). The 15k Cowrie honeypot sessions counted here are SYNTHETIC (teammate-generated), not real. No real honeypot data in the dataset. See DECISIONS.md 2026-08-28.",
+ "real_data_sources": [
+  "CIC-IDS2017",
+  "UNSW-NB15"
+ ],
+ "real_class_coverage": "13/45 (network-flow classes)",
+ "synthetic_sources": [
+  "cowrie_generated",
+  "tabsyn",
+  "simulator",
+  "(great_deferred)"
+ ]
+}

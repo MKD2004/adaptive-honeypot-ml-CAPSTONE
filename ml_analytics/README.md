@@ -24,19 +24,35 @@ Code session, with your role set to *"CNN-LSTM + DistilBERT baseline in ml_analy
 
 ---
 
-## Data — the real Cowrie + CIC + UNSW dataset (already processed)
+## Data — TRAIN ON `data/final/` (the frozen assembled dataset)
 
-The real dataset is **already feature-extracted** — do NOT re-run notebooks 01/02.
+**The dataset is assembled and frozen (2026-08-28). Train on the splits in
+`honeypot_dataset/data/final/` — NOT on `X_real.npy`.** Everything is already
+feature-extracted; do NOT re-run any notebook.
 
-| File | Shape | What it is |
+Transferred to the DGX as **`honeysynth_final.zip`** → unzip to
+`honeypot_dataset/data/final/` (see `DGX.md` transfer manifest).
+
+| File | Shape | Use |
 |---|---|---|
-| `honeypot_dataset/data/processed/X_real.npy` | (737319, 128) float32 | Real sessions: Cowrie SSH (15k) + CIC-IDS2017 (557k) + UNSW-NB15 (164k) |
-| `honeypot_dataset/data/processed/y_real.npy` | (737319,) int64 | Micro-state labels — **22 of 45 classes present** in real data |
-| `honeypot_dataset/data/processed/real_sessions_combined.parquet` | 737319 rows | Raw session metadata incl. `command_text` (only if you need live text) |
+| `data/final/X_train.npy` / `y_train.npy` | (756000, 128) / (756000,) | **train** (45 classes) |
+| `data/final/X_val.npy` / `y_val.npy` | (84000, 128) | **validation** |
+| `data/final/X_test_real.npy` / `y_test_real.npy` | (60000, 128) | **headline test — real holdout (21 classes)** |
+| `data/final/X_test_synth.npy` / `y_test_synth.npy` | (60000, 128) | test — full 45-class behavior |
+| `data/final/feature_scaler.pkl` | — | **load this exact scaler; do NOT re-fit** (MT3 uses the same) |
 
-**These `.npy`/`.parquet` files are git-ignored** — they will NOT arrive via
-`git pull`. The dataset owner transfers them to your machine / the DGX. Load them
-read-only; never overwrite or regenerate them.
+Composition: 960k sessions = 240k real (25%) + 720k TabSyn synthetic (75%).
+
+**Data provenance (read this — corrected 2026-08-28):** the genuinely-real data is
+**CIC-IDS2017 + UNSW-NB15 only** (network flows, 13/45 classes). The "Cowrie
+honeypot" data is **synthetic** (teammate-generated), not a real capture — do not
+describe it as real. There is no real honeypot data. The synthetic has a known
+fidelity fingerprint (adversarial AUC ~0.998) but strong utility (TSTR macro-F1
+0.99 on real network classes) — see `FIDELITY_ANALYSIS.md` and `DECISIONS.md`.
+
+`X_real.npy` / `y_real.npy` (22-class real+synthetic-Cowrie, pre-assembly) are
+kept only for GReaT (notebook 04) and as a fallback — **not** the baseline training
+target. All these files are git-ignored (transferred, not pulled); load read-only.
 
 Read `honeypot_dataset/configs/schema.py` (read-only) for `FEATURE_GROUPS`,
 `N_FEATURES` (128), `N_CLASSES` (45), and `IDX_TO_LABEL`.
@@ -69,12 +85,10 @@ correct if the schema ever changes.
 
 ## Class handling
 
-- Real-only data has **22/45 classes** (the other 23 are all-zero — they come from
-  TabSyn synthetic later). Train/evaluate on the present classes for now; when the
-  frozen **real + TabSyn** dataset lands (45 classes, **identical 128-d format**),
-  just swap the data path — no architecture change.
-- Heavy imbalance (e.g. `DISC_ENV_PROBE` ~277k vs `PERSIST_SSH_KEY_ADD` ~13). Use a
-  **stratified split** and a **class-weighted or focal loss**.
+- `data/final/` covers **all 45 classes** and is already balanced (min ~7,410 /
+  max ~227,000 per class). Still use a **class-weighted or focal loss** — the split
+  isn't perfectly uniform, and the real-anchored classes dominate.
+- The splits are pre-stratified; use them as-is (don't re-split `X_train`).
 
 ---
 
@@ -82,15 +96,16 @@ correct if the schema ever changes.
 
 The whole point is baseline-vs-MT3, so both models must be judged identically:
 
-1. **Same split, same seed.**
-   - *Now (prototyping):* split `X_real`/`y_real` with a fixed seed (e.g. 42),
-     stratified, to build and debug the pipeline.
-   - *For the review comparison:* use the canonical splits that **notebook 05**
-     produces from the frozen real+TabSyn dataset. Both CNN-LSTM and MT3 train/eval
-     on those exact splits.
-2. **Same metrics:** macro-F1 (primary), per-class F1, accuracy, and a confusion
-   matrix. Save predictions so the two models can be compared on identical test rows.
-3. Agree the split + metric definitions with the owner up front.
+1. **Same splits (already fixed).** Both CNN-LSTM and MT3 train on
+   `data/final/X_train` (+ `X_val` for tuning) and evaluate on the **same**
+   `data/final/X_test_*`. Do not make your own split.
+2. **Same scaler.** Load `data/final/feature_scaler.pkl` — do NOT re-fit; MT3 uses
+   the identical one.
+3. **Headline metric = `X_test_real`** (60k, 21 real classes) — real-world
+   performance. Also report `X_test_synth` (60k, 45 classes) for full-taxonomy
+   behavior.
+4. **Same metrics:** macro-F1 (primary), per-class F1, accuracy, confusion matrix.
+   **Save your predictions** so the two models are compared on identical test rows.
 
 ---
 
@@ -103,9 +118,11 @@ compute is server-side.
 ## Quick start checklist
 
 1. `git pull origin main`; read `CLAUDE.md`, `TEAMMATES.md`, `DGX.md`, `SCHEMA.md`.
-2. Get `X_real.npy` + `y_real.npy` from the owner (they are git-ignored).
-3. Build the branch model in `models/cnn_lstm.py` per the table above (slice via
-   `FEATURE_GROUPS`).
-4. Stratified split + class-weighted loss; train via `models/model_trainer.py`.
-5. Report macro-F1 + per-class F1 + confusion matrix; save predictions.
-6. When the frozen 45-class dataset arrives, swap the data path and re-run.
+2. Get **`honeysynth_final.zip`** from the owner; unzip to
+   `honeypot_dataset/data/final/` (git-ignored — transferred, not pulled).
+3. Load `data/final/X_train.npy` + `y_train.npy` and `feature_scaler.pkl`.
+4. Build the branch model in `models/cnn_lstm.py` per the architecture table above
+   (slice branch inputs via `FEATURE_GROUPS`).
+5. Train via `models/model_trainer.py` with a class-weighted/focal loss.
+6. Evaluate on `X_test_real` (headline) + `X_test_synth`; report macro-F1 +
+   per-class F1 + confusion matrix; **save predictions** for the MT3 comparison.

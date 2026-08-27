@@ -77,7 +77,7 @@ train_z.npy (2.8GB). Periodic/resume checkpoints in `tabsyn/vae_run_local/`
 | 03_tabsyn_generation (diffusion) | ✅ DONE (2026-08-27, ASUS) | Completed full 2000/2000 epochs, best_loss 0.042314. Run 1 collapsed at epoch 63 (unclipped lr=1e-3) → added gradient clipping, restarted; run 2 stable start to finish. Survived 3 accidental laptop sleeps via the crash-safe resume. `model.pt` at `tabsyn/tabsyn/ckpt/honeypot_sessions/`. Next: SAMPLING. |
 | 03 sampling (720k) | ⏳ Next | `sample.py` now batched (`TABSYN_SAMPLE_BATCH`/`TABSYN_N_SAMPLE`) so it won't OOM the 4GB card. Run after diffusion finishes. Analytical estimate ~10-20 min; real timing to be measured once diffusion frees the GPU. |
 | 04_great_generation | ⏸️ DEFERRED (review-freeze) | Skipped for the 2-day review; add later only if time. Runs on DGX (GB10), ~6-7h. See DECISIONS.md 2026-08-27. |
-| 05_assembly_validation | 🛠️ Edited, not run | Made **GReaT-optional** (cells 3/5/7 auto-detect `X_great.npy`; assemble real+TabSyn when absent → ~960k). Run after sampling. |
+| 05_assembly_validation | ✅ DONE (2026-08-27) | Made **GReaT-optional** (cells 3/5/7 auto-detect `X_great.npy`; assemble real+TabSyn when absent → ~960k). Run after sampling. |
 
 ## Environment
 

@@ -1,0 +1,4 @@
+# MT3 / baseline training artifacts: checkpoints, predictions, logs
+artifacts/
+*.pt
+*.npz

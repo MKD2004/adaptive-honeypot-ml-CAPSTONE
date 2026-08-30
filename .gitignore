@@ -17,3 +17,8 @@ tabsyn/
 ASUS.md
 HARDWARE.md
 SETUP.md
+
+# Local-only working notes: session findings + outgoing teammate briefs
+# (never shared - these are per-session working docs, not project state)
+FINDINGS_*.md
+TEAMMATE_*.md

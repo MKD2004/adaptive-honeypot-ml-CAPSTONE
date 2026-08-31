@@ -1,0 +1,125 @@
+{
+  "shape_check": {
+    "passed": true,
+    "issues": [],
+    "shape_X": [
+      60000,
+      128
+    ],
+    "n_classes_present": 45
+  },
+  "balance_check": {
+    "min_count": 306,
+    "max_count": 16985,
+    "mean_count": 1333,
+    "imbalance_ratio": 55.33,
+    "classes_below_min": {
+      "RECON_VULN_SCAN": 515,
+      "EXEC_WGET_EXEC": 331,
+      "ACCESS_BRUTE_SSH": 1382,
+      "EXEC_MEMFD_EXEC": 462,
+      "PERSIST_BACKDOOR_ADD": 466,
+      "LATERAL_SSH_SPREAD": 344,
+      "ACCESS_BRUTE_HTTP": 456,
+      "EXEC_CURL_BASH": 403,
+      "PERSIST_CRONTAB": 719,
+      "DISC_PROC_ENUM": 424,
+      "PRIVESC_SUDO_ABUSE": 440,
+      "EVASION_LOG_WIPE": 372,
+      "EXFIL_STAGING_TAR": 356,
+      "DISC_SUID_HUNT": 450,
+      "EVASION_HIST_ERASE": 306,
+      "EXFIL_SCP_DATA": 450,
+      "PRIVESC_SUID_EXPLOIT": 447,
+      "EXFIL_DNS_TUNNEL": 389,
+      "EVASION_CHMOD_HIDE": 428,
+      "ACCESS_AUTH_BYPASS": 495,
+      "PERSIST_SSH_KEY_ADD": 308,
+      "PERSIST_BASHRC": 437,
+      "EXEC_PERL_SCRIPT": 330,
+      "RECON_USER_ENUM": 427,
+      "LATERAL_CRED_REUSE": 319,
+      "DISC_CVE_SEARCH": 347,
+      "PRIVESC_CONTAINER_ESC": 341,
+      "EVASION_CURL_OBFUS": 360,
+      "RECON_DNS": 471,
+      "RECON_VERSION_PROBE": 360,
+      "RECON_OS_DETECT": 369,
+      "EXEC_PYTHON_SCRIPT": 350,
+      "ACCESS_DEFAULT_CRED": 421,
+      "LATERAL_SCAN_PIVOT": 370,
+      "PERSIST_SYSTEMD_SVC": 317,
+      "ACCESS_CRED_STUFF": 326,
+      "EXFIL_CURL_C2": 413,
+      "EVASION_PROC_INJECT": 360,
+      "PRIVESC_KERNEL_XPLOIT": 372,
+      "EXFIL_TUNNEL_NGROK": 446
+    },
+    "passed": false
+  },
+  "wasserstein": {
+    "A_temporal": {
+      "mean_W": 14.57463,
+      "max_W": 275.99157,
+      "p90_W": 8.7654,
+      "passed": false
+    },
+    "B_network": {
+      "mean_W": 703.65126,
+      "max_W": 8879.4177,
+      "p90_W": 756.40458,
+      "passed": false
+    },
+    "C_payload": {
+      "mean_W": 0.52523,
+      "max_W": 3.91951,
+      "p90_W": 1.78049,
+      "passed": false
+    },
+    "D_semantic": {
+      "mean_W": 0.20602,
+      "max_W": 1.61592,
+      "p90_W": 0.35822,
+      "passed": true
+    },
+    "E_threat_intel": {
+      "mean_W": 0.0,
+      "max_W": 0.0,
+      "p90_W": 0.0,
+      "passed": true
+    },
+    "F_tls_host": {
+      "mean_W": 0.0,
+      "max_W": 0.0,
+      "p90_W": 0.0,
+      "passed": true
+    }
+  },
+  "adversarial_auc": {
+    "adversarial_auc": 0.9982,
+    "passed": false,
+    "threshold": 0.6,
+    "top10_leaky_feature_indices": [
+      45,
+      19,
+      82,
+      9,
+      26,
+      34,
+      37,
+      70,
+      62,
+      64
+    ],
+    "verdict": "FAIL \u2014 AUC=0.998, fix generator for features [45, 19, 82]"
+  },
+  "tstr": {
+    "tstr_accuracy": 0.9946,
+    "tstr_macro_f1": 0.6553,
+    "tstr_weighted_f1": 0.9951,
+    "n_train_synth": 30000,
+    "n_test_real": 30000
+  },
+  "overall_passed": false,
+  "verdict": "NEEDS FIXES \u2014 see issues above"
+}

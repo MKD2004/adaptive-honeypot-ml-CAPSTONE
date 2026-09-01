@@ -12,6 +12,7 @@ metrics.py     macro-F1 (primary), per-class F1, accuracy, confusion matrix
 train_mt3.py   training CLI  (checkpoint, early stop, auto-eval)
 evaluate.py    checkpoint -> predictions + metrics on the frozen test splits
 compare.py     baseline-vs-MT3 table on identical test rows
+make_pilot.py  build a smaller balanced pilot subset (for laptop-scale runs)
 smoke_test.py  10-step end-to-end self-check
 run_dgx.sh     detached tmux launcher for the DGX (GB10)
 ```
@@ -38,6 +39,25 @@ On Windows use the venv interpreter explicitly:
 `honeypot_dataset/venv/Scripts/python.exe -m ml_analytics.mt3_pipeline.smoke_test`
 
 ---
+
+## Pilot dataset (200k, laptop-scale)
+
+```bash
+python -m ml_analytics.mt3_pipeline.make_pilot --zip
+python -m ml_analytics.mt3_pipeline.train_mt3 \
+    --data-dir ml_analytics/data/pilot_200k \
+    --out-dir  ml_analytics/artifacts/mt3_pilot \
+    --epochs 60 --batch-size 1024 --amp --cache-on-device
+```
+
+Subsamples (never regenerates) the frozen splits into a **class-balanced** 200k
+train set — 4,444–4,445 rows per class, drawn without replacement, all 45
+micro-states, 1.00x imbalance — plus a balanced 22.5k val set. The two test
+splits are copied **byte-identically**, so the pilot, the full run, and the
+CNN-LSTM baseline are all scored on the same rows. Output file names mirror
+`data/final/`, so `--data-dir` is the only change needed.
+
+Reproducible from the seed; `manifest.json` records per-file sha256.
 
 ## Two dataset facts that are easy to get wrong
 

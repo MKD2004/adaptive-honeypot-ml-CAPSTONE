@@ -11,3 +11,14 @@ honeypot_dataset/venv/
 *.parquet
 tabsyn/
 *.zip
+
+# Per-machine notes: each laptop/server keeps its own, never shared
+# (DGX.md stays committed - every machine needs it)
+ASUS.md
+HARDWARE.md
+SETUP.md
+
+# Local-only working notes: session findings + outgoing teammate briefs
+# (never shared - these are per-session working docs, not project state)
+FINDINGS_*.md
+TEAMMATE_*.md

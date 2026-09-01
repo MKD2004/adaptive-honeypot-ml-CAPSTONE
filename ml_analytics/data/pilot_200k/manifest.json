@@ -1,0 +1,128 @@
+{
+  "name": "HoneySynth pilot (200k)",
+  "pilot": true,
+  "source": "C:\\Users\\mahit\\OneDrive\\Desktop\\adaptive-honeypot-ml-CAPSTONE\\honeypot_dataset\\data\\final",
+  "built_from": "notebook 05 frozen splits -- SUBSAMPLED only, never regenerated",
+  "scheme": "balanced",
+  "seed": 42,
+  "already_scaled": true,
+  "scaler": "feature_scaler.pkl (joblib) -- the splits are ALREADY transformed by it; load it, never re-fit it, never re-apply it to these arrays",
+  "splits": {
+    "train": {
+      "rows": 200000,
+      "classes": 45,
+      "per_class_min": 4444,
+      "per_class_max": 4445,
+      "imbalance_ratio": 1.0,
+      "subsampled_from": 756000
+    },
+    "val": {
+      "rows": 22500,
+      "classes": 45,
+      "per_class_min": 500,
+      "per_class_max": 500,
+      "imbalance_ratio": 1.0,
+      "subsampled_from": 84000
+    },
+    "test_real": {
+      "rows": 60000,
+      "classes": 21,
+      "per_class_min": 6,
+      "per_class_max": 22608,
+      "copied_unchanged": true
+    },
+    "test_synth": {
+      "rows": 60000,
+      "classes": 45,
+      "per_class_min": 581,
+      "per_class_max": 11367,
+      "copied_unchanged": true
+    }
+  },
+  "per_class_train": {
+    "RECON_DNS": 4445,
+    "RECON_IP_SCAN": 4445,
+    "RECON_VERSION_PROBE": 4444,
+    "RECON_OS_DETECT": 4444,
+    "RECON_VULN_SCAN": 4445,
+    "RECON_USER_ENUM": 4445,
+    "ACCESS_BRUTE_SSH": 4445,
+    "ACCESS_BRUTE_HTTP": 4444,
+    "ACCESS_CRED_STUFF": 4444,
+    "ACCESS_DEFAULT_CRED": 4445,
+    "ACCESS_KEX_EXPLOIT": 4445,
+    "ACCESS_AUTH_BYPASS": 4445,
+    "EXEC_SHELL_OPEN": 4445,
+    "EXEC_PYTHON_SCRIPT": 4444,
+    "EXEC_PERL_SCRIPT": 4444,
+    "EXEC_CURL_BASH": 4444,
+    "EXEC_WGET_EXEC": 4444,
+    "EXEC_MEMFD_EXEC": 4445,
+    "DISC_ENV_PROBE": 4445,
+    "DISC_NETSTAT_SCAN": 4445,
+    "DISC_PROC_ENUM": 4445,
+    "DISC_SUID_HUNT": 4444,
+    "DISC_CVE_SEARCH": 4444,
+    "PRIVESC_SUDO_ABUSE": 4444,
+    "PRIVESC_SUID_EXPLOIT": 4445,
+    "PRIVESC_KERNEL_XPLOIT": 4444,
+    "PRIVESC_CONTAINER_ESC": 4444,
+    "PERSIST_CRONTAB": 4445,
+    "PERSIST_BASHRC": 4445,
+    "PERSIST_SSH_KEY_ADD": 4444,
+    "PERSIST_BACKDOOR_ADD": 4445,
+    "PERSIST_SYSTEMD_SVC": 4444,
+    "EVASION_LOG_WIPE": 4444,
+    "EVASION_HIST_ERASE": 4444,
+    "EVASION_CHMOD_HIDE": 4445,
+    "EVASION_CURL_OBFUS": 4444,
+    "EVASION_PROC_INJECT": 4444,
+    "LATERAL_SSH_SPREAD": 4444,
+    "LATERAL_SCAN_PIVOT": 4444,
+    "LATERAL_CRED_REUSE": 4444,
+    "EXFIL_SCP_DATA": 4444,
+    "EXFIL_CURL_C2": 4445,
+    "EXFIL_DNS_TUNNEL": 4444,
+    "EXFIL_STAGING_TAR": 4444,
+    "EXFIL_TUNNEL_NGROK": 4445
+  },
+  "files": {
+    "feature_scaler.pkl": {
+      "bytes": 3655,
+      "sha256": "240473627270ab8e"
+    },
+    "X_test_real.npy": {
+      "bytes": 30720128,
+      "sha256": "0c1df3dd69d787c4"
+    },
+    "X_test_synth.npy": {
+      "bytes": 30720128,
+      "sha256": "319293962b09d8c5"
+    },
+    "X_train.npy": {
+      "bytes": 102400128,
+      "sha256": "b6047955acd6a944"
+    },
+    "X_val.npy": {
+      "bytes": 11520128,
+      "sha256": "032518f07fdb1583"
+    },
+    "y_test_real.npy": {
+      "bytes": 480128,
+      "sha256": "37c5ff62303c43ed"
+    },
+    "y_test_synth.npy": {
+      "bytes": 480128,
+      "sha256": "7200f0f73808655b"
+    },
+    "y_train.npy": {
+      "bytes": 1600128,
+      "sha256": "2aee25a375b8c8b5"
+    },
+    "y_val.npy": {
+      "bytes": 180128,
+      "sha256": "4c34b2e4560117d4"
+    }
+  },
+  "total_bytes": 178104679
+}

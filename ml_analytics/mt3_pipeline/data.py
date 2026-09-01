@@ -203,8 +203,11 @@ def load_split(
         raise DataError(f"{xp.name}: expected (n, {N_FEATURES}), got {X.shape}")
     if len(X) != len(y):
         raise DataError(f"{name}: X has {len(X)} rows, y has {len(y)}")
+    # row-count expectations apply to the canonical frozen dataset only; a pilot
+    # subset (make_pilot.py) legitimately has fewer rows and marks itself as such
+    is_canonical = data_dir.resolve() == DEFAULT_DATA_DIR.resolve()
     exp = _EXPECTED_ROWS.get(name)
-    if exp is not None and len(y) != exp:
+    if is_canonical and exp is not None and len(y) != exp:
         print(f"[warn] {name}: expected {exp:,} rows, found {len(y):,}")
     if y.min() < 0 or y.max() >= N_CLASSES:
         raise DataError(

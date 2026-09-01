@@ -22,3 +22,6 @@ SETUP.md
 # (never shared - these are per-session working docs, not project state)
 FINDINGS_*.md
 TEAMMATE_*.md
+
+# per-machine working notes (like ASUS.md / HARDWARE.md / SETUP.md)
+SESSION_CONTEXT.md

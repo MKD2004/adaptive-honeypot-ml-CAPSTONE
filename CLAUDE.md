@@ -44,9 +44,19 @@ Transitions are constrained by `KILL_CHAIN_DAG` in schema.py.
 
 ## Dataset Targets
 
-- 1.2M total sessions: 180k real Cowrie, 60k real transfer (CIC-IDS2017 + UNSW-NB15), 720k TabSyn synthetic, 240k GReaT synthetic
-- Minimum 2,000 samples per class
-- Cowrie honeypot logs to be integrated as a third real data source
+**Original plan** (1.2M): 180k real Cowrie, 60k real transfer (CIC-IDS2017 +
+UNSW-NB15), 720k TabSyn synthetic, 240k GReaT synthetic. Minimum 2,000 per class.
+
+**What was actually built** — `HoneySynth-960k`, frozen 2026-08-27 in `data/final/`:
+240k real-derived + 720k TabSyn, GReaT deferred. 7,410-226,999 per class.
+
+**Provenance (corrected 2026-08-28 — read `DECISIONS.md` before writing any paper text):**
+the 15,000 Cowrie sessions are **synthetic** (teammate-generated), not real. Genuinely
+real data is **CIC-IDS2017 + UNSW-NB15 only**, anchoring **13 of 45** micro-states, all
+network-flow classes. There is no real honeypot data in the project. Describe the
+dataset as "real network-intrusion data anchoring 13 kill-chain classes, augmented with
+synthetic honeypot sessions + TabSyn to cover the full 45-class MITRE taxonomy" — never
+as 22 real classes.
 
 ## Key Commands
 
@@ -105,17 +115,38 @@ back. The code and the shared docs above are byte-identical everywhere; only the
 system-specific files differ per machine. Read this machine's `<MACHINE>.md` for its
 role. Do not edit shared files locally without pushing — that is how sessions drift.
 
-## Current Status (2026-08-27)
+## Current Status (2026-09-01)
 
 **`STATUS.md` is the live, detailed source — this is only a coarse snapshot.**
 
-- Notebook 01 (process real data): **done** — 737,319 real sessions, 22/45 micro-states.
-- Notebook 02 (feature extraction): **done** — `X_real.npy`/`y_real.npy`/`semantic_pca.pkl`.
-- Notebook 03 (TabSyn): **in progress** — 45-class data prepped (real + simulator merge,
-  1.39M rows); **VAE done** (early-stopped epoch 79, val_mse 0.000807); **diffusion running**
-  on the ASUS (grad-clip fix after a run-1 collapse). Sampling (720k) is the next step.
-- Notebook 04 (GReaT): **deferred** for the review-freeze (add later; runs on DGX).
-- Notebook 05 (assembly): **edited to be GReaT-optional**, not yet run.
+**Dataset: FROZEN.** `data/final/` holds HoneySynth-960k — 756,000 train / 84,000 val /
+60,000 `test_real` / 60,000 `test_synth`, 128 features, 45 classes (`test_real` has 21).
+Notebooks 01, 02, 03 (TabSyn VAE + diffusion + 720k sampling) and 05 are **done**;
+04 (GReaT) stays **deferred**. Do not regenerate — every model below is trained on
+these exact rows.
 
-Review plan (2026-08-27): freeze dataset at real + TabSyn, train CNN-LSTM baseline + MT3
-on the DGX, compare. Real-only (22-class) is the fallback. See `DECISIONS.md`/`STATUS.md`.
+**Two traps when loading `data/final/` — see `ERRORS.md`, top two entries.** The arrays
+are ALREADY SCALED (never call `scaler.transform` on them) and `feature_scaler.pkl` is a
+joblib dump (`pickle.load` raises). Both corrupt silently.
+
+**Models trained and compared** (same splits, same scaler, macro-F1 over the 21 classes
+present in `test_real`):
+
+| model | params | val macro-F1 | test_real | test_real (clean) | test_synth |
+|---|---|---|---|---|---|
+| linear probe | 5,805 | 0.9376 | 0.7681 | — | 0.9373 |
+| CNN-LSTM baseline | 189,581 | 0.9621 | 0.8093 | **0.7976** | 0.9610 |
+| MT3 (d=256, 4 layers) | 3,759,510 | 0.9599 | 0.8276 | **0.8187** | 0.9589 |
+
+Headline finding: **on `test_real` the two models tie** (McNemar p = 0.617 clean), so
+MT3's Transformer fusion does not beat concatenation + MLP at 20x the parameters; the
+CNN-LSTM wins `test_synth` significantly (p = 0.00064). A 5,805-parameter linear probe
+reaching 0.7681 is the floor any result must clear.
+
+**Quote the clean column.** 29.74% of `test_real` rows are byte-identical to rows in
+`X_train` (notebook 05 splits disjointly by index, not by value, and real network flows
+genuinely repeat). The clean subset is 41,785 rows; `test_synth` is unaffected (0.00%).
+
+Known and deliberately not fixed before the review: MT3 has **no CRF** despite the
+naming, and `KILL_CHAIN_DAG` never enters training — measured, both models' errors are
+at or below chance for DAG legality on `test_synth`. See `DECISIONS.md`.

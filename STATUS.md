@@ -1,12 +1,88 @@
 # STATUS
 
-Reference only — not committed. Update this at the end of every session: what's
-done, what's running, what's next. Keep it short — this is a snapshot, not a log
-(that's DECISIONS.md / ERRORS.md).
+Shared reference — **committed**, machine-tagged. Update at the end of every
+session: what's done, what's running, what's next. Keep it short — this is a
+snapshot, not a log (that's DECISIONS.md / ERRORS.md).
 
 ---
 
-## Last updated: 2026-08-25 (session 2, ASUS TUF)
+## Last updated: 2026-09-01 (session 3, ASUS TUF)
+
+### Session 3 summary (2026-08-28 → 2026-09-01) — DATASET FROZEN, BOTH MODELS TRAINED
+
+The pipeline is finished and the review comparison is done. Nothing in
+`data/final/` may be regenerated — both models are trained on those exact rows.
+
+**Dataset — HoneySynth-960k, frozen 2026-08-27.** TabSyn sampling (720k) completed,
+notebook 05 assembled real+TabSyn (GReaT-optional path), splits written to
+`honeypot_dataset/data/final/`: 756,000 train / 84,000 val / 60,000 `test_real` /
+60,000 `test_synth`; 128 features; 45 classes in train/val/test_synth, **21** in
+`test_real`. Train imbalance 28.7x (6,055 → 173,722 per class).
+
+**PROVENANCE CORRECTION (2026-08-28)** — see DECISIONS.md. The 15,000 Cowrie
+sessions are **synthetic** (teammate-confirmed), not real. Genuinely real data is
+**CIC-IDS2017 + UNSW-NB15 only**, anchoring **13 of 45** classes, all network-flow.
+Real class coverage 22 → 13. The 22-class figure in the session-1 table below is
+superseded; it is a count of *labelled* classes, not real-anchored ones.
+
+**MT3 pipeline built** (`ml_analytics/mt3_pipeline/`, `0178f58`): data loading with
+scaler-provenance checks, class-weighted/focal loss, metrics, train/eval/compare
+CLIs, `make_pilot.py`, and a 10-step smoke test. `models/mt3.py` untouched.
+
+**Two dataset traps found and logged in ERRORS.md (top two entries).** Both corrupt
+silently, neither crashes: (1) the `data/final/` arrays are ALREADY SCALED —
+notebook 05 saved `scaler.transform(X)`, so re-transforming shifts column means
+0.002 → 4.8; (2) `feature_scaler.pkl` is a **joblib** dump, `pickle.load` raises.
+`data.check_scaling()` now refuses to train if the arrays stop looking pre-scaled.
+
+**Models — all on the identical frozen splits, macro-F1 over the 21 classes present
+in `test_real`:**
+
+| model | params | val macro-F1 | test_real | test_real (clean) | test_synth |
+|---|---|---|---|---|---|
+| linear probe (128→45) | 5,805 | 0.9376 | 0.7681 | — | 0.9373 |
+| CNN-LSTM baseline | 189,581 | 0.9621 | 0.8093 | **0.7976** | 0.9610 |
+| MT3 (d=256, 4 layers) | 3,759,510 | 0.9599 | 0.8276 | **0.8187** | 0.9589 |
+
+MT3 ran on the ASUS (RTX 3050 4GB, bf16 AMP, batch 1024, `--cache-on-device`):
+~40 s/epoch, early-stopped at epoch 35, best epoch 29. CNN-LSTM ran on Colab
+(~7 s/epoch, early stop epoch 67, best epoch 52).
+
+**Headline result: on `test_real` the two models TIE** — McNemar p = 0.617 (clean),
+p = 0.569 (contaminated). MT3's Transformer fusion does not beat concatenation +
+MLP at 20x the parameters. The CNN-LSTM wins `test_synth` significantly
+(p = 0.00064) and edges MT3 on val macro-F1. Because the baseline deliberately
+reuses MT3's branch encoders, this is a clean ablation of the fusion step.
+A 5,805-parameter linear probe at 0.7681 is the floor any result must clear.
+
+**TRAIN/TEST CONTAMINATION — quote the clean column.** 17,843 of the 60,000
+`test_real` rows (**29.74%**) are byte-identical to rows in `X_train` with the same
+label; another 20.11% duplicate `X_val`. Cause: notebook 05's `train_test_split` is
+disjoint **by index, not by value**, and real CIC/UNSW flows genuinely repeat. Clean
+subset = **41,785** rows, all 21 classes survive; mask at
+`test_real_clean_mask.npz` (local, gitignored). `test_synth` unaffected (0.00%).
+Worst class: EXEC_SHELL_OPEN, 94.7% duplicated, F1 ~0.99 → ~0.82 once cleaned.
+Both models score ~1.0 on the leaked rows, so the *gap* barely moves (+0.0183 →
++0.0210) — but the absolute numbers are inflated and must not be reported as-is.
+
+**Architecture audit — MT3 has no CRF.** No `CRF`/`viterbi`/transition matrix in
+`mt3.py`; the "hp_logits" head is a 9-way phase auxiliary, and `KILL_CHAIN_DAG`
+never enters training. Measured 2026-09-01: on `test_synth` all three models' errors
+are at or **below** chance for DAG legality (0.380 / 0.391 / 0.357 vs 0.412 chance)
+— no model has learned kill-chain structure. Adding a real CRF needs per-event
+features `data/final/` does not carry. Deferred, not hidden.
+
+**CNN-LSTM branch merged** into `main` (`8087d26`, local — review before pushing).
+`SESSION_CONTEXT.md` excluded from the merge and gitignored (stale 2026-08-21
+working doc; same rule as ASUS.md / HARDWARE.md / SETUP.md).
+
+**Next:** teammate to confirm the clean 0.7976 independently; report clean numbers
+in the paper with the 29.74% disclosed; post-review, rebuild the split
+deduplicated-by-value. GReaT (04) still deferred.
+
+---
+
+## Session 2: 2026-08-25 (ASUS TUF)
 
 ### Session 2 summary (2026-08-25)
 Built the Colab overnight VAE pipeline on the ASUS TUF (code/orchestration only —
@@ -75,9 +151,11 @@ train_z.npy (2.8GB). Periodic/resume checkpoints in `tabsyn/vae_run_local/`
 | 03_tabsyn_generation (real VAE run, 500 epochs) | ⏳ Deferred to college | 22/45-class scope confirmed correct by design (see DECISIONS.md) — no data-prep changes needed. Laptop run would be ~19.4h; user decided to run VAE on the college RTX 4500 Ada instead. All 5 bug fixes from today are in the vendored `tabsyn/` code itself, so they carry over — should NOT need rediscovering at college. |
 | 03_tabsyn_generation (VAE, real run) | ✅ DONE (2026-08-26, ASUS) | 45-class VAE early-stopped at epoch 79, val_mse 0.000807 (< 0.000847 target). Artifacts at `tabsyn/tabsyn/vae/ckpt/honeypot_sessions/`. See the 2026-08-26 update below. |
 | 03_tabsyn_generation (diffusion) | ✅ DONE (2026-08-27, ASUS) | Completed full 2000/2000 epochs, best_loss 0.042314. Run 1 collapsed at epoch 63 (unclipped lr=1e-3) → added gradient clipping, restarted; run 2 stable start to finish. Survived 3 accidental laptop sleeps via the crash-safe resume. `model.pt` at `tabsyn/tabsyn/ckpt/honeypot_sessions/`. Next: SAMPLING. |
-| 03 sampling (720k) | ⏳ Next | `sample.py` now batched (`TABSYN_SAMPLE_BATCH`/`TABSYN_N_SAMPLE`) so it won't OOM the 4GB card. Run after diffusion finishes. Analytical estimate ~10-20 min; real timing to be measured once diffusion frees the GPU. |
+| 03 sampling (720k) | ✅ DONE (2026-08-27, ASUS) | 720,000 synthetic rows sampled; batching (`TABSYN_SAMPLE_BATCH`/`TABSYN_N_SAMPLE`) kept it inside the 4GB card. Fed straight into notebook 05. |
 | 04_great_generation | ⏸️ DEFERRED (review-freeze) | Skipped for the 2-day review; add later only if time. Runs on DGX (GB10), ~6-7h. See DECISIONS.md 2026-08-27. |
-| 05_assembly_validation | ✅ DONE (2026-08-27) | Made **GReaT-optional** (cells 3/5/7 auto-detect `X_great.npy`; assemble real+TabSyn when absent → ~960k). Run after sampling. |
+| 05_assembly_validation | ✅ DONE (2026-08-27) | Made **GReaT-optional** (cells 3/5/7 auto-detect `X_great.npy`; assemble real+TabSyn when absent). Output: HoneySynth-960k in `data/final/`. **Known defect: splits are disjoint by index, not by value → 29.74% of `test_real` duplicates `X_train`.** See session 3. |
+| CNN-LSTM baseline | ✅ DONE (2026-08-31, Colab) | 189,581 params, val macro-F1 0.9621, test_real 0.7976 clean. Teammate deliverable, merged `8087d26`. |
+| MT3 | ✅ DONE (2026-08-30, ASUS) | d=256/4 layers, 3,759,510 params, val macro-F1 0.9599, test_real 0.8187 clean. Ties the baseline (p=0.617). |
 
 ## Environment
 
@@ -93,7 +171,7 @@ train both models. Fallback if TabSyn fails: real-only `X_real.npy` (22 classes)
 already on disk. GReaT deferred. See DECISIONS.md 2026-08-27. **MT3 is unwritten =
 the real critical path** — do not block on GReaT.
 
-## Immediate next step (2026-08-25)
+## Superseded: immediate next step as of 2026-08-25 (Colab VAE run — done, see session 3)
 
 **To start the overnight Colab VAE run from ASUS TUF:**
 1. Upload to a Google Drive folder `MyDrive/capstone/` (the notebook's `DRIVE_PROJECT`):

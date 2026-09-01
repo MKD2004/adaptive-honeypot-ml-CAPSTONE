@@ -40,7 +40,7 @@ in `test_real`:**
 
 | model | params | val macro-F1 | test_real | test_real (clean) | test_synth |
 |---|---|---|---|---|---|
-| linear probe (128→45) | 5,805 | 0.9376 | 0.7681 | — | 0.9373 |
+| linear probe (128→45) | 5,805 | 0.9376 | 0.7681 | **0.7551** | 0.9373 |
 | CNN-LSTM baseline | 189,581 | 0.9621 | 0.8093 | **0.7976** | 0.9610 |
 | MT3 (d=256, 4 layers) | 3,759,510 | 0.9599 | 0.8276 | **0.8187** | 0.9589 |
 

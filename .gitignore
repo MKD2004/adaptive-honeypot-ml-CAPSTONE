@@ -4,9 +4,17 @@ __pycache__/
 venv/
 .idea/
 .vscode/
-logs/honeypot_dataset/data/
+logs/
+honeypot_dataset/data/
+
+# Pipeline runtime state (regenerated on every run)
+adaptive_honeypot/active_config.json
+traffic_gateway/logs/
+traffic_gateway/data/blacklist.json
+traffic_gateway/data/whitelist.json
 honeypot_dataset/venv/
 *.npy
+*.npz
 *.pkl
 *.parquet
 tabsyn/

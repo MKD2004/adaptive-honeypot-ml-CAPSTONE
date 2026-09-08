@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MT3 PIPELINE — ADAPTIVE HONEYPOT GATEWAY</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-void:#030508; --bg-deep:#060b12; --bg-surface:#0a1220; --bg-card:#0d1a2e; --bg-card-hi:#111f38;
+  --neon-cyan:#00d4ff; --neon-green:#00ff88; --neon-red:#ff2244; --neon-yellow:#ffc200;
+  --neon-orange:#ff7700; --neon-purple:#9933ff; --neon-white:#cce8ff;
+  --text-bright:#e8f4ff; --text-dim:#4a6b8a; --text-muted:#2a4560;
+  --border-dim:rgba(0,180,255,.08); --border-glow:rgba(0,212,255,.25); --border-hi:rgba(0,212,255,.5);
+  --font-display:'Orbitron',monospace; --font-mono:'JetBrains Mono',monospace; --radius-sm:3px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg-void);color:var(--text-bright);font-family:var(--font-mono);font-size:12px;overflow-x:hidden}
+a{color:var(--neon-cyan);text-decoration:none}
+#header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;
+  background:linear-gradient(90deg,var(--bg-deep),var(--bg-surface));border-bottom:1px solid var(--border-glow)}
+#header h1{font-family:var(--font-display);font-size:15px;font-weight:900;letter-spacing:2px;
+  color:var(--neon-cyan);text-shadow:0 0 12px rgba(0,212,255,.5)}
+#header .sub{font-size:9px;color:var(--text-dim);letter-spacing:2px;margin-top:2px}
+.nav{display:flex;gap:8px}
+.nav a{padding:6px 14px;border:1px solid var(--border-glow);border-radius:var(--radius-sm);
+  font-size:10px;letter-spacing:1px;background:var(--bg-card)}
+.nav a.on{background:rgba(0,212,255,.14);border-color:var(--border-hi);color:var(--neon-white)}
+.wrap{padding:16px 20px;max-width:1800px;margin:0 auto}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.mc{background:var(--bg-card);border:1px solid var(--border-dim);border-left:2px solid var(--neon-cyan);
+  border-radius:var(--radius-sm);padding:10px 12px}
+.mc .l{font-size:8.5px;letter-spacing:1.4px;color:var(--text-dim);text-transform:uppercase}
+.mc .v{font-family:var(--font-display);font-size:24px;font-weight:700;margin:3px 0;color:var(--neon-white)}
+.mc .s{font-size:8.5px;color:var(--text-muted)}
+.mc.g{border-left-color:var(--neon-green)} .mc.g .v{color:var(--neon-green)}
+.mc.r{border-left-color:var(--neon-red)} .mc.r .v{color:var(--neon-red)}
+.mc.y{border-left-color:var(--neon-yellow)} .mc.y .v{color:var(--neon-yellow)}
+.mc.p{border-left-color:var(--neon-purple)} .mc.p .v{color:var(--neon-purple)}
+.grid{display:grid;grid-template-columns:1.55fr 1fr;gap:12px;align-items:start}
+.panel{background:var(--bg-card);border:1px solid var(--border-dim);border-radius:var(--radius-sm);margin-bottom:12px}
+.ph{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;
+  border-bottom:1px solid var(--border-dim);background:var(--bg-card-hi)}
+.ph .t{font-family:var(--font-display);font-size:10px;font-weight:700;letter-spacing:1.6px;color:var(--neon-cyan)}
+.ph .n{font-size:9px;color:var(--text-dim)}
+.pb{padding:10px 12px;max-height:520px;overflow-y:auto}
+.pb::-webkit-scrollbar{width:6px}.pb::-webkit-scrollbar-thumb{background:var(--border-glow)}
+table{width:100%;border-collapse:collapse;font-size:10.5px}
+th{text-align:left;padding:5px 6px;color:var(--text-dim);font-weight:500;font-size:8.5px;
+  letter-spacing:1.1px;text-transform:uppercase;border-bottom:1px solid var(--border-dim);
+  position:sticky;top:-10px;background:var(--bg-card)}
+td{padding:5px 6px;border-bottom:1px solid rgba(0,180,255,.04);vertical-align:top}
+tr:hover td{background:rgba(0,212,255,.045)}
+.mono{font-family:var(--font-mono)}
+.ip{color:var(--neon-white)}
+.badge{display:inline-block;padding:1px 6px;border-radius:2px;font-size:8.5px;letter-spacing:.6px;font-weight:700}
+.b0,.b1{background:rgba(0,212,255,.16);color:var(--neon-cyan)}
+.b2,.b3{background:rgba(255,194,0,.16);color:var(--neon-yellow)}
+.b4,.b5,.b6{background:rgba(255,119,0,.18);color:var(--neon-orange)}
+.b7,.b8{background:rgba(255,34,68,.2);color:var(--neon-red)}
+.lv-low{color:var(--neon-cyan)}.lv-medium{color:var(--neon-yellow)}
+.lv-high{color:var(--neon-orange)}.lv-maximum{color:var(--neon-red);font-weight:700}
+.bar{height:9px;background:rgba(0,180,255,.07);border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--neon-cyan),var(--neon-purple))}
+.conf{display:flex;align-items:center;gap:6px}
+.conf .bar{width:44px;flex:none}
+.phase-row{display:grid;grid-template-columns:130px 1fr 42px;gap:8px;align-items:center;margin-bottom:5px;font-size:10px}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:4px 10px;font-size:10.5px}
+.kv .k{color:var(--text-dim)}
+.chg{border-left:2px solid var(--neon-orange);padding:6px 9px;margin-bottom:7px;background:rgba(255,119,0,.05);font-size:10px}
+.chg .ts{color:var(--text-muted);font-size:8.5px}
+.ctl{display:flex;gap:6px;margin-bottom:9px}
+.ctl input{flex:1;background:var(--bg-void);border:1px solid var(--border-glow);color:var(--text-bright);
+  padding:5px 8px;font-family:var(--font-mono);font-size:10.5px;border-radius:2px}
+.ctl button{background:rgba(0,212,255,.14);border:1px solid var(--border-hi);color:var(--neon-cyan);
+  padding:5px 12px;font-family:var(--font-mono);font-size:10px;cursor:pointer;border-radius:2px;letter-spacing:.8px}
+.ctl button:hover{background:rgba(0,212,255,.28)}
+.ctl button.rd{background:rgba(255,34,68,.14);border-color:rgba(255,34,68,.5);color:var(--neon-red)}
+.x{background:none;border:none;color:var(--neon-red);cursor:pointer;font-size:12px;padding:0 4px}
+.empty{color:var(--text-muted);text-align:center;padding:22px;font-size:10px;letter-spacing:1px}
+.msg{padding:6px 9px;font-size:10px;border-radius:2px;margin-bottom:8px;display:none}
+.msg.ok{display:block;background:rgba(0,255,136,.1);color:var(--neon-green)}
+.msg.err{display:block;background:rgba(255,34,68,.12);color:var(--neon-red)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+.dot.on{background:var(--neon-green);box-shadow:0 0 7px var(--neon-green)}
+.dot.off{background:var(--neon-red);box-shadow:0 0 7px var(--neon-red)}
+.cmds{color:var(--text-dim);font-size:9.5px;max-width:330px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.alert{background:rgba(255,34,68,.14);border:1px solid rgba(255,34,68,.45);color:var(--neon-red);
+  padding:7px 11px;border-radius:2px;font-size:10.5px;letter-spacing:1px;margin-bottom:11px;display:none}
+@media(max-width:1200px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="header">
+  <div>
+    <h1>MT3 PIPELINE MONITOR</h1>
+    <div class="sub">TRAFFIC → GATEWAY → COWRIE → 128 FEATURES → MT3 → ADAPTIVE CONFIG</div>
+  </div>
+  <div class="nav">
+    <a href="/">GATEWAY EVENTS</a>
+    <a href="/pipeline" class="on">MT3 PIPELINE</a>
+    <span style="padding:6px 10px;font-size:9.5px;color:var(--text-dim)">
+      <span class="dot off" id="dot"></span><span id="conn">CONNECTING</span>
+    </span>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="alert" id="alert"></div>
+
+  <div class="metrics">
+    <div class="mc"><div class="l">Sessions Analysed</div><div class="v" id="m-sessions">0</div><div class="s">through MT3</div></div>
+    <div class="mc p"><div class="l">Unique Attackers</div><div class="v" id="m-attackers">0</div><div class="s">source IPs</div></div>
+    <div class="mc y"><div class="l">Mean Confidence</div><div class="v" id="m-conf">—</div><div class="s">MT3 softmax</div></div>
+    <div class="mc g"><div class="l">Config Changes</div><div class="v" id="m-changes">0</div><div class="s">adaptive responses</div></div>
+    <div class="mc r"><div class="l">Blocked IPs</div><div class="v" id="m-blocked">0</div><div class="s">blacklisted</div></div>
+    <div class="mc r"><div class="l">Alerts Fired</div><div class="v" id="m-alerts">0</div><div class="s">phase 7-8 escalation</div></div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <div class="ph"><span class="t">MT3 LIVE FEED</span><span class="n" id="feed-n">0 sessions</span></div>
+        <div class="pb">
+          <table>
+            <thead><tr><th>Time</th><th>Source IP</th><th>Micro-State</th><th>Ph</th>
+              <th>Conf</th><th>GW</th><th>Target</th><th>Commands</th></tr></thead>
+            <tbody id="feed"><tr><td colspan="8" class="empty">AWAITING SESSIONS</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="ph"><span class="t">KILL-CHAIN PHASE DISTRIBUTION</span><span class="n" id="phase-n"></span></div>
+        <div class="pb" id="phases"><div class="empty">NO DATA</div></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <div class="ph"><span class="t">ACTIVE HONEYPOT CONFIG</span>
+          <span class="n" id="cfg-updated"></span></div>
+        <div class="pb"><div class="kv" id="cfg"><div class="empty">LOADING</div></div></div>
+      </div>
+
+      <div class="panel">
+        <div class="ph"><span class="t">CONFIG CHANGE LOG</span><span class="n" id="chg-n"></span></div>
+        <div class="pb" id="changes"><div class="empty">NO CHANGES YET</div></div>
+      </div>
+
+      <div class="panel">
+        <div class="ph"><span class="t">BLACKLIST</span><span class="n" id="bl-n">0</span></div>
+        <div class="pb">
+          <div class="msg" id="bl-msg"></div>
+          <div class="ctl">
+            <input id="bl-ip" placeholder="203.0.113.10">
+            <input id="bl-why" placeholder="reason" style="max-width:120px">
+            <button class="rd" onclick="addBl()">BLOCK</button>
+          </div>
+          <table><tbody id="bl"><tr><td class="empty">EMPTY</td></tr></tbody></table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="ph"><span class="t">WHITELIST</span><span class="n" id="wl-n">0</span></div>
+        <div class="pb">
+          <div class="msg" id="wl-msg"></div>
+          <div class="ctl">
+            <input id="wl-ip" placeholder="10.0.0.5">
+            <input id="wl-why" placeholder="reason" style="max-width:120px">
+            <button onclick="addWl()">TRUST</button>
+          </div>
+          <table><tbody id="wl"><tr><td class="empty">EMPTY</td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';                       // same origin as this page
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function api(path, opts) {
+  const r = await fetch(API + path, opts);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
+  return body;
+}
+function setConn(ok) {
+  $('dot').className = 'dot ' + (ok ? 'on' : 'off');
+  $('conn').textContent = ok ? 'LIVE' : 'OFFLINE';
+}
+function flash(el, text, ok) {
+  el.textContent = text; el.className = 'msg ' + (ok ? 'ok' : 'err');
+  setTimeout(() => { el.className = 'msg'; }, 3500);
+}
+const shortTime = ts => { try { return new Date(ts).toISOString().slice(11, 19); }
+                          catch (e) { return '--:--:--'; } };
+
+async function loadFeed() {
+  const d = await api('/api/mt3-results?limit=50');
+  $('feed-n').textContent = d.count + ' sessions';
+  const tb = $('feed');
+  if (!d.count) { tb.innerHTML = '<tr><td colspan="8" class="empty">AWAITING SESSIONS</td></tr>'; return; }
+  tb.innerHTML = d.predictions.map(p => `
+    <tr>
+      <td class="mono" style="color:var(--text-dim)">${shortTime(p.timestamp)}</td>
+      <td class="ip mono">${esc(p.src_ip)}</td>
+      <td><span class="mono">${esc(p.micro_state)}</span>${p.config_changed ? ' <span style="color:var(--neon-orange)">&#9679;</span>' : ''}</td>
+      <td><span class="badge b${p.phase}">${p.phase}</span></td>
+      <td><div class="conf"><div class="bar"><i style="width:${Math.round((p.confidence || 0) * 100)}%"></i></div>
+          <span>${((p.confidence || 0) * 100).toFixed(0)}%</span></div></td>
+      <td class="mono" style="color:${p.gateway_score >= 0.5 ? 'var(--neon-red)' : p.gateway_score >= 0.2 ? 'var(--neon-yellow)' : 'var(--neon-green)'}">
+          ${(p.gateway_score ?? 0).toFixed(2)}</td>
+      <td class="mono" style="font-size:9px;color:var(--text-dim)">${esc((p.honeypot_target || '').replace('_HONEYPOT', ''))}</td>
+      <td class="cmds" title="${esc((p.top3 || []).map(t => t.micro_state + ' ' + t.p).join(' | '))}">${esc(p.rule_label || '')}</td>
+    </tr>`).join('');
+}
+
+async function loadStats() {
+  const d = await api('/api/stats');
+  $('m-sessions').textContent = d.total_sessions;
+  $('m-attackers').textContent = d.unique_attackers;
+  $('m-conf').textContent = d.mean_confidence == null ? '—' : (d.mean_confidence * 100).toFixed(1) + '%';
+  $('m-changes').textContent = d.config_changes;
+  $('m-blocked').textContent = d.blocked_ips;
+  $('m-alerts').textContent = d.alerts_fired;
+
+  const max = Math.max(1, ...d.phase_distribution.map(p => p.count));
+  const total = d.phase_distribution.reduce((a, p) => a + p.count, 0);
+  $('phase-n').textContent = total + ' classified';
+  $('phases').innerHTML = total === 0 ? '<div class="empty">NO DATA</div>' :
+    d.phase_distribution.map(p => `
+      <div class="phase-row">
+        <span><span class="badge b${p.phase}">${p.phase}</span> ${esc(p.phase_name)}</span>
+        <div class="bar"><i style="width:${(p.count / max * 100).toFixed(1)}%"></i></div>
+        <span class="mono" style="text-align:right">${p.count}</span>
+      </div>`).join('');
+}
+
+async function loadConfig() {
+  const d = await api('/api/active-config');
+  const c = d.active_config || {};
+  $('cfg-updated').textContent = c.updated_at ? shortTime(c.updated_at) : 'never';
+  const row = (k, v) => `<div class="k">${esc(k)}</div><div>${v}</div>`;
+  const lvl = c.interaction_level || 'low';
+  $('cfg').innerHTML =
+    row('interaction level', `<span class="lv-${esc(lvl)}" style="font-weight:700">${esc(lvl.toUpperCase())}</span>`) +
+    row('honeypot target', `<span class="mono">${esc(c.honeypot_target)}</span>`) +
+    row('kill-chain phase', `<span class="badge b${c.phase || 0}">${c.phase ?? '-'}</span> ${esc(c.phase_name || '')}`) +
+    row('last micro-state', `<span class="mono">${esc(c.micro_state || '—')}</span>`) +
+    row('fake banner', `<span class="mono" style="color:var(--neon-green)">${esc(c.banner)}</span>`) +
+    row('filesystem', esc(c.filesystem)) +
+    row('response delay', esc(c.response_delay_ms) + ' ms') +
+    row('fake credentials', c.fake_credentials_visible ? 'VISIBLE' : 'hidden') +
+    row('fake /etc/shadow', c.fake_sensitive_files ? 'PRESENT' : 'absent') +
+    row('plantable SSH keys', c.fake_ssh_keys ? 'PRESENT' : 'absent') +
+    row('external alert', c.alert ? '<span style="color:var(--neon-red);font-weight:700">ARMED</span>' : 'off') +
+    (c.cve_profile ? row('trending CVE',
+      `<span class="mono" style="color:var(--neon-purple)">${esc(c.cve_profile.cve_id)}</span><br>
+       <span style="color:var(--text-dim);font-size:9.5px">${esc(c.cve_profile.attack_type)} — ${esc(c.cve_profile.service)}</span>`) : '') +
+    row('reason', `<span style="color:var(--text-dim);font-size:10px">${esc(c.reason)}</span>`);
+
+  $('alert').style.display = c.alert ? 'block' : 'none';
+  $('alert').textContent = c.alert
+    ? '⚠ MAXIMUM INTERACTION — phase ' + c.phase + ' (' + c.phase_name + ') detected, external alert armed'
+    : '';
+
+  const ch = d.recent_changes || [];
+  $('chg-n').textContent = ch.length ? ch.length + ' logged' : '';
+  $('changes').innerHTML = ch.length === 0 ? '<div class="empty">NO CHANGES YET</div>' :
+    ch.map(c2 => `<div class="chg"><div class="ts">${shortTime(c2.ts)} &nbsp; ${esc(c2.trigger?.src_ip || '')}</div>
+      ${esc(c2.reason)}</div>`).join('');
+}
+
+async function loadLists() {
+  const b = await api('/api/blacklist');
+  $('bl-n').textContent = b.count;
+  $('bl').innerHTML = b.count === 0 ? '<tr><td class="empty">EMPTY</td></tr>' :
+    b.blacklist.map(e => `<tr>
+      <td class="ip mono">${esc(e.ip)}</td>
+      <td style="color:var(--text-dim);font-size:9.5px">${esc(e.reason)}</td>
+      <td style="text-align:right"><button class="x" title="unblock"
+          onclick="delBl('${esc(e.ip)}')">&#10005;</button></td></tr>`).join('');
+
+  const w = await api('/api/whitelist');
+  $('wl-n').textContent = w.count;
+  $('wl').innerHTML = w.count === 0 ? '<tr><td class="empty">EMPTY</td></tr>' :
+    w.whitelist.map(e => `<tr>
+      <td class="ip mono">${esc(e.ip)}</td>
+      <td style="color:var(--text-dim);font-size:9.5px">${esc(e.reason)}</td>
+      <td style="text-align:right"><button class="x" title="remove"
+          onclick="delWl('${esc(e.ip)}')">&#10005;</button></td></tr>`).join('');
+}
+
+async function addBl() {
+  try {
+    const d = await api('/api/blacklist', {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ip: $('bl-ip').value.trim(), reason: $('bl-why').value.trim() || undefined})});
+    $('bl-ip').value = ''; $('bl-why').value = '';
+    flash($('bl-msg'), d.ip + ' blacklisted', true); refresh();
+  } catch (e) { flash($('bl-msg'), e.message, false); }
+}
+async function delBl(ip) {
+  try { await api('/api/blacklist/' + encodeURIComponent(ip), {method: 'DELETE'});
+        flash($('bl-msg'), ip + ' unblocked', true); refresh(); }
+  catch (e) { flash($('bl-msg'), e.message, false); }
+}
+async function addWl() {
+  try {
+    const d = await api('/api/whitelist', {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ip: $('wl-ip').value.trim(), reason: $('wl-why').value.trim() || undefined})});
+    $('wl-ip').value = ''; $('wl-why').value = '';
+    flash($('wl-msg'), d.ip + ' whitelisted', true); refresh();
+  } catch (e) { flash($('wl-msg'), e.message, false); }
+}
+async function delWl(ip) {
+  try { await api('/api/whitelist/' + encodeURIComponent(ip), {method: 'DELETE'});
+        flash($('wl-msg'), ip + ' removed', true); refresh(); }
+  catch (e) { flash($('wl-msg'), e.message, false); }
+}
+
+async function refresh() {
+  try {
+    await Promise.all([loadFeed(), loadStats(), loadConfig(), loadLists()]);
+    setConn(true);
+  } catch (e) { setConn(false); console.error(e); }
+}
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

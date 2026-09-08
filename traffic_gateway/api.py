@@ -25,6 +25,7 @@ from .blacklist_manager import blacklist_manager
 from .config import CONFIG
 from .ext_paths import REPO_ROOT, ensure_paths
 from .ip_classifier import IPStatus, classifier
+from .peer_attribution import attributor, looks_like_proxy
 from .post_session_pipeline import DEFAULT_RESULTS_PATH, read_results
 from .rate_limiter import rate_limiter
 from .traffic_classifier import traffic_classifier
@@ -387,7 +388,20 @@ def footprints():
     cowrie_log = (REPO_ROOT / "honeypot_dataset" / "cowrie" / "logs" / "cowrie.json")
 
     rows: List[Dict[str, Any]] = []
+    session_starts: Dict[str, Any] = {}
     if cowrie_log.exists():
+        # first pass: when did each session open?
+        with cowrie_log.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or "session.connect" not in line:
+                    continue
+                try:
+                    e = json.loads(line)
+                except Exception:
+                    continue
+                if e.get("eventid") == "cowrie.session.connect" and e.get("session"):
+                    session_starts[e["session"]] = e.get("timestamp")
         with cowrie_log.open(encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 line = line.strip()
@@ -402,12 +416,21 @@ def footprints():
                     "cowrie.login.success", "cowrie.session.connect",
                 ):
                     continue
-                if ip_filter and e.get("src_ip") != ip_filter:
-                    continue
                 kind = e["eventid"].rsplit(".", 1)[-1]
+                seen = str(e.get("src_ip", "") or "")
+                # the honeypot saw the proxy, not the peer -- recover the peer
+                sid = e.get("session", "")
+                if looks_like_proxy(seen):
+                    peer = attributor.resolve(
+                        session_starts.get(sid, e.get("timestamp")), fallback=seen)
+                else:
+                    peer = seen
+                if ip_filter and peer != ip_filter:
+                    continue
                 rows.append({
                     "ts": e.get("timestamp"),
-                    "ip": e.get("src_ip"),
+                    "ip": peer,
+                    "observed_ip": seen if peer != seen else None,
                     "session": e.get("session"),
                     "kind": kind,
                     "detail": (e.get("input") if kind == "input"

@@ -22,13 +22,87 @@ from typing import List, Optional, Tuple
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PY = sys.executable
 
+COWRIE_DIR = REPO_ROOT / "honeypot_dataset" / "cowrie"
+COWRIE_CONTAINER = "cowrie-honeypot"
+
 COMPONENTS = [
-    # (label, colour-ish tag, argv, the port it must end up listening on)
+    # (label, argv, the port it must end up listening on)
     ("REAL",     [PY, "demo/real_server.py"],                              8000),
     ("HONEYPOT", [PY, "demo/ssh_honeypot.py"],                             8081),
     ("GATEWAY",  [PY, "-m", "traffic_gateway.inspection_gateway"],         8080),
     ("PIPELINE", [PY, "-m", "traffic_gateway.run_pipeline", "--poll", "3"], 5000),
 ]
+
+
+# ── Cowrie (the real honeypot, in Docker) ────────────────────────────────────
+def docker_bin() -> Optional[str]:
+    """Docker is not always on PATH on Windows even when it is installed."""
+    import shutil
+
+    found = shutil.which("docker")
+    if found:
+        return found
+    # Docker Desktop installs either machine-wide or per-user; check both.
+    for fallback in (
+        Path(r"C:\Program Files\Docker\Docker\resources\bin\docker.exe"),
+        Path.home() / r"AppData\Local\Programs\DockerDesktop\resources\bin\docker.exe",
+    ):
+        if fallback.exists():
+            return str(fallback)
+    return None
+
+
+def docker_ready(docker: Optional[str]) -> bool:
+    if not docker:
+        return False
+    try:
+        return subprocess.run([docker, "info", "--format", "{{.ServerVersion}}"],
+                              capture_output=True, timeout=25).returncode == 0
+    except Exception:
+        return False
+
+
+def cowrie_up(docker: str) -> bool:
+    """Start (or reuse) the Cowrie container. Returns True once :8081 answers."""
+    running = subprocess.run(
+        [docker, "ps", "--filter", f"name={COWRIE_CONTAINER}",
+         "--filter", "status=running", "--format", "{{.Names}}"],
+        capture_output=True, text=True, timeout=30)
+    if COWRIE_CONTAINER in running.stdout:
+        # If cowrie.json was deleted while the container held it open, Cowrie
+        # keeps writing to the unlinked handle and the host file never comes
+        # back -- the MT3 watcher would then see nothing at all. Restarting
+        # makes it reopen the path. This happens every time someone clears the
+        # logs between rehearsals without stopping the container.
+        if not (COWRIE_DIR / "logs" / "cowrie.json").exists():
+            print("  [COWRIE  ] log file missing -- restarting so Cowrie reopens it",
+                  flush=True)
+            subprocess.run([docker, "restart", COWRIE_CONTAINER],
+                           capture_output=True, timeout=120)
+        else:
+            print("  [COWRIE  ] already running")
+    else:
+        print(f"  [COWRIE  ] docker compose up -d ...", flush=True)
+        proc = subprocess.run([docker, "compose", "up", "-d"], cwd=str(COWRIE_DIR),
+                              capture_output=True, text=True, timeout=300)
+        if proc.returncode != 0:
+            print("  [COWRIE  ] failed to start:")
+            for line in (proc.stderr or proc.stdout).strip().splitlines()[-6:]:
+                print(f"  [COWRIE  ]   {line}")
+            return False
+    return wait_for_port(8081, timeout=90)
+
+
+def cowrie_version(docker: str) -> str:
+    try:
+        out = subprocess.run([docker, "logs", COWRIE_CONTAINER],
+                             capture_output=True, text=True, timeout=25)
+        for line in (out.stdout + out.stderr).splitlines():
+            if "Cowrie Version" in line:
+                return line.split("Cowrie Version", 1)[1].strip()
+    except Exception:
+        pass
+    return "unknown"
 
 
 def lan_ip() -> str:
@@ -89,11 +163,13 @@ def firewall_rule_present() -> bool:
         return False
 
 
-def banner(ip: str, fw: bool, port: int = 5000) -> None:
+def banner(ip: str, fw: bool, port: int = 5000, honeypot: str = "python") -> None:
     print()
     print("  " + "=" * 68)
     print("  LIVE TWO-LAPTOP DEMO IS UP")
     print("  " + "=" * 68)
+    print()
+    print(f"  HONEYPOT: {honeypot}")
     print()
     print("  YOUR DASHBOARD (keep this on screen):")
     print(f"      http://localhost:{port}/live")
@@ -125,7 +201,26 @@ def main() -> int:
     ap.add_argument("--zero-trust", action="store_true",
                     help="disable classifier routing: everything unknown goes to the honeypot")
     ap.add_argument("--quiet", action="store_true", help="suppress routine pipeline logs")
+    ap.add_argument("--honeypot", choices=("auto", "cowrie", "python"), default="auto",
+                    help="auto (default): real Cowrie in Docker when available, "
+                         "else the built-in python emulator")
     args = ap.parse_args()
+
+    # -- pick the honeypot --------------------------------------------------
+    docker = docker_bin()
+    use_cowrie = args.honeypot == "cowrie" or (
+        args.honeypot == "auto" and docker_ready(docker))
+    if args.honeypot == "cowrie" and not docker_ready(docker):
+        print()
+        print("  ERROR: --honeypot cowrie, but Docker is not reachable.")
+        print("  Start Docker Desktop, or use --honeypot python.")
+        print()
+        return 1
+
+    global COMPONENTS
+    if use_cowrie:
+        # Cowrie owns :8081; the python emulator must not also claim it.
+        COMPONENTS = [c for c in COMPONENTS if c[0] != "HONEYPOT"]
 
     busy = preflight()
     if busy:
@@ -148,6 +243,14 @@ def main() -> int:
     procs: List[Tuple[str, subprocess.Popen]] = []
     print("\n  starting components ...\n", flush=True)
     try:
+        if use_cowrie:
+            if not cowrie_up(docker):
+                print("\n  Cowrie did not come up on :8081."
+                      " Retry, or run with --honeypot python.\n")
+                return 1
+            print(f"  [COWRIE  ] listening on :8081  (Cowrie {cowrie_version(docker)},"
+                  f" real honeypot, container {COWRIE_CONTAINER})", flush=True)
+
         for label, argv, port in components:
             cmd = list(argv)
             if label == "PIPELINE":
@@ -170,7 +273,9 @@ def main() -> int:
                     print(f"  [{label:8s}] process exited with {proc.returncode}")
                     raise SystemExit(1)
 
-        banner(lan_ip(), firewall_rule_present(), args.port)
+        banner(lan_ip(), firewall_rule_present(), args.port,
+               f"real Cowrie {cowrie_version(docker)} in Docker (adaptive honeyfs)"
+               if use_cowrie else "built-in python emulator (demo/ssh_honeypot.py)")
 
         while True:
             for label, proc in procs:

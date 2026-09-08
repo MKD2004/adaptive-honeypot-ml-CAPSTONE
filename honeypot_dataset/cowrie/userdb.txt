@@ -1,0 +1,5 @@
+# username:uid:password   ('*' = wildcard, '!' = refuse)
+# Deliberately permissive: we want every credential attempt recorded AND a shell
+# handed over, because the commands typed afterwards are what MT3 classifies.
+root:x:*
+*:x:*

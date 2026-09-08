@@ -140,6 +140,17 @@ class ProxyHandler:
                     break
 
                 if not data:
+                    # Propagate the half-close. Without this the peer never
+                    # learns the other side is done: both copy-loops are
+                    # gathered, so the session would hang until
+                    # SESSION_TIMEOUT_SEC and the honeypot would not emit its
+                    # session-closed event (which is what the MT3 watcher waits
+                    # for) until then.
+                    try:
+                        if writer.can_write_eof():
+                            writer.write_eof()
+                    except Exception:
+                        pass
                     break   # EOF
 
                 # Record for scoring before forwarding

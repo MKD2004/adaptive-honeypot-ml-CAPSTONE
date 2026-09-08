@@ -28,6 +28,7 @@ from .feature_bridge import (
     honeypot_target_for,
     kcvr_valid,
 )
+from .peer_attribution import looks_like_proxy, resolve_peer_ip
 from .traffic_classifier import traffic_classifier
 
 log = logging.getLogger("traffic_gateway.post_session")
@@ -173,6 +174,16 @@ class PostSessionPipeline:
 
         t0 = time.perf_counter()
 
+        # (a) attribute the session to the real peer. The honeypot only ever saw
+        # the gateway proxying on its behalf (127.0.0.1, or the Docker bridge
+        # when Cowrie runs in a container), so recover the peer from the
+        # gateway's own log by connect time.
+        seen_ip = str(record.get("src_ip", "") or "")
+        if looks_like_proxy(seen_ip):
+            peer = resolve_peer_ip(record.get("t_start"), fallback=seen_ip)
+            if peer and peer != seen_ip:
+                record = {**record, "src_ip": peer, "observed_src_ip": seen_ip}
+
         # (b) gateway pre-filter score -- reuse Step 2 when the caller has none
         gw = gateway_verdict
         if gw is not None and gateway_score is None:
@@ -232,6 +243,7 @@ class PostSessionPipeline:
             "honeypot_action": action,
             "kcvr_valid": kcvr_valid(record.get("micro_state_sequence", "")),
             "rule_label": record.get("micro_state", ""),
+            "observed_src_ip": record.get("observed_src_ip"),
             "semantic_available": bool(self.semantic.available),
             "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
         }

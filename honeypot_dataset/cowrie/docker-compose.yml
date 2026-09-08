@@ -1,4 +1,14 @@
-version: "3.8"
+# Real Cowrie, deployed as the gateway's honeypot backend.
+#
+# Port 8081 is CONFIG.HONEYPOT_TARGETS in traffic_gateway/config.py, so the
+# gateway proxies to this container with no code change. It binds to 127.0.0.1
+# only: peers must come through the gateway on 8080, never straight here.
+#
+# ./logs   is where traffic_gateway/post_session_pipeline.py already watches for
+#          cowrie.json, so real captured sessions feed MT3 unchanged.
+# ./honeyfs is the adaptive surface -- adaptive_honeypot/configurator.py plants
+#          or removes /etc/shadow, the SSH host key and the MOTD there as MT3
+#          escalates the interaction level.
 
 services:
   cowrie:
@@ -6,10 +16,9 @@ services:
     container_name: cowrie-honeypot
     restart: unless-stopped
     ports:
-      - "2222:2222"     # SSH honeypot
-      - "2223:2223"     # Telnet honeypot
+      - "127.0.0.1:8081:2222"      # gateway -> honeypot
     volumes:
       - ./logs:/cowrie/cowrie-git/var/log/cowrie
+      - ./honeyfs:/cowrie/honeyfs:ro
       - ./cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
-    environment:
-      - COWRIE_TELNET_ENABLED=yes
+      - ./userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro

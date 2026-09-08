@@ -25,6 +25,43 @@ ACTIVE_CONFIG_PATH = _MODULE_DIR / "active_config.json"
 CONFIG_LOG_PATH = REPO_ROOT / "logs" / "honeypot_config_changes.jsonl"
 TRENDING_PROFILES_PATH = REPO_ROOT / "cve_intelligence" / "data" / "trending_profiles.json"
 
+# Cowrie's [honeypot] contents_path, bind-mounted into the container. Cowrie
+# resolves <contents_path>/<relpath> ahead of its bundled filesystem and builds
+# a fresh HoneyPotFilesystem per session, so planting or removing a file here
+# changes what the NEXT attacker sees -- no container restart.
+HONEYFS_PATH = REPO_ROOT / "honeypot_dataset" / "cowrie" / "honeyfs"
+
+# Files that only appear once MT3 has seen the attacker go deep enough. The
+# paths must already exist in Cowrie's virtual filesystem for `cat` to serve
+# them; all of these do (verified against the shipped fs.pickle).
+BAIT_SENSITIVE = "etc/shadow"          # phase 4-6: fake_sensitive_files
+BAIT_SSH_KEY = "etc/ssh/ssh_host_rsa_key"   # phase 4-6: fake_ssh_keys
+
+FAKE_SHADOW = """root:$6$Xy9kQm2v$8HJk3nRtY5wPqZ2xCvB1nM4dF7gH9jK0lP3sT6uV8wX1yZ4aB7cD0eF2gH5i:19722:0:99999:7:::
+daemon:*:19722:0:99999:7:::
+deploy:$6$Kp3mN8qR$2vC5xB8nM1dF4gH7jK0lP3sT6uV9wX2yZ5aB8cD1eF4gH7iJ0kL3mN6oP9q:19722:0:99999:7:::
+mysql:!:19722:0:99999:7:::
+"""
+
+FAKE_HOST_KEY = """-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
+NhAAAAAwEAAQAAAYEAxCANARYTOKENFORTHEADAPTIVEHONEYPOTCAPSTONEDEMONSTRAT
+IONTHISISNOTAREALPRIVATEKEYANDCANNOTBEUSEDTOAUTHENTICATEANYWHEREATALL0
+NOTAVALIDKEYNOTAVALIDKEYNOTAVALIDKEYNOTAVALIDKEYNOTAVALIDKEYNOTAVALIDK
+-----END OPENSSH PRIVATE KEY-----
+"""
+
+# MOTD per interaction level -- the cheapest visible proof the honeypot changed.
+MOTD_BY_LEVEL = {
+    "low": "Debian GNU/Linux 12\n",
+    "medium": "Debian GNU/Linux 12\nLast login from 10.0.4.7\n",
+    "high": ("Debian GNU/Linux 12\n"
+             "*** WARNING: production database host - backups in /var/backups ***\n"),
+    "maximum": ("Debian GNU/Linux 12\n"
+                "*** WARNING: production database host - backups in /var/backups ***\n"
+                "*** admin: credentials rotated, see /root/.env ***\n"),
+}
+
 PHASE_NAMES = [
     "Reconnaissance", "Initial Access", "Execution", "Discovery",
     "Privilege Escalation", "Persistence", "Defense Evasion",
@@ -315,12 +352,21 @@ class HoneypotConfigurator:
             new["updated_at"] = _utcnow()
             new["reason"] = reason
 
+            honeyfs_changes: Dict[str, str] = {}
             if write:
                 self.config_path.parent.mkdir(parents=True, exist_ok=True)
                 tmp = self.config_path.with_suffix(".json.tmp")
                 with tmp.open("w", encoding="utf-8") as fh:
                     json.dump(new, fh, indent=2, default=str)
                 tmp.replace(self.config_path)      # atomic: readers never see half a config
+                # Make it real: plant/remove the bait files Cowrie serves.
+                try:
+                    honeyfs_changes = apply_honeyfs(new)
+                except Exception as exc:
+                    log.warning("honeyfs update failed: %s", exc)
+                if honeyfs_changes:
+                    log.info("honeyfs: %s", ", ".join(
+                        f"{k} {v}" for k, v in sorted(honeyfs_changes.items())))
 
             if changed:
                 self.changes += 1
@@ -336,6 +382,7 @@ class HoneypotConfigurator:
                 "changed": changed,
                 "diff": diff,
                 "reason": reason,
+                "honeyfs": honeyfs_changes,
                 "alert_fired": bool(new.get("alert")) and not bool(previous.get("alert")),
             }
 
@@ -359,13 +406,22 @@ class HoneypotConfigurator:
             fh.write(json.dumps(entry, default=str) + "\n")
 
     def reset(self) -> Dict[str, Any]:
-        """Return the honeypot to the day-zero low-interaction posture."""
+        """Return the honeypot to the day-zero low-interaction posture.
+
+        Also strips the bait out of the honeyfs -- otherwise a reset between
+        rehearsals leaves /etc/shadow planted and the next demo opens with the
+        honeypot already looking escalated.
+        """
         with self._lock:
             cfg = self.default_config()
             cfg["updated_at"] = _utcnow()
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
             with self.config_path.open("w", encoding="utf-8") as fh:
                 json.dump(cfg, fh, indent=2, default=str)
+            try:
+                apply_honeyfs(cfg)
+            except Exception as exc:
+                log.warning("honeyfs reset failed: %s", exc)
             return cfg
 
     def recent_changes(self, limit: int = 20) -> List[dict]:
@@ -381,6 +437,45 @@ class HoneypotConfigurator:
                     except Exception:
                         continue
         return rows[-limit:][::-1]
+
+
+def apply_honeyfs(cfg: Dict[str, Any], honeyfs: Path = HONEYFS_PATH) -> Dict[str, Any]:
+    """Make the config real inside Cowrie by planting/removing bait files.
+
+    Returns {relpath: "planted"|"removed"} for the files that actually changed,
+    so the change log records what an attacker's next session will differ by.
+    """
+    honeyfs = Path(honeyfs)
+    if not honeyfs.parent.exists():
+        return {}                      # Cowrie deployment not present; nothing to do
+
+    wanted: Dict[str, str] = {
+        "etc/motd": MOTD_BY_LEVEL.get(str(cfg.get("interaction_level")), MOTD_BY_LEVEL["low"]),
+    }
+    if cfg.get("fake_sensitive_files"):
+        wanted[BAIT_SENSITIVE] = FAKE_SHADOW
+    if cfg.get("fake_ssh_keys"):
+        wanted[BAIT_SSH_KEY] = FAKE_HOST_KEY
+
+    changed: Dict[str, str] = {}
+    managed = {"etc/motd", BAIT_SENSITIVE, BAIT_SSH_KEY}
+
+    for rel in sorted(managed):
+        path = honeyfs / rel
+        if rel in wanted:
+            content = wanted[rel]
+            if path.exists() and path.read_text(encoding="utf-8") == content:
+                continue
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+            changed[rel] = "planted"
+        elif path.exists():
+            try:
+                path.unlink()
+                changed[rel] = "removed"
+            except OSError:
+                pass
+    return changed
 
 
 def _summary(cfg: Dict[str, Any]) -> Dict[str, Any]:

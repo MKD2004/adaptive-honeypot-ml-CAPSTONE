@@ -11,6 +11,7 @@ honeypot_dataset/data/
 adaptive_honeypot/active_config.json
 demo/*_host_key
 honeypot_dataset/cowrie/logs/
+honeypot_dataset/cowrie/honeyfs/
 traffic_gateway/logs/
 traffic_gateway/data/blacklist.json
 traffic_gateway/data/whitelist.json

@@ -28,8 +28,11 @@ cd C:\Users\mahit\OneDrive\Desktop\adaptive-honeypot-ml-CAPSTONE
 .\honeypot_dataset\venv\Scripts\python.exe demo\live_demo.py
 ```
 
-This starts four components (real server :8000, SSH honeypot :8081, gateway :8080,
-API + MT3 watcher :5000) and prints your LAN IP and the exact command your friends type.
+Starts the real server (:8000), **real Cowrie 3.0.13 in Docker** (:8081), the gateway
+(:8080) and the API + MT3 watcher (:5000), then prints your LAN IP and the exact
+command your friends type. Cowrie is started automatically; if Docker isn't running
+it falls back to the built-in python emulator. Force either with
+`--honeypot cowrie` / `--honeypot python`.
 
 Then open and leave on screen:
 
@@ -72,6 +75,33 @@ Inside the honeypot she can type `uname -a`, `cat /etc/passwd`, `sudo -l`,
 | MT3 classification | the micro-state + kill-chain phase of each captured session |
 | Active config | the honeypot escalating low → medium → high as they dig deeper |
 
+### Why real Cowrie matters here
+
+`DECISIONS.md` records the project's biggest known gap: the 15,000 "real Cowrie
+sessions" in the training set are **synthetic**, and genuinely real data is
+CIC-IDS2017 + UNSW-NB15 only, anchoring 13 of 45 classes. Running real Cowrie live
+produces **genuinely real honeypot sessions** — it closes that provenance hole
+rather than papering over it, and it is the honest answer if the panel asks.
+
+Cowrie also adapts for real. `adaptive_honeypot/configurator.py` writes into the
+bind-mounted `honeyfs`, and Cowrie resolves `<contents_path>/<file>` ahead of its
+bundled filesystem, rebuilding the filesystem per session — so MT3's escalation
+changes what the next attacker sees **with no container restart**. Verified:
+
+| Interaction level | `cat /etc/shadow` returns |
+|---|---|
+| LOW | Cowrie's stock `$6$4aOmWdpJ…` |
+| HIGH | our planted `$6$Xy9kQm2v…`, plus a fake `deploy` user and a stealable SSH key |
+
+### Managing the container
+
+```powershell
+cd honeypot_dataset\cowrie
+docker compose ps        # is it up?
+docker compose logs -f   # what is Cowrie doing?
+docker compose down      # stop it (it restarts with Docker otherwise)
+```
+
 ### The closed loop (this is the whole capstone in one demo)
 
 ```
@@ -80,9 +110,10 @@ friend attacks  →  gateway classifies  →  diverts to honeypot  →  logs her
 honeypot serves a richer fake filesystem  ←  configurator escalates  ←  MT3 classifies
 ```
 
-Verified live: a burst-then-attack session was classified `DISC_NETSTAT_SCAN`
-(p=0.995, phase 3 Discovery) and the honeypot auto-escalated `low → medium`
-before the next connection.
+Verified live against real Cowrie: a burst-then-attack session was captured by
+Cowrie, classified `EVASION_LOG_WIPE` (p=0.981, phase 6 Defense Evasion), and the
+honeypot auto-escalated to HIGH — planting a fake `/etc/shadow` and a stealable
+SSH key that the next attacker can actually `cat`.
 
 ### Rehearse it alone (no second laptop needed)
 
@@ -101,6 +132,9 @@ before the next connection.
 | **The real server refuses wrong passwords** | That is the point — it is real. `deploy/deploy123` or `admin/admin123`. The honeypot, by contrast, accepts anything. |
 | **`ssh` complains the host key changed** | Different key on the real server vs the honeypot — that is expected when an IP gets rerouted. `ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL ...` |
 | **Ports already in use** | `live_demo.py` refuses to start and names the busy port. Kill the old python processes first. |
+| **Never delete `cowrie.json` while the container runs** | Cowrie keeps writing to the deleted file handle and the host file never reappears, so the MT3 watcher silently sees nothing. `live_demo.py` detects this and restarts the container, but the clean way is `docker compose down` first. |
+| **Docker Desktop must be running** | Otherwise `live_demo.py` quietly falls back to the python emulator. Pass `--honeypot cowrie` to make it fail loudly instead. |
+| **The honeypot sees the gateway, not the peer** | Inherent to proxying: Cowrie logs `172.18.0.1` (the Docker bridge). The dashboard recovers the real peer by correlating with the gateway's own log and shows the observed address alongside. If several people connect within the same second, attribution can pick the wrong one. |
 
 ---
 
@@ -278,8 +312,15 @@ adaptive-honeypot-ml-CAPSTONE/
 │   ├── simulate_attack.py      # 3-scenario scripted demo (no network needed)
 │   ├── live_demo.py            # ONE COMMAND: starts the whole live two-laptop demo
 │   ├── real_server.py          #   the REAL production SSH service  (:8000)
-│   ├── ssh_honeypot.py         #   the FAKE SSH server, logs Cowrie JSON  (:8081)
+│   ├── ssh_honeypot.py         #   fallback python SSH emulator (:8081, no Docker)
+│   ├── real_server_host_key    #   generated on first run
 │   └── attack_client.py        #   stands in for a friend's laptop (rehearsal)
+│
+├── honeypot_dataset/cowrie/    # REAL Cowrie deployment (docker compose)
+│   ├── docker-compose.yml      #   :8081 -> container :2222
+│   ├── cowrie.cfg              #   contents_path = the adaptive honeyfs
+│   ├── honeyfs/                #   bait the configurator plants/removes
+│   └── logs/cowrie.json        #   real captured sessions -> MT3
 │
 ├── honeypot_dataset/           # Dataset pipeline (HoneySynth-960k) - DO NOT RUN
 │   ├── configs/schema.py       #   45 micro-states, 128 features, kill-chain DAG

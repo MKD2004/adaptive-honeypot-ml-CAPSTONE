@@ -66,10 +66,22 @@ each change logged with its cause, e.g.
 
 | Gotcha | Why it matters |
 |---|---|
-| **Always pass `--reset-config`** | Without it the honeypot is still HIGH from the last run, every scenario prints "No change", and the escalation story disappears. This is the #1 way to fluff the demo. |
+| **Always pass `--reset-config`** | The honeypot config is *stateful* and persists between runs. Without the flag, scenario 1 opens with a confusing `Phase 6->1, high->low` de-escalation (undoing the last run) instead of a clean low baseline. Scenarios 2 and 3 still escalate correctly — the demo is not broken, it just reads worse. **It becomes essential when re-running a single scenario**: `--scenario 3` twice in a row is phase 6 → phase 6, so it prints "No change" and shows nothing. |
 | **Use the full `.\honeypot_dataset\venv\Scripts\python.exe` path** | Plain `python` is 3.14 on PATH with no torch — it fails instantly. |
 | **Do NOT start `dashboard/backend.py`** | It also claims port 5000 and will collide. `run_pipeline` already serves both pages. |
 | **Two terminals, not one** | Terminal 1 blocks on the log watcher by design. |
+
+### You do NOT need to delete the logs between runs
+
+`logs/pipeline_results.jsonl` is **append-only**, and re-running is safe and repeatable
+— the demo is seeded, so every run produces byte-identical predictions (verified over
+3 consecutive runs with the logs left in place). Deleting is purely cosmetic:
+
+* **Delete** if you want the dashboard to start empty and fill up live in front of the panel.
+* **Keep** if you'd rather open on a dashboard that already has data — the phase
+  distribution and stats accumulate across runs, which looks fuller.
+
+Either way, pass `--reset-config`. That is the only flag that affects the output.
 
 ### If the dashboard dies mid-demo
 

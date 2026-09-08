@@ -36,6 +36,11 @@ class RoutingDecision:
     target:      Optional[Target]    # None means reject the connection
     target_type: str                 # "honeypot" | "backend" | "reject"
     reason:      str
+    # Populated when CONFIG.CLASSIFIER_ROUTING is on; carried into the
+    # CONN_ROUTED event so the dashboard can show WHY an IP was routed.
+    verdict:     Optional[str]   = None   # MALICIOUS | SUSPICIOUS | BENIGN
+    score:       Optional[float] = None   # 0.0 - 1.0
+    signals:     tuple           = ()
 
 
 class TrafficRouter:
@@ -64,7 +69,23 @@ class TrafficRouter:
                 reason="rate_limited",
             )
 
-        # ── 2. Status-based routing ───────────────────────────────────────
+        # ── 2. Signal-based verdict (telemetry always; routing when enabled) ──
+        # Only signals 1 and 2 (reputation + behaviour) can fire here: no bytes
+        # have been proxied yet, so there is no payload to score. The payload
+        # signals run post-session, in the MT3 pipeline.
+        verdict = score = None
+        signals: tuple = ()
+        if CONFIG.CLASSIFIER_ROUTING:
+            from .traffic_classifier import traffic_classifier
+
+            result = traffic_classifier.classify(
+                {"src_ip": ip, "dst_port": CONFIG.GATEWAY_PORT}
+            )
+            verdict = result["verdict"]
+            score = result["score"]
+            signals = tuple(result["signals_fired"])
+
+        # ── 3. Status-based routing ───────────────────────────────────────
         status = classifier.get_status(ip)
 
         if status == IPStatus.WHITELISTED:
@@ -72,24 +93,45 @@ class TrafficRouter:
                 target=CONFIG.REAL_BACKEND,
                 target_type="backend",
                 reason="whitelisted",
+                verdict=verdict, score=score, signals=signals,
             )
+        elif status == IPStatus.UNKNOWN and CONFIG.CLASSIFIER_ROUTING:
+            # An unknown IP the classifier judges harmless reaches the real
+            # service; anything scoring SUSPICIOUS or above is diverted.
+            if verdict == "BENIGN":
+                decision = RoutingDecision(
+                    target=CONFIG.REAL_BACKEND,
+                    target_type="backend",
+                    reason=f"classifier_benign_score_{score:.2f}",
+                    verdict=verdict, score=score, signals=signals,
+                )
+            else:
+                decision = RoutingDecision(
+                    target=self._next_honeypot(),
+                    target_type="honeypot",
+                    reason=f"classifier_{str(verdict).lower()}_score_{score:.2f}",
+                    verdict=verdict, score=score, signals=signals,
+                )
         elif status == IPStatus.BLACKLISTED:
             decision = RoutingDecision(
                 target=self._next_honeypot(),
                 target_type="honeypot",
                 reason="blacklisted_honeypot_observation",
+                verdict=verdict, score=score, signals=signals,
             )
         elif status == IPStatus.PROBATION:
             decision = RoutingDecision(
                 target=self._next_honeypot(),
                 target_type="honeypot",
                 reason="probation_honeypot_observation",
+                verdict=verdict, score=score, signals=signals,
             )
         elif status == IPStatus.SUSPICIOUS:
             decision = RoutingDecision(
                 target=self._next_honeypot(),
                 target_type="honeypot",
                 reason="suspicious_redirect",
+                verdict=verdict, score=score, signals=signals,
             )
         else:
             # UNKNOWN — zero-trust default
@@ -97,6 +139,7 @@ class TrafficRouter:
                 target=self._next_honeypot(),
                 target_type="honeypot",
                 reason="unknown_zero_trust_redirect",
+                verdict=verdict, score=score, signals=signals,
             )
 
         glog.log_event(
@@ -106,6 +149,9 @@ class TrafficRouter:
                 "target_type": decision.target_type,
                 "target":      str(decision.target) if decision.target else "none",
                 "reason":      decision.reason,
+                "verdict":     decision.verdict,
+                "score":       decision.score,
+                "signals":     list(decision.signals),
             },
         )
         return decision

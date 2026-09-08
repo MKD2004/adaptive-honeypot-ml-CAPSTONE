@@ -6,7 +6,105 @@ An intelligent, self-evolving cybersecurity system that detects, deceives, and a
 
 ---
 
-# 🎬 FULL PIPELINE DEMO — copy-paste these
+# 🔴 LIVE TWO-LAPTOP DEMO — your friends attack, you watch
+
+> A **real gateway** in front of a **real server** and a **fake server**. Your friends
+> SSH in from their own laptops; the gateway classifies each source IP and sends
+> benign users to the production box and hostile ones into the honeypot, where
+> every keystroke is captured and fed to MT3.
+
+### ONE-TIME: open the firewall (ADMIN PowerShell, once ever)
+
+```powershell
+New-NetFirewallRule -DisplayName "Adaptive Honeypot Gateway" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
+```
+
+Without this, Windows silently drops your friends' connections and nothing happens.
+
+### YOUR LAPTOP — start everything with one command
+
+```powershell
+cd C:\Users\mahit\OneDrive\Desktop\adaptive-honeypot-ml-CAPSTONE
+.\honeypot_dataset\venv\Scripts\python.exe demo\live_demo.py
+```
+
+This starts four components (real server :8000, SSH honeypot :8081, gateway :8080,
+API + MT3 watcher :5000) and prints your LAN IP and the exact command your friends type.
+
+Then open and leave on screen:
+
+```
+http://localhost:5000/live
+```
+
+### THEIR LAPTOPS — nothing to install
+
+**Friend A (behaves normally → reaches the REAL server):**
+```powershell
+ssh deploy@192.168.0.110 -p 8080
+# password: deploy123
+```
+
+**Friend B (earns a hostile verdict → lands in the HONEYPOT):**
+```powershell
+# 1. hammer the gateway so the rate/port-scan signals fire
+for ($i=1; $i -le 40; $i++) { Test-NetConnection 192.168.0.110 -Port 8080 -InformationLevel Quiet }
+
+# 2. now connect -- any password works, the honeypot records it
+ssh root@192.168.0.110 -p 8080
+```
+
+Inside the honeypot she can type `uname -a`, `cat /etc/passwd`, `sudo -l`,
+`cat /etc/shadow`, `crontab -l` — all fake, all recorded.
+
+> Replace `192.168.0.110` with whatever IP `live_demo.py` prints.
+> If a friend can't run the burst loop, just click **BLOCK** next to her IP on your
+> dashboard — her next connection is forced into the honeypot.
+
+### What the panel sees on your screen
+
+| Panel | Shows |
+|---|---|
+| Toast notification | *"192.168.0.42 connected — detected **SUSPICIOUS** → diverted to the **HONEYPOT**"* |
+| Routing decisions | every connection with its verdict, score and which signals fired |
+| Connected peers | live BLOCK / TRUST / RESET buttons per IP |
+| Honeypot footprints | every password tried and every command typed |
+| MT3 classification | the micro-state + kill-chain phase of each captured session |
+| Active config | the honeypot escalating low → medium → high as they dig deeper |
+
+### The closed loop (this is the whole capstone in one demo)
+
+```
+friend attacks  →  gateway classifies  →  diverts to honeypot  →  logs her commands
+                                                                        ↓
+honeypot serves a richer fake filesystem  ←  configurator escalates  ←  MT3 classifies
+```
+
+Verified live: a burst-then-attack session was classified `DISC_NETSTAT_SCAN`
+(p=0.995, phase 3 Discovery) and the honeypot auto-escalated `low → medium`
+before the next connection.
+
+### Rehearse it alone (no second laptop needed)
+
+```powershell
+# acts as your friend's laptop, from your own machine
+.\honeypot_dataset\venv\Scripts\python.exe demo\attack_client.py 127.0.0.1 --user deploy --password deploy123 --profile normal
+.\honeypot_dataset\venv\Scripts\python.exe demo\attack_client.py 127.0.0.1 --burst 45 --profile full
+```
+
+### Live-demo gotchas
+
+| Gotcha | Fix |
+|---|---|
+| **On a LAN nobody is malicious by default** | `192.168.x.x` has no geo-risk and no JA3, so every peer starts at score 0.14 = BENIGN. They must *earn* the verdict with the burst loop, or you BLOCK them from the dashboard. |
+| **Everyone must be on the same Wi-Fi** | Phone hotspots and guest/AP-isolated networks block laptop-to-laptop traffic entirely. |
+| **The real server refuses wrong passwords** | That is the point — it is real. `deploy/deploy123` or `admin/admin123`. The honeypot, by contrast, accepts anything. |
+| **`ssh` complains the host key changed** | Different key on the real server vs the honeypot — that is expected when an IP gets rerouted. `ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL ...` |
+| **Ports already in use** | `live_demo.py` refuses to start and names the busy port. Kill the old python processes first. |
+
+---
+
+# 🎬 SCRIPTED PIPELINE DEMO — copy-paste these
 
 > Runs the complete end-to-end system with three simulated attacker sessions.
 > **No network, no live attacker, no Cowrie instance required.** Takes ~37 seconds.
@@ -177,7 +275,11 @@ adaptive-honeypot-ml-CAPSTONE/
 │   └── configurator.py         # MT3 prediction -> live honeypot config
 │
 ├── demo/
-│   └── simulate_attack.py      # 3-scenario panel demo (no network needed)
+│   ├── simulate_attack.py      # 3-scenario scripted demo (no network needed)
+│   ├── live_demo.py            # ONE COMMAND: starts the whole live two-laptop demo
+│   ├── real_server.py          #   the REAL production SSH service  (:8000)
+│   ├── ssh_honeypot.py         #   the FAKE SSH server, logs Cowrie JSON  (:8081)
+│   └── attack_client.py        #   stands in for a friend's laptop (rehearsal)
 │
 ├── honeypot_dataset/           # Dataset pipeline (HoneySynth-960k) - DO NOT RUN
 │   ├── configs/schema.py       #   45 micro-states, 128 features, kill-chain DAG
@@ -187,7 +289,7 @@ adaptive-honeypot-ml-CAPSTONE/
 │
 ├── ml_analytics/               # MT3 + CNN-LSTM baseline + trained artifacts
 ├── cve_intelligence/           # NVD / EPSS / CISA-KEV / ExploitDB clients
-├── dashboard/static/           # index.html (gateway events) + pipeline.html (MT3)
+├── dashboard/static/           # index.html (events) + pipeline.html (MT3) + live.html (access control)
 ├── response_mitigation/        # Firewall / IP blocking (scaffolding)
 └── logs/                       # pipeline_results.jsonl (generated)
 ```
@@ -217,11 +319,11 @@ See `STATUS.md` and `DECISIONS.md`.
 git clone https://github.com/MKD2004/adaptive-honeypot-ml-CAPSTONE.git
 cd adaptive-honeypot-ml-CAPSTONE
 pip install -r requirements.txt
-pip install flask flask-cors watchdog
+pip install flask flask-cors watchdog paramiko
 ```
 
 The pipeline needs, in addition to the dataset venv's ML stack:
-`flask`, `flask-cors`, `watchdog`.
+`flask`, `flask-cors`, `watchdog`, `paramiko` (the last only for the live two-laptop demo).
 
 **Required artifacts** (not in git — large files):
 * `ml_analytics/artifacts/mt3_full_d256/best.pt` — the trained MT3 checkpoint

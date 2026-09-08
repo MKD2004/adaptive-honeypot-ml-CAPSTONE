@@ -58,6 +58,16 @@ class GatewayConfig:
     RATE_LIMIT_WINDOW_SEC: int = 60    # window size in seconds
     RATE_LIMIT_BLOCK_SEC:  int = 300   # hard-block duration after rate-offence
 
+    # ── Classifier-driven routing ────────────────────────────────────────────
+    # OFF by default: the gateway keeps its original zero-trust rule, where
+    # everything except a WHITELISTED IP is sent to the honeypot.
+    # ON (env GATEWAY_CLASSIFIER_ROUTING=1): traffic_classifier scores each
+    # connection and an UNKNOWN ip judged BENIGN reaches the real backend, while
+    # SUSPICIOUS/MALICIOUS goes to the honeypot. Explicit BLACKLISTED /
+    # WHITELISTED decisions always win over the classifier.
+    # This is what the live two-laptop demo runs with.
+    CLASSIFIER_ROUTING: bool = bool(os.getenv("GATEWAY_CLASSIFIER_ROUTING", ""))
+
     # ── Risk-score thresholds ────────────────────────────────────────────────
     SCORE_SUSPICIOUS:       float = 0.45   # ≥ → SUSPICIOUS
     SCORE_BLACKLIST:        float = 0.70   # ≥ → BLACKLISTED

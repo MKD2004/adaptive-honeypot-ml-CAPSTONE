@@ -277,11 +277,168 @@ def config_changes():
     return jsonify({"changes": _configurator().recent_changes(limit=limit)})
 
 
+# ── Live access control (the two-laptop demo) ────────────────────────────────
+def _tail_events(path: Path, limit: int = 4000) -> List[Dict[str, Any]]:
+    """Last `limit` JSON events from the gateway event log."""
+    if not path.exists():
+        return []
+    rows: List[Dict[str, Any]] = []
+    with path.open(encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except Exception:
+                continue
+    return rows[-limit:]
+
+
+@app.get("/api/live-access")
+def live_access():
+    """Every routing decision the gateway has made, newest first.
+
+    This is what the live demo watches: who connected, what the classifier
+    decided, and whether they reached the real server or the honeypot.
+    """
+    limit = request.args.get("limit", default=40, type=int)
+    events = _tail_events(GATEWAY_EVENT_LOG)
+
+    # index the session close events so each decision can show its byte counts
+    closes: Dict[str, Dict[str, Any]] = {}
+    for e in events:
+        if e.get("event") == "CONN_CLOSED" and e.get("session_id"):
+            closes[e["session_id"]] = e
+    session_by_ip: Dict[str, List[Dict[str, Any]]] = {}
+    for e in events:
+        if e.get("event") == "PROXY_CONNECTED":
+            session_by_ip.setdefault(e.get("ip", ""), []).append(e)
+
+    decisions: List[Dict[str, Any]] = []
+    for e in events:
+        if e.get("event") != "CONN_ROUTED":
+            continue
+        ip = e.get("ip", "")
+        rec = classifier.get(ip)
+        target_type = e.get("target_type", "")
+        decisions.append({
+            "ts": e.get("ts"),
+            "ip": ip,
+            "verdict": e.get("verdict"),
+            "score": e.get("score"),
+            "signals": e.get("signals", []),
+            "reason": e.get("reason"),
+            "target_type": target_type,
+            "target": e.get("target"),
+            "destination": ("REAL SERVER" if target_type == "backend"
+                            else "HONEYPOT" if target_type == "honeypot"
+                            else "REJECTED"),
+            "ip_status": e.get("ip_status") or rec.status.value,
+            "total_connections": rec.total_connections,
+            "is_blacklisted": blacklist_manager.is_blacklisted(ip),
+            "is_whitelisted": blacklist_manager.is_whitelisted(ip),
+        })
+
+    rejects = [e for e in events if e.get("event") == "CONN_REJECTED"]
+    for e in rejects:
+        decisions.append({
+            "ts": e.get("ts"), "ip": e.get("ip", ""), "verdict": None, "score": None,
+            "signals": [], "reason": e.get("reason"), "target_type": "reject",
+            "target": None, "destination": "REJECTED",
+            "ip_status": classifier.get(e.get("ip", "")).status.value,
+            "total_connections": classifier.get(e.get("ip", "")).total_connections,
+            "is_blacklisted": blacklist_manager.is_blacklisted(e.get("ip", "")),
+            "is_whitelisted": blacklist_manager.is_whitelisted(e.get("ip", "")),
+        })
+
+    decisions.sort(key=lambda d: str(d.get("ts") or ""), reverse=True)
+    decisions = decisions[:max(1, min(limit, 500))]
+
+    # per-IP rollup for the "who is connected" panel
+    peers: Dict[str, Dict[str, Any]] = {}
+    for d in decisions:
+        p = peers.setdefault(d["ip"], {
+            "ip": d["ip"], "connections": 0, "to_real": 0, "to_honeypot": 0,
+            "rejected": 0, "last_seen": d["ts"], "last_verdict": d["verdict"],
+            "last_score": d["score"], "ip_status": d["ip_status"],
+            "is_blacklisted": d["is_blacklisted"], "is_whitelisted": d["is_whitelisted"],
+        })
+        p["connections"] += 1
+        p["to_real"] += d["target_type"] == "backend"
+        p["to_honeypot"] += d["target_type"] == "honeypot"
+        p["rejected"] += d["target_type"] == "reject"
+
+    return jsonify({
+        "count": len(decisions),
+        "decisions": decisions,
+        "peers": sorted(peers.values(), key=lambda p: str(p["last_seen"]), reverse=True),
+        "classifier_routing": bool(CONFIG.CLASSIFIER_ROUTING),
+        "real_backend": str(CONFIG.REAL_BACKEND),
+        "honeypots": [str(t) for t in CONFIG.HONEYPOT_TARGETS],
+    })
+
+
+@app.get("/api/footprints")
+def footprints():
+    """What attackers actually typed inside the honeypot, newest first."""
+    limit = request.args.get("limit", default=60, type=int)
+    ip_filter = request.args.get("ip")
+    cowrie_log = (REPO_ROOT / "honeypot_dataset" / "cowrie" / "logs" / "cowrie.json")
+
+    rows: List[Dict[str, Any]] = []
+    if cowrie_log.exists():
+        with cowrie_log.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    e = json.loads(line)
+                except Exception:
+                    continue
+                if e.get("eventid") not in (
+                    "cowrie.command.input", "cowrie.login.failed",
+                    "cowrie.login.success", "cowrie.session.connect",
+                ):
+                    continue
+                if ip_filter and e.get("src_ip") != ip_filter:
+                    continue
+                kind = e["eventid"].rsplit(".", 1)[-1]
+                rows.append({
+                    "ts": e.get("timestamp"),
+                    "ip": e.get("src_ip"),
+                    "session": e.get("session"),
+                    "kind": kind,
+                    "detail": (e.get("input") if kind == "input"
+                               else f"{e.get('username','')} / {e.get('password','')}"
+                               if kind in ("failed", "success") else "session opened"),
+                })
+    rows.sort(key=lambda r: str(r.get("ts") or ""), reverse=True)
+    return jsonify({"count": len(rows[:limit]), "footprints": rows[:max(1, min(limit, 500))],
+                    "log": str(cowrie_log)})
+
+
+def lan_ip() -> str:
+    """This machine's LAN address -- what peers must connect to."""
+    import socket as _s
+
+    try:
+        with _s.socket(_s.AF_INET, _s.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))       # no packet is sent
+            return sock.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+
+
 @app.get("/api/health")
 def health():
     return jsonify({
         "ok": True,
         "time": _utcnow(),
+        "lan_ip": lan_ip(),
+        "gateway_port": CONFIG.GATEWAY_PORT,
+        "classifier_routing": bool(CONFIG.CLASSIFIER_ROUTING),
         "results_file": str(_results_path),
         "results_exist": _results_path.exists(),
         "pipeline_started": bool(_pipeline and _pipeline.started),
@@ -300,6 +457,15 @@ def pipeline_page():
     page = STATIC_DIR / "pipeline.html"
     if not page.exists():
         return jsonify({"error": "pipeline.html not built"}), 404
+    return send_file(page)
+
+
+@app.get("/live")
+def live_page():
+    """Live access-control view for the two-laptop demo."""
+    page = STATIC_DIR / "live.html"
+    if not page.exists():
+        return jsonify({"error": "live.html not built"}), 404
     return send_file(page)
 
 

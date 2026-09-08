@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LIVE ACCESS CONTROL — ADAPTIVE HONEYPOT GATEWAY</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-void:#030508;--bg-deep:#060b12;--bg-surface:#0a1220;--bg-card:#0d1a2e;--bg-card-hi:#111f38;
+  --cyan:#00d4ff;--green:#00ff88;--red:#ff2244;--yellow:#ffc200;--orange:#ff7700;--purple:#9933ff;
+  --text:#e8f4ff;--dim:#4a6b8a;--muted:#2a4560;
+  --bd:rgba(0,180,255,.08);--bdg:rgba(0,212,255,.25);--bdh:rgba(0,212,255,.5);
+  --fd:'Orbitron',monospace;--fm:'JetBrains Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg-void);color:var(--text);font-family:var(--fm);font-size:12px}
+#hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;
+  background:linear-gradient(90deg,var(--bg-deep),var(--bg-surface));border-bottom:1px solid var(--bdg)}
+#hdr h1{font-family:var(--fd);font-size:15px;font-weight:900;letter-spacing:2px;color:var(--cyan);
+  text-shadow:0 0 12px rgba(0,212,255,.5)}
+#hdr .sub{font-size:9px;color:var(--dim);letter-spacing:2px;margin-top:2px}
+.nav{display:flex;gap:8px;align-items:center}
+.nav a{padding:6px 14px;border:1px solid var(--bdg);border-radius:3px;font-size:10px;
+  letter-spacing:1px;background:var(--bg-card);color:var(--cyan);text-decoration:none}
+.nav a.on{background:rgba(0,212,255,.14);border-color:var(--bdh);color:#cce8ff}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+.dot.on{background:var(--green);box-shadow:0 0 7px var(--green)}
+.dot.off{background:var(--red);box-shadow:0 0 7px var(--red)}
+.wrap{padding:16px 20px;max-width:1800px;margin:0 auto}
+
+/* connect banner */
+#toast{position:fixed;top:70px;right:20px;z-index:99;display:flex;flex-direction:column;gap:8px}
+.tst{padding:11px 16px;border-radius:3px;font-size:11.5px;letter-spacing:.6px;min-width:330px;
+  border-left:3px solid;animation:slide .3s ease-out;box-shadow:0 4px 22px rgba(0,0,0,.6)}
+.tst b{font-family:var(--fd);letter-spacing:1px}
+.tst.bad{background:rgba(255,34,68,.16);border-color:var(--red);color:#ffb3c0}
+.tst.warn{background:rgba(255,119,0,.16);border-color:var(--orange);color:#ffd0a8}
+.tst.good{background:rgba(0,255,136,.13);border-color:var(--green);color:#a8ffd4}
+@keyframes slide{from{transform:translateX(340px);opacity:0}to{transform:none;opacity:1}}
+
+.wire{display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:16px;
+  background:var(--bg-card);border:1px solid var(--bd);border-radius:3px;padding:14px 10px}
+.node{text-align:center;padding:9px 16px;border:1px solid var(--bdg);border-radius:3px;
+  background:var(--bg-card-hi);min-width:132px}
+.node .n{font-family:var(--fd);font-size:10.5px;letter-spacing:1.2px;color:var(--cyan)}
+.node .p{font-size:9px;color:var(--dim);margin-top:3px}
+.node .c{font-size:16px;font-family:var(--fd);margin-top:4px}
+.node.real{border-color:rgba(0,255,136,.45)}.node.real .n,.node.real .c{color:var(--green)}
+.node.hp{border-color:rgba(255,34,68,.45)}.node.hp .n,.node.hp .c{color:var(--red)}
+.arrow{color:var(--dim);padding:0 14px;font-size:17px}
+.split{display:flex;flex-direction:column;gap:10px}
+
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.mc{background:var(--bg-card);border:1px solid var(--bd);border-left:2px solid var(--cyan);
+  border-radius:3px;padding:10px 12px}
+.mc .l{font-size:8.5px;letter-spacing:1.4px;color:var(--dim);text-transform:uppercase}
+.mc .v{font-family:var(--fd);font-size:23px;font-weight:700;margin:3px 0}
+.mc .s{font-size:8.5px;color:var(--muted)}
+.mc.g{border-left-color:var(--green)}.mc.g .v{color:var(--green)}
+.mc.r{border-left-color:var(--red)}.mc.r .v{color:var(--red)}
+.mc.y{border-left-color:var(--yellow)}.mc.y .v{color:var(--yellow)}
+
+.grid{display:grid;grid-template-columns:1.5fr 1fr;gap:12px;align-items:start}
+.panel{background:var(--bg-card);border:1px solid var(--bd);border-radius:3px;margin-bottom:12px}
+.ph{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;
+  border-bottom:1px solid var(--bd);background:var(--bg-card-hi)}
+.ph .t{font-family:var(--fd);font-size:10px;font-weight:700;letter-spacing:1.6px;color:var(--cyan)}
+.ph .n{font-size:9px;color:var(--dim)}
+.pb{padding:10px 12px;max-height:440px;overflow-y:auto}
+.pb::-webkit-scrollbar{width:6px}.pb::-webkit-scrollbar-thumb{background:var(--bdg)}
+
+/* verdict cards */
+.vc{border-left:3px solid;padding:9px 12px;margin-bottom:8px;border-radius:2px;background:var(--bg-card-hi)}
+.vc.MALICIOUS{border-color:var(--red);background:rgba(255,34,68,.07)}
+.vc.SUSPICIOUS{border-color:var(--orange);background:rgba(255,119,0,.06)}
+.vc.BENIGN{border-color:var(--green);background:rgba(0,255,136,.05)}
+.vc.REJECTED{border-color:var(--purple);background:rgba(153,51,255,.06)}
+.vc .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+.vc .ip{font-family:var(--fd);font-size:14px;letter-spacing:1px}
+.vc .tm{font-size:9px;color:var(--muted)}
+.vc .verdict{font-family:var(--fd);font-size:11px;letter-spacing:1.4px;font-weight:700}
+.vc .dest{font-size:11px;margin:4px 0}
+.vc .sig{font-size:9.5px;color:var(--dim);margin-top:3px}
+.vc .rsn{font-size:9px;color:var(--muted);margin-top:2px;font-style:italic}
+.MALICIOUS .verdict{color:var(--red)}.SUSPICIOUS .verdict{color:var(--orange)}
+.BENIGN .verdict{color:var(--green)}.REJECTED .verdict{color:var(--purple)}
+
+table{width:100%;border-collapse:collapse;font-size:10.5px}
+th{text-align:left;padding:5px 6px;color:var(--dim);font-weight:500;font-size:8.5px;
+  letter-spacing:1.1px;text-transform:uppercase;border-bottom:1px solid var(--bd);
+  position:sticky;top:-10px;background:var(--bg-card)}
+td{padding:5px 6px;border-bottom:1px solid rgba(0,180,255,.04);vertical-align:middle}
+tr:hover td{background:rgba(0,212,255,.045)}
+.btn{background:rgba(0,212,255,.12);border:1px solid var(--bdh);color:var(--cyan);
+  padding:3px 9px;font-family:var(--fm);font-size:9px;cursor:pointer;border-radius:2px;letter-spacing:.7px}
+.btn:hover{background:rgba(0,212,255,.28)}
+.btn.rd{background:rgba(255,34,68,.13);border-color:rgba(255,34,68,.5);color:var(--red)}
+.btn.gr{background:rgba(0,255,136,.11);border-color:rgba(0,255,136,.45);color:var(--green)}
+.tag{display:inline-block;padding:1px 6px;border-radius:2px;font-size:8.5px;font-weight:700;letter-spacing:.6px}
+.tag.bl{background:rgba(255,34,68,.2);color:var(--red)}
+.tag.wl{background:rgba(0,255,136,.16);color:var(--green)}
+.fp{font-family:var(--fm);font-size:10px;padding:3px 0;border-bottom:1px solid rgba(0,180,255,.04)}
+.fp .k{display:inline-block;width:52px;font-size:8.5px;letter-spacing:.8px}
+.fp .k.cmd{color:var(--yellow)}.fp .k.auth{color:var(--orange)}.fp .k.conn{color:var(--dim)}
+.empty{color:var(--muted);text-align:center;padding:24px;font-size:10px;letter-spacing:1px}
+.hint{background:rgba(0,212,255,.06);border:1px solid var(--bd);border-radius:3px;
+  padding:9px 12px;font-size:10px;color:var(--dim);margin-bottom:12px;line-height:1.65}
+.hint code{color:var(--cyan);background:rgba(0,212,255,.09);padding:1px 5px;border-radius:2px}
+@media(max-width:1250px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="toast"></div>
+<div id="hdr">
+  <div>
+    <h1>LIVE ACCESS CONTROL</h1>
+    <div class="sub">WHO CONNECTED &nbsp;·&nbsp; WHAT THE GATEWAY DECIDED &nbsp;·&nbsp; WHERE THEY WENT</div>
+  </div>
+  <div class="nav">
+    <a href="/">GATEWAY EVENTS</a>
+    <a href="/pipeline">MT3 PIPELINE</a>
+    <a href="/live" class="on">LIVE ACCESS</a>
+    <span style="padding:6px 10px;font-size:9.5px;color:var(--dim)">
+      <span class="dot off" id="dot"></span><span id="conn">CONNECTING</span></span>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="hint" id="hint">
+    Your friends connect with <code id="cmd">ssh root@YOUR_IP -p 8080</code> —
+    the gateway classifies each source IP and proxies it to the real server or the honeypot.
+    <span id="routing-mode"></span>
+  </div>
+
+  <div class="wire">
+    <div class="node"><div class="n">PEERS</div><div class="p">their laptops</div>
+      <div class="c" id="w-peers">0</div></div>
+    <div class="arrow">&rarr;</div>
+    <div class="node"><div class="n">GATEWAY</div><div class="p" id="w-gw">:8080</div>
+      <div class="c" id="w-conn">0</div></div>
+    <div class="arrow">&rarr;</div>
+    <div class="split">
+      <div class="node real"><div class="n">REAL SERVER</div><div class="p" id="w-real">:8000</div>
+        <div class="c" id="w-to-real">0</div></div>
+      <div class="node hp"><div class="n">HONEYPOT</div><div class="p" id="w-hp">:8081</div>
+        <div class="c" id="w-to-hp">0</div></div>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="mc"><div class="l">Connections</div><div class="v" id="m-conn">0</div><div class="s">routed</div></div>
+    <div class="mc"><div class="l">Unique Peers</div><div class="v" id="m-peers">0</div><div class="s">source IPs</div></div>
+    <div class="mc g"><div class="l">To Real Server</div><div class="v" id="m-real">0</div><div class="s">classified benign</div></div>
+    <div class="mc r"><div class="l">To Honeypot</div><div class="v" id="m-hp">0</div><div class="s">classified hostile</div></div>
+    <div class="mc y"><div class="l">Footprints</div><div class="v" id="m-fp">0</div><div class="s">captured actions</div></div>
+    <div class="mc r"><div class="l">Blacklisted</div><div class="v" id="m-bl">0</div><div class="s">blocked IPs</div></div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <div class="ph"><span class="t">ROUTING DECISIONS &mdash; LIVE</span><span class="n" id="dec-n"></span></div>
+        <div class="pb" id="decisions"><div class="empty">WAITING FOR A CONNECTION</div></div>
+      </div>
+      <div class="panel">
+        <div class="ph"><span class="t">HONEYPOT FOOTPRINTS</span>
+          <span class="n" id="fp-n">everything they typed</span></div>
+        <div class="pb" id="footprints"><div class="empty">NOTHING CAPTURED YET</div></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <div class="ph"><span class="t">CONNECTED PEERS</span><span class="n" id="peer-n"></span></div>
+        <div class="pb">
+          <table>
+            <thead><tr><th>Source IP</th><th>Verdict</th><th>Real</th><th>HP</th><th>Control</th></tr></thead>
+            <tbody id="peers"><tr><td colspan="5" class="empty">NO PEERS YET</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph"><span class="t">MT3 CLASSIFICATION</span>
+          <span class="n">once their session closes</span></div>
+        <div class="pb" id="mt3"><div class="empty">NO SESSIONS ANALYSED YET</div></div>
+      </div>
+      <div class="panel">
+        <div class="ph"><span class="t">ACTIVE HONEYPOT CONFIG</span><span class="n" id="cfg-n"></span></div>
+        <div class="pb" id="cfg"><div class="empty">LOADING</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const tm=t=>{try{return new Date(t).toISOString().slice(11,19)}catch(e){return'--:--:--'}};
+let seenPeers=new Set(), seenDecisions=new Set(), first=true;
+
+async function api(p,o){const r=await fetch(p,o);const b=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(b.error||('HTTP '+r.status));return b;}
+
+function toast(cls,html,ms=9000){
+  const d=document.createElement('div');d.className='tst '+cls;d.innerHTML=html;
+  $('toast').appendChild(d);setTimeout(()=>d.remove(),ms);
+}
+
+async function loadAccess(){
+  const d=await api('/api/live-access?limit=40');
+  $('routing-mode').innerHTML = d.classifier_routing
+    ? '<b style="color:var(--green)">Classifier routing ON</b> — benign IPs reach the real server.'
+    : '<b style="color:var(--yellow)">Zero-trust mode</b> — only whitelisted IPs reach the real server. '
+      + 'Set <code>GATEWAY_CLASSIFIER_ROUTING=1</code> to let the classifier decide.';
+  $('w-real').textContent=':'+String(d.real_backend||'').split(':').pop();
+  $('w-hp').textContent=':'+String((d.honeypots||[''])[0]).split(':').pop();
+
+  const toReal=d.decisions.filter(x=>x.target_type==='backend').length;
+  const toHp=d.decisions.filter(x=>x.target_type==='honeypot').length;
+  $('m-conn').textContent=d.count; $('w-conn').textContent=d.count;
+  $('m-peers').textContent=d.peers.length; $('w-peers').textContent=d.peers.length;
+  $('m-real').textContent=toReal; $('w-to-real').textContent=toReal;
+  $('m-hp').textContent=toHp; $('w-to-hp').textContent=toHp;
+  $('m-bl').textContent=d.peers.filter(p=>p.is_blacklisted).length;
+  $('dec-n').textContent=d.count+' decisions';
+  $('peer-n').textContent=d.peers.length+' peers';
+
+  // notify on anything new
+  for(const x of d.decisions.slice().reverse()){
+    const key=x.ts+'|'+x.ip;
+    if(seenDecisions.has(key))continue;
+    seenDecisions.add(key);
+    if(first)continue;
+    const hp=x.target_type==='honeypot', rej=x.target_type==='reject';
+    toast(rej?'warn':hp?'bad':'good',
+      `<b>${esc(x.ip)}</b> connected<br>`+
+      `${rej?'REJECTED (rate limit)':hp
+        ? 'Detected <b>'+esc(x.verdict||'HOSTILE')+'</b> &rarr; diverted to the <b>HONEYPOT</b>'
+        : 'Classified <b>BENIGN</b> &rarr; forwarded to the <b>REAL SERVER</b>'}`);
+  }
+  first=false;
+
+  $('decisions').innerHTML = d.count===0 ? '<div class="empty">WAITING FOR A CONNECTION</div>' :
+    d.decisions.map(x=>{
+      const cls=x.target_type==='reject'?'REJECTED':(x.verdict||(x.target_type==='backend'?'BENIGN':'SUSPICIOUS'));
+      const destCol=x.target_type==='backend'?'var(--green)':x.target_type==='reject'?'var(--purple)':'var(--red)';
+      return `<div class="vc ${cls}">
+        <div class="top"><span class="ip">${esc(x.ip)}</span><span class="tm">${tm(x.ts)}</span></div>
+        <div><span class="verdict">${esc(cls)}</span>
+          ${x.score!=null?`<span style="color:var(--dim)"> score ${Number(x.score).toFixed(2)}</span>`:''}
+          ${x.is_blacklisted?'<span class="tag bl">BLACKLISTED</span>':''}
+          ${x.is_whitelisted?'<span class="tag wl">WHITELISTED</span>':''}</div>
+        <div class="dest">&rarr; <b style="color:${destCol}">${esc(x.destination)}</b>
+          <span style="color:var(--muted)">${esc(x.target||'')}</span></div>
+        ${x.signals&&x.signals.length?`<div class="sig">signals: ${esc(x.signals.join(', '))}</div>`:''}
+        <div class="rsn">${esc(x.reason||'')}</div></div>`;
+    }).join('');
+
+  $('peers').innerHTML = d.peers.length===0 ? '<tr><td colspan="5" class="empty">NO PEERS YET</td></tr>' :
+    d.peers.map(p=>`<tr>
+      <td style="font-family:var(--fd)">${esc(p.ip)}
+        ${p.is_blacklisted?'<span class="tag bl">BL</span>':''}${p.is_whitelisted?'<span class="tag wl">WL</span>':''}</td>
+      <td style="color:${p.last_verdict==='BENIGN'?'var(--green)':p.last_verdict==='MALICIOUS'?'var(--red)':'var(--orange)'}">
+        ${esc(p.last_verdict||'-')}</td>
+      <td style="color:var(--green)">${p.to_real}</td>
+      <td style="color:var(--red)">${p.to_honeypot}</td>
+      <td style="white-space:nowrap">
+        <button class="btn rd" onclick="block('${esc(p.ip)}')">BLOCK</button>
+        <button class="btn gr" onclick="trust('${esc(p.ip)}')">TRUST</button>
+        <button class="btn" onclick="clear_('${esc(p.ip)}')">RESET</button></td></tr>`).join('');
+}
+
+async function loadFootprints(){
+  const d=await api('/api/footprints?limit=60');
+  $('m-fp').textContent=d.count;
+  $('footprints').innerHTML = d.count===0 ? '<div class="empty">NOTHING CAPTURED YET</div>' :
+    d.footprints.map(f=>{
+      const k=f.kind==='input'?'cmd':(f.kind==='connect'?'conn':'auth');
+      const label=k==='cmd'?'CMD':k==='conn'?'OPEN':(f.kind==='success'?'LOGIN':'AUTH');
+      return `<div class="fp"><span class="k ${k}">${label}</span>
+        <span style="color:var(--muted)">${tm(f.ts)}</span>
+        <span style="color:var(--dim)"> ${esc(f.ip)} </span>
+        <span style="color:${k==='cmd'?'var(--text)':'var(--dim)'}">${esc(f.detail)}</span></div>`;
+    }).join('');
+}
+
+async function loadMT3(){
+  const d=await api('/api/mt3-results?limit=6');
+  $('mt3').innerHTML = d.count===0 ? '<div class="empty">NO SESSIONS ANALYSED YET</div>' :
+    d.predictions.map(p=>`<div class="vc" style="border-color:var(--purple);background:rgba(153,51,255,.05)">
+      <div class="top"><span class="ip" style="font-size:12px">${esc(p.src_ip)}</span>
+        <span class="tm">${tm(p.timestamp)}</span></div>
+      <div style="color:var(--purple);font-family:var(--fd);font-size:11px;letter-spacing:1px">
+        ${esc(p.micro_state)}</div>
+      <div class="sig">phase ${p.phase} (${esc(p.phase_name)}) &nbsp;·&nbsp;
+        confidence ${((p.confidence||0)*100).toFixed(1)}%</div></div>`).join('');
+}
+
+async function loadCfg(){
+  const d=await api('/api/active-config'); const c=d.active_config||{};
+  $('cfg-n').textContent=c.updated_at?tm(c.updated_at):'never';
+  const lc={low:'var(--cyan)',medium:'var(--yellow)',high:'var(--orange)',maximum:'var(--red)'}[c.interaction_level]||'var(--dim)';
+  $('cfg').innerHTML=`
+    <div style="font-family:var(--fd);font-size:15px;letter-spacing:1.5px;color:${lc}">
+      ${esc(String(c.interaction_level||'').toUpperCase())} INTERACTION</div>
+    <div class="sig" style="margin-top:5px">phase ${c.phase??'-'} (${esc(c.phase_name||'')})
+      &nbsp;·&nbsp; ${esc(c.filesystem||'')} filesystem &nbsp;·&nbsp; ${c.response_delay_ms}ms delay</div>
+    <div class="sig">fake /etc/shadow ${c.fake_sensitive_files?'<b style="color:var(--red)">EXPOSED</b>':'absent'}
+      &nbsp;·&nbsp; ssh keys ${c.fake_ssh_keys?'<b style="color:var(--red)">PLANTED</b>':'absent'}
+      &nbsp;·&nbsp; alert ${c.alert?'<b style="color:var(--red)">ARMED</b>':'off'}</div>
+    <div class="rsn" style="margin-top:6px">${esc(c.reason||'')}</div>`;
+}
+
+async function post(p,ip,reason){
+  return api(p,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ip:ip,reason:reason})});
+}
+async function block(ip){try{await post('/api/blacklist',ip,'blocked live from dashboard');
+  toast('bad',`<b>${esc(ip)}</b> BLACKLISTED<br>their next connection is forced to the honeypot`);refresh();}
+  catch(e){toast('warn',esc(e.message))}}
+async function trust(ip){try{await post('/api/whitelist',ip,'trusted live from dashboard');
+  toast('good',`<b>${esc(ip)}</b> WHITELISTED<br>their next connection reaches the real server`);refresh();}
+  catch(e){toast('warn',esc(e.message))}}
+async function clear_(ip){
+  try{await fetch('/api/blacklist/'+encodeURIComponent(ip),{method:'DELETE'});}catch(e){}
+  try{await fetch('/api/whitelist/'+encodeURIComponent(ip),{method:'DELETE'});}catch(e){}
+  toast('warn',`<b>${esc(ip)}</b> reset to UNKNOWN<br>the classifier decides again on their next connection`);
+  refresh();
+}
+
+async function refresh(){
+  try{
+    await Promise.all([loadAccess(),loadFootprints(),loadMT3(),loadCfg()]);
+    $('dot').className='dot on';$('conn').textContent='LIVE';
+  }catch(e){$('dot').className='dot off';$('conn').textContent='OFFLINE';console.error(e);}
+}
+fetch('/api/health').then(r=>r.json()).then(h=>{
+  if(h.lan_ip) $('cmd').textContent='ssh root@'+h.lan_ip+' -p 8080';
+}).catch(()=>{});
+refresh(); setInterval(refresh,2000);
+</script>
+</body>
+</html>

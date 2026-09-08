@@ -118,11 +118,34 @@ class IPClassifier:
     def __init__(self) -> None:
         self._records: Dict[str, IPRecord] = {}
         self._lock = RLock()
+        self._file_stamp: Optional[tuple] = None
         self._load()
+
+    # ── Cross-process sync ─────────────────────────────────────────────────
+    def _stamp(self) -> Optional[tuple]:
+        try:
+            st = (CONFIG.DATA_DIR / CONFIG.IP_RECORDS_FILE).stat()
+            return (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return None
+
+    def _maybe_reload(self) -> None:
+        """Re-read the record file when another process has changed it.
+
+        The dashboard API and the gateway run as separate processes, each with
+        its own copy of this registry. Every mutation here saves immediately, so
+        the file is authoritative -- without this, a status set from the
+        dashboard would never reach the running gateway.
+        """
+        stamp = self._stamp()
+        if stamp is not None and stamp != self._file_stamp:
+            self._records.clear()
+            self._load()
 
     # ── Read ───────────────────────────────────────────────────────────────
     def get(self, ip: str) -> IPRecord:
         with self._lock:
+            self._maybe_reload()
             if ip not in self._records:
                 self._records[ip] = IPRecord(ip=ip)
             rec = self._records[ip]
@@ -134,6 +157,7 @@ class IPClassifier:
 
     def all_records(self) -> List[IPRecord]:
         with self._lock:
+            self._maybe_reload()
             return list(self._records.values())
 
     def records_by_status(self, status: IPStatus) -> List[IPRecord]:
@@ -237,6 +261,7 @@ class IPClassifier:
             glog.info("Loaded %d IP records from disk.", len(self._records))
         except Exception as exc:
             glog.error("Failed to load IP records: %s", exc)
+        self._file_stamp = self._stamp()
 
     def _save(self) -> None:
         path = CONFIG.DATA_DIR / CONFIG.IP_RECORDS_FILE
@@ -246,6 +271,7 @@ class IPClassifier:
                 for ip, rec in self._records.items()
             }
             path.write_text(json.dumps(raw, indent=2, default=str))
+            self._file_stamp = self._stamp()
         except Exception as exc:
             glog.error("Failed to persist IP records: %s", exc)
 

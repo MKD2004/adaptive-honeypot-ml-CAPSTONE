@@ -44,8 +44,33 @@ class BlacklistManager:
         self._lock = RLock()
         self._blacklist: Dict[str, dict] = {}   # ip → {reason, ts, source}
         self._whitelist: Dict[str, dict] = {}
+        self._stamps: Dict[str, tuple] = {}
         self._load_blacklist()
         self._load_whitelist()
+
+    # ── Cross-process sync ─────────────────────────────────────────────────
+    def _stamp(self, filename: str):
+        try:
+            st = self._path(filename).stat()
+            return (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return None
+
+    def _refresh(self) -> None:
+        """Re-read either list if another process has rewritten it.
+
+        The dashboard API is a different process from the gateway; both hold a
+        copy of these files. Mutations always save immediately, so the files are
+        authoritative and a blacklist added from the dashboard takes effect on
+        the gateway's very next routing decision.
+        """
+        with self._lock:
+            if self._stamp(CONFIG.BLACKLIST_FILE) != self._stamps.get("bl"):
+                self._blacklist = {}
+                self._load_blacklist()
+            if self._stamp(CONFIG.WHITELIST_FILE) != self._stamps.get("wl"):
+                self._whitelist = {}
+                self._load_whitelist()
 
     # ── Blacklist ──────────────────────────────────────────────────────────
     def blacklist(
@@ -77,6 +102,7 @@ class BlacklistManager:
         )
 
     def is_blacklisted(self, ip: str) -> bool:
+        self._refresh()
         with self._lock:
             return ip in self._blacklist
 
@@ -89,6 +115,7 @@ class BlacklistManager:
         return True
 
     def get_blacklisted_ips(self) -> Set[str]:
+        self._refresh()
         with self._lock:
             return set(self._blacklist.keys())
 
@@ -117,10 +144,12 @@ class BlacklistManager:
         )
 
     def is_whitelisted(self, ip: str) -> bool:
+        self._refresh()
         with self._lock:
             return ip in self._whitelist
 
     def get_whitelisted_ips(self) -> Set[str]:
+        self._refresh()
         with self._lock:
             return set(self._whitelist.keys())
 
@@ -211,6 +240,7 @@ class BlacklistManager:
                 glog.info("Loaded %d blacklisted IPs.", len(self._blacklist))
             except Exception as exc:
                 glog.error("Failed to load blacklist: %s", exc)
+        self._stamps["bl"] = self._stamp(CONFIG.BLACKLIST_FILE)
 
     def _load_whitelist(self) -> None:
         p = self._path(CONFIG.WHITELIST_FILE)
@@ -220,12 +250,14 @@ class BlacklistManager:
                 glog.info("Loaded %d whitelisted IPs.", len(self._whitelist))
             except Exception as exc:
                 glog.error("Failed to load whitelist: %s", exc)
+        self._stamps["wl"] = self._stamp(CONFIG.WHITELIST_FILE)
 
     def _save_blacklist(self) -> None:
         try:
             self._path(CONFIG.BLACKLIST_FILE).write_text(
                 json.dumps(self._blacklist, indent=2)
             )
+            self._stamps["bl"] = self._stamp(CONFIG.BLACKLIST_FILE)
         except Exception as exc:
             glog.error("Failed to save blacklist: %s", exc)
 
@@ -234,6 +266,7 @@ class BlacklistManager:
             self._path(CONFIG.WHITELIST_FILE).write_text(
                 json.dumps(self._whitelist, indent=2)
             )
+            self._stamps["wl"] = self._stamp(CONFIG.WHITELIST_FILE)
         except Exception as exc:
             glog.error("Failed to save whitelist: %s", exc)
 

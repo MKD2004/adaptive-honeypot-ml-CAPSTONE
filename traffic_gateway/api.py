@@ -238,6 +238,11 @@ def add_whitelist():
         return jsonify({"error": "invalid or missing 'ip'"}), 400
     reason = str(data.get("reason") or "manual (dashboard)")
     blacklist_manager.whitelist(ip, reason=reason, source="dashboard")
+    # Lift any rate-limit hard block too, so trusting an IP you just
+    # brute-forced from takes effect immediately. This only reaches the gateway
+    # when it shares this process; the router independently exempts whitelisted
+    # IPs from the rate limiter, which is what covers the split-process case.
+    rate_limiter.unblock(ip)
     log.info("whitelist add %s: %s", ip, reason)
     return jsonify({"ok": True, "ip": ip, "reason": reason,
                     "status": classifier.get_status(ip).value}), 201

@@ -61,15 +61,25 @@ class TrafficRouter:
         the connection without proxying.
         """
 
-        # ── 1. Rate-limit check ───────────────────────────────────────────
-        if not rate_limiter.check(ip):
+        # ── 1. Explicit trust outranks the rate limiter ────────────────────
+        # An operator whitelisting an IP is a deliberate decision and must take
+        # effect on the very next connection. It could not otherwise: a
+        # rate-limit hard block lasts RATE_LIMIT_BLOCK_SEC and lives ONLY in
+        # this process's memory, so the dashboard -- a separate process -- has
+        # no way to clear it. Without this, whitelisting an IP you just
+        # brute-forced from appears to do nothing for five minutes.
+        status = classifier.get_status(ip)
+        trusted = status == IPStatus.WHITELISTED
+
+        # ── 2. Rate-limit check ───────────────────────────────────────────
+        if not trusted and not rate_limiter.check(ip):
             return RoutingDecision(
                 target=None,
                 target_type="reject",
                 reason="rate_limited",
             )
 
-        # ── 2. Signal-based verdict (telemetry always; routing when enabled) ──
+        # ── 3. Signal-based verdict (telemetry always; routing when enabled) ──
         # Only signals 1 and 2 (reputation + behaviour) can fire here: no bytes
         # have been proxied yet, so there is no payload to score. The payload
         # signals run post-session, in the MT3 pipeline.
@@ -85,9 +95,7 @@ class TrafficRouter:
             score = result["score"]
             signals = tuple(result["signals_fired"])
 
-        # ── 3. Status-based routing ───────────────────────────────────────
-        status = classifier.get_status(ip)
-
+        # ── 4. Status-based routing (status resolved in step 1) ───────────
         if status == IPStatus.WHITELISTED:
             decision = RoutingDecision(
                 target=CONFIG.REAL_BACKEND,

@@ -61,22 +61,24 @@ class TrafficRouter:
         the connection without proxying.
         """
 
-        # ── 1. Explicit trust outranks the rate limiter ────────────────────
-        # An operator whitelisting an IP is a deliberate decision and must take
-        # effect on the very next connection. It could not otherwise: a
-        # rate-limit hard block lasts RATE_LIMIT_BLOCK_SEC and lives ONLY in
-        # this process's memory, so the dashboard -- a separate process -- has
-        # no way to clear it. Without this, whitelisting an IP you just
-        # brute-forced from appears to do nothing for five minutes.
+        # ── 1. Resolve trust before rate-limiting ──────────────────────────
+        # A WHITELISTED ip is rate-limited against RATE_LIMIT_TRUSTED_MAX_CONN
+        # instead of the normal ceiling -- more headroom, not an exemption, so a
+        # compromised trusted host still cannot hammer the real backend. The
+        # status must be resolved first because a hard block lives ONLY in this
+        # process's memory: the dashboard is a separate process and cannot clear
+        # one, so a promotion has to be honoured here or not at all.
         status = classifier.get_status(ip)
         trusted = status == IPStatus.WHITELISTED
 
         # ── 2. Rate-limit check ───────────────────────────────────────────
-        if not trusted and not rate_limiter.check(ip):
+        if not rate_limiter.check(
+            ip, max_conn=CONFIG.RATE_LIMIT_TRUSTED_MAX_CONN if trusted else None
+        ):
             return RoutingDecision(
                 target=None,
                 target_type="reject",
-                reason="rate_limited",
+                reason="rate_limited_trusted" if trusted else "rate_limited",
             )
 
         # ── 3. Signal-based verdict (telemetry always; routing when enabled) ──

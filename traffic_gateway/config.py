@@ -58,6 +58,13 @@ class GatewayConfig:
     RATE_LIMIT_WINDOW_SEC: int = 60    # window size in seconds
     RATE_LIMIT_BLOCK_SEC:  int = 300   # hard-block duration after rate-offence
 
+    # WHITELISTED IPs get a higher ceiling, not an exemption: a trusted host can
+    # burst far beyond normal traffic without being cut off, but a compromised
+    # one still cannot hammer the real backend without limit. A block earned
+    # under the strict ceiling is re-evaluated against this one when the IP is
+    # promoted, so trusting an IP takes effect on the next connection.
+    RATE_LIMIT_TRUSTED_MAX_CONN: int = 100
+
     # ── Classifier-driven routing ────────────────────────────────────────────
     # OFF by default: the gateway keeps its original zero-trust rule, where
     # everything except a WHITELISTED IP is sent to the honeypot.

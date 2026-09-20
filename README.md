@@ -131,6 +131,7 @@ SSH key that the next attacker can actually `cat`.
 | **Everyone must be on the same Wi-Fi** | Phone hotspots and guest/AP-isolated networks block laptop-to-laptop traffic entirely. |
 | **The real server refuses wrong passwords** | That is the point — it is real. `deploy/deploy123` or `admin/admin123`. The honeypot, by contrast, accepts anything. |
 | **`ssh` complains the host key changed** | Different key on the real server vs the honeypot — that is expected when an IP gets rerouted. `ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL ...` |
+| **Whitelisting after a brute force** | Works on the next connection. A whitelisted IP is rate-limited against `RATE_LIMIT_TRUSTED_MAX_CONN` (100/min) instead of the normal 20/min, and a block earned under the strict ceiling is re-evaluated when the IP is promoted. It is a raised ceiling, not an exemption: a trusted IP that exceeds 100/min is still cut off. |
 | **Ports already in use** | `live_demo.py` refuses to start and names the busy port. Kill the old python processes first. |
 | **Never delete `cowrie.json` while the container runs** | Cowrie keeps writing to the deleted file handle and the host file never reappears, so the MT3 watcher silently sees nothing. `live_demo.py` detects this and restarts the container, but the clean way is `docker compose down` first. |
 | **Docker Desktop must be running** | Otherwise `live_demo.py` quietly falls back to the python emulator. Pass `--honeypot cowrie` to make it fail loudly instead. |

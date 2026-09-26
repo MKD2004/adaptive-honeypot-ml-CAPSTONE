@@ -75,6 +75,15 @@ class GatewayConfig:
     # This is what the live two-laptop demo runs with.
     CLASSIFIER_ROUTING: bool = bool(os.getenv("GATEWAY_CLASSIFIER_ROUTING", ""))
 
+    # ── MT3-driven response mitigation ───────────────────────────────────────
+    # When the MT3 pipeline classifies a captured honeypot session as an actual
+    # attack, blacklist the source IP. Recon (phase 0) is exempt; the attacker
+    # must reach Initial Access (phase 1) or beyond. This is what auto-blocks a
+    # brute-force IP once MT3 has identified it.
+    MT3_AUTO_BLACKLIST:           bool  = True
+    MT3_AUTO_BLACKLIST_MIN_PHASE: int   = 1      # >= Initial Access
+    MT3_AUTO_BLACKLIST_CONF:      float = 0.5    # min MT3 confidence
+
     # ── Risk-score thresholds ────────────────────────────────────────────────
     SCORE_SUSPICIOUS:       float = 0.45   # ≥ → SUSPICIOUS
     SCORE_BLACKLIST:        float = 0.70   # ≥ → BLACKLISTED

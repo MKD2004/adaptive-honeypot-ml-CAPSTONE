@@ -1,5 +1,29 @@
-# username:uid:password   ('*' = wildcard, '!' = refuse)
-# Deliberately permissive: we want every credential attempt recorded AND a shell
-# handed over, because the commands typed afterwards are what MT3 classifies.
+# Cowrie userdb: username:uid:password   ('*' wildcard, '!' explicitly deny)
+#
+# The common guesses below are DENIED, so a brute force sprays many failed
+# logins in one session -- which is what makes MT3 read login_attempts high and
+# classify it ACCESS_BRUTE_SSH. brute_force.py sprays exactly this list, so a
+# demo session never accidentally logs in and turns into an "execution" session.
+root:x:!123456
+root:x:!password
+root:x:!admin
+root:x:!12345
+root:x:!qwerty
+root:x:!letmein
+root:x:!1234
+root:x:!root123
+root:x:!toor
+root:x:!P@ssw0rd
+root:x:!admin123
+root:x:!root@123
+root:x:!welcome
+root:x:!changeme
+root:x:!passw0rd
+root:x:!administrator
+root:x:!superman
+root:x:!master
+root:x:!qwerty123
+root:x:!abc123
+# a manual login (real operator) with an uncommon password still works:
 root:x:*
 *:x:*

@@ -19,10 +19,13 @@ from .config import CONFIG
 GATEWAY_EVENT_LOG = CONFIG.DATA_DIR / CONFIG.SESSION_LOG_FILE
 
 # How far apart the gateway's PROXY_CONNECTED and the honeypot's session.connect
-# may be and still be considered the same connection. They are milliseconds apart
-# in practice; the window only has to absorb clock skew between the container and
-# the host.
-MATCH_WINDOW_SEC = 15.0
+# may be and still be considered the same connection. Generous on purpose: when
+# Cowrie runs in a container its clock can skew seconds from the host, and under
+# a burst the honeypot processes sessions a little behind the gateway. A wide
+# window is safe in the common single-attacker case (every proxy event carries
+# the same peer IP); with several simultaneous peers it can mis-attribute, which
+# is documented as a live-demo caveat.
+MATCH_WINDOW_SEC = 45.0
 _CACHE_TTL_SEC = 2.0
 
 # Addresses that are the proxy itself, never a real peer.

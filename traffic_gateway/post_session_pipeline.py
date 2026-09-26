@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set
 
+from .blacklist_manager import blacklist_manager
 from .config import CONFIG
 from .ext_paths import REPO_ROOT, ensure_paths
 from .feature_bridge import (
@@ -216,6 +217,38 @@ class PostSessionPipeline:
                 action = {"previous_config": None, "new_config": None,
                           "changed": False, "reason": f"configurator error: {exc}"}
 
+        # (e2) response mitigation: MT3 classified this as an actual attack, so
+        # blacklist the source. Recon alone (phase 0) does not trigger it -- an
+        # attacker only earns a block once they attempt access or beyond. This
+        # is the detect -> classify -> respond loop; the block is what the demo
+        # shows as "IP blacklisted after MT3 identified the brute force".
+        peer_ip = str(record.get("src_ip", "") or "")
+        auto_blocked = False
+        # peer_ip has already been through attribution (step a), so it is the
+        # real client -- 127.0.0.1 in a single-laptop demo, the LAN IP with two.
+        # Only skip the Docker bridge, which means attribution found no peer.
+        if (CONFIG.MT3_AUTO_BLACKLIST
+                and peer_ip
+                and pred["phase"] >= CONFIG.MT3_AUTO_BLACKLIST_MIN_PHASE
+                and float(pred["confidence"]) >= CONFIG.MT3_AUTO_BLACKLIST_CONF
+                and not peer_ip.startswith(("172.1", "172.2"))
+                and not blacklist_manager.is_whitelisted(peer_ip)
+                and not blacklist_manager.is_blacklisted(peer_ip)):
+            try:
+                blacklist_manager.blacklist(
+                    peer_ip,
+                    reason=(f"MT3: {pred['micro_state']} "
+                            f"(phase {pred['phase']} {pred['phase_name']}, "
+                            f"conf {pred['confidence']:.2f})"),
+                    source="mt3_pipeline",
+                    risk_score=float(pred["confidence"]),
+                )
+                auto_blocked = True
+                log.warning("auto-blacklisted %s: MT3 classified %s (p=%.2f)",
+                            peer_ip, pred["micro_state"], pred["confidence"])
+            except Exception:
+                log.exception("auto-blacklist failed for %s", peer_ip)
+
         commands = [c for c in str(record.get("command_text", "") or "").split(" ; ")
                     if c and c != "[no commands]"]
         t_start = float(record.get("t_start", 0.0) or 0.0)
@@ -244,6 +277,7 @@ class PostSessionPipeline:
             "kcvr_valid": kcvr_valid(record.get("micro_state_sequence", "")),
             "rule_label": record.get("micro_state", ""),
             "observed_src_ip": record.get("observed_src_ip"),
+            "auto_blacklisted": auto_blocked,
             "semantic_available": bool(self.semantic.available),
             "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
         }

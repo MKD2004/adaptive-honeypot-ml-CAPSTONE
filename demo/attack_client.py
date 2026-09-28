@@ -98,9 +98,19 @@ def run_session(host: str, port: int, user: str, password: str,
             print(f"      {ln}")
         print()
 
-    chan.send("exit\n")
-    time.sleep(0.6)
-    client.close()
+    # Send a final exit only if the command list did not already close the
+    # session -- otherwise the server has shut the channel and this send raises
+    # "Socket is closed". Either way, swallow errors: the session is ending.
+    try:
+        if not chan.closed and not chan.eof_received:
+            chan.send("exit\n")
+            time.sleep(0.4)
+    except (OSError, EOFError, paramiko.SSHException):
+        pass
+    try:
+        client.close()
+    except Exception:
+        pass
     print(f"  session closed. Everything above was recorded by the {where}.")
     return 0
 

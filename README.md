@@ -381,9 +381,10 @@ is zero-filled and the banner reports `Semantic: NO`.
 
 The original network-level demo. Independent of the ML pipeline above.
 
-**Step 1 — fake honeypot**
+**Step 1 — a honeypot on :8081** (Cowrie in Docker, or the demo prop)
 ```bash
-python fake_web.py
+cd honeypot_dataset/cowrie && docker compose up -d   # real Cowrie, or:
+python demo/ssh_honeypot.py                            # offline python prop
 ```
 
 **Step 2 — traffic gateway**

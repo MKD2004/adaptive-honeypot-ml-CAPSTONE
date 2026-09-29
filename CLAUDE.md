@@ -12,16 +12,32 @@ honeypot_dataset/          Dataset pipeline (HoneySynth-1M)
   src/validators/          Quality checks (Table 1 metrics)
   venv/                    Python venv (not committed)
 
-adaptive_honeypot/         Honeypot emulators (SSH, HTTP, DB, web app) + orchestrator
-traffic_gateway/           Proxy, IP classification, rate limiting, reputation scoring
-ml_analytics/              CNN-LSTM model, feature extraction, training pipeline
-response_mitigation/       Firewall API, IP blocker, rate limiter, session isolator
+adaptive_honeypot/         configurator.py — MT3 prediction -> honeypot config +
+                           adaptive honeyfs (writes active_config.json). Other
+                           files (orchestrator, emulators) are empty scaffolding.
+traffic_gateway/           Proxy + IP classification + rate limiting, AND the live
+                           pipeline: traffic_classifier (pre-MT3 filter),
+                           feature_bridge (128 feats -> MT3), post_session_pipeline
+                           (Cowrie log watcher -> MT3 -> config), api.py (Flask,
+                           :5000), run_pipeline.py (orchestrator), peer_attribution
+ml_analytics/              MT3 + CNN-LSTM models, mt3_pipeline, trained artifacts
+demo/                      live_demo.py (one-command full stack), real_server.py +
+                           ssh_honeypot.py (demo PROPS, not honeypots),
+                           attack_client.py / brute_force.py (peer simulators),
+                           reset_demo.py, simulate_attack.py (scripted 3-scenario)
+response_mitigation/       Firewall API, IP blocker (scaffolding; auto-blacklist
+                           currently lives in post_session_pipeline)
 cve_intelligence/          NVD/EPSS/CISA-KEV/ExploitDB clients + analysis pipeline
 monitoring/                Dashboard + alerting
-dashboard/                 Backend API
+dashboard/static/          index.html (gateway events) + pipeline.html (MT3 feed) +
+                           live.html (live access control); backend.py (legacy SSE)
 data/                      Raw datasets (not committed)
   raw/cic_ids2017/         8 CSVs from CIC-IDS2017
   raw/unsw_nb15/           2 CSVs from UNSW-NB15
+honeypot_dataset/
+  src/parsers/cowrie_parser.py   Cowrie log parser (extracted from notebook 01)
+  cowrie/                  REAL Cowrie 3.0.13 Docker deployment (compose, cfg,
+                           userdb, adaptive honeyfs) — this is the genuine honeypot
 tabsyn/                    TabSyn synthetic data generator (external)
 ```
 
@@ -88,6 +104,41 @@ Use the venv interpreter explicitly for all commands in `honeypot_dataset/`:
 `honeypot_dataset/venv/Scripts/python.exe`. The system `python` (3.14, on PATH)
 does not have pandas/torch/jupyter installed — only the venv does.
 
+## Live Pipeline / System (added 2026-09-29)
+
+Beyond the dataset/ML work, the runnable end-to-end system:
+
+```
+traffic -> gateway (routes benign->real server, hostile->honeypot)
+        -> Cowrie honeypot captures the session
+        -> post_session_pipeline: parse -> 128 features -> MT3 classify (45 states)
+        -> configurator adapts the honeypot (interaction level + honeyfs bait)
+        -> auto-blacklist the source -> dashboard shows it all
+```
+
+**Timing (important):** MT3 classifies a session only when it CLOSES
+(`cowrie.session.closed`) — it needs the full session for the temporal/sequence
+features, so it cannot classify mid-attack. The honeypot reconfigures right
+after, and the change applies to the NEXT session, not the one just classified.
+The gateway's `traffic_classifier` (IP rep / rate / payload signals) runs at
+connection time and only decides routing — it is not MT3.
+
+**Two honeypots:** `honeypot_dataset/cowrie/` is the REAL one (Cowrie 3.0.13 in
+Docker, adaptive honeyfs via `contents_path`). `demo/ssh_honeypot.py` +
+`demo/real_server.py` are offline PROPS for the demo — never call them honeypots
+in the paper.
+
+**Run it:** `python -m traffic_gateway.run_pipeline` (scripted), or
+`python demo/live_demo.py` (full two-laptop stack; auto-starts Cowrie in Docker,
+falls back to the python prop if Docker is down). See `DEMORUN.md` (local,
+gitignored) for the recording script. Uses `honeypot_dataset/venv` + Flask /
+flask-cors / watchdog / paramiko.
+
+**Config knobs** (traffic_gateway/config.py): `CLASSIFIER_ROUTING` (env
+`GATEWAY_CLASSIFIER_ROUTING`) enables benign->real routing; whitelisted IPs get
+`RATE_LIMIT_TRUSTED_MAX_CONN` (100/min) not an exemption; `MT3_AUTO_BLACKLIST`
+blacklists a source once MT3 classifies it as phase >= 1.
+
 ## Reference Docs
 
 Reference material at repo root. As of 2026-08-27 these ARE committed (they sync
@@ -97,6 +148,8 @@ project state/rules across machines):
 - `SCHEMA.md` — full 45 micro-state / 128-feature reference for writing prompts fast
 - `DECISIONS.md` — why things were built a certain way; check before redoing something
 - `ERRORS.md` — bugs already hit and fixed; check before re-debugging the same crash
+- `ROADMAP.md` — capstone -> research-paper plan: contribution, novelty positioning
+  (literature survey), the A/B experiment, milestones. Read before paper decisions.
 - `TEAMMATES.md` — HARD RULES for collaborators + any AI assistant (do NOT run/edit
   the dataset pipeline, notebooks, or `tabsyn/`; stay in your assigned module)
 
@@ -115,9 +168,16 @@ back. The code and the shared docs above are byte-identical everywhere; only the
 system-specific files differ per machine. Read this machine's `<MACHINE>.md` for its
 role. Do not edit shared files locally without pushing — that is how sessions drift.
 
-## Current Status (2026-09-01)
+## Current Status (2026-09-29)
 
 **`STATUS.md` is the live, detailed source — this is only a coarse snapshot.**
+
+**System since 2026-09-01 (this is what changed):** the full live pipeline was
+built and connected (see "Live Pipeline / System" above) — traffic gateway ->
+real Cowrie honeypot -> MT3 classification -> adaptive reconfiguration ->
+dashboard, plus the two-laptop live demo and the recording tooling. The
+dataset/model work below is UNCHANGED and still current. Next phase is the
+research paper — see `ROADMAP.md` (deploy Cowrie to a VPS for real data is M1).
 
 **Dataset: FROZEN.** `data/final/` holds HoneySynth-960k — 756,000 train / 84,000 val /
 60,000 `test_real` / 60,000 `test_synth`, 128 features, 45 classes (`test_real` has 21).

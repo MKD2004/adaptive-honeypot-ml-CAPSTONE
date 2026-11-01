@@ -160,6 +160,15 @@ machine's copy):
 - `SETUP.md` — per-machine environment setup (OS/GPU-dependent)
 - `ASUS.md` / `DGX.md` / `<MACHINE>.md` — that machine's role + work log
 
+## Communication Style
+
+Explain things in a plain-English, easy-to-understand tone.
+
+- Use simple, everyday words.
+- Avoid heavy technical jargon unless necessary. If you use a technical term, explain it briefly.
+- Prefer short sentences. One idea per sentence.
+- Explain what happened, why it matters, and what we should do next.
+
 ## Multi-machine sync (read before working)
 
 **GitHub `main` is the single source of truth.** Every Claude Code on every machine

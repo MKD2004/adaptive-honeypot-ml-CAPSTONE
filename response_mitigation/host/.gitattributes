@@ -1,0 +1,2 @@
+# These files run on Linux. A CRLF line ending would break the shebang and systemd.
+* text eol=lf

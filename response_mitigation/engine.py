@@ -30,8 +30,10 @@ from collections import deque
 from typing import Callable, Deque, Dict, Iterable, List, Mapping, Optional, Protocol, Set
 
 from .audit import AuditLog
+from .blocklist import BlocklistFile
 from .config import MitigationConfig, load_config
 from .executors.alert import LogAlertExecutor
+from .executors.firewall import FirewallExecutor
 from .executors.gateway import GatewayExecutor
 from .models import Action, Decision, Mode, Outcome, PlannedAction, Verdict
 from .policy import plan
@@ -147,7 +149,11 @@ class MitigationEngine:
         executor = self._executors.get(action)
         if executor is None:
             return done(Outcome.SKIPPED, f"no {action.value} executor is set up")
-        why = executor.skip_reason(verdict, planned)
+        try:
+            why = executor.skip_reason(verdict, planned)
+        except Exception as exc:   # same promise as apply(): never raise into the pipeline
+            log.exception("%s check failed for %s", action.value, verdict.ip)
+            return done(Outcome.FAILED, f"{type(exc).__name__}: {exc}")
         if why:
             return done(Outcome.SKIPPED, why)
 
@@ -205,6 +211,9 @@ def build_engine(*,
                           is_whitelisted=blacklist_manager.is_whitelisted),
         audit=audit if audit is not None else AuditLog(cfg.audit_path),
         executors={Action.DIVERT: GatewayExecutor(blacklist_manager),
-                   Action.ALERT: LogAlertExecutor()},
+                   Action.ALERT: LogAlertExecutor(),
+                   # Only reached in enforce mode with MITIGATION_FIREWALL=1; see _holdback.
+                   Action.DENY: FirewallExecutor(BlocklistFile(cfg.blocklist_path),
+                                                 default_ttl_s=cfg.policy.deny_ttl_s)},
         divert_enabled=divert_enabled,
     )

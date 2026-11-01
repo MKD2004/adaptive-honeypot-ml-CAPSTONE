@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Light theme (default). Values are "R G B" triples so Tailwind's
+     rgb(var(--x) / <alpha-value>) pattern in tailwind.config.js can apply
+     opacity modifiers (e.g. bg-risk-low/10) on top of them. */
+  :root {
+    color-scheme: light;
+    --shadow-card: rgb(15 23 42 / 0.08);
+
+    --color-base-bg: 248 250 252;
+    --color-base-surface: 255 255 255;
+    --color-base-raised: 248 250 252;
+    --color-base-border: 226 232 240;
+    --color-base-border-muted: 241 245 249;
+
+    --color-text-primary: 15 23 42;
+    --color-text-secondary: 71 85 105;
+    --color-text-muted: 148 163 184;
+
+    --color-accent: 37 99 235;
+    --color-accent-dim: 29 78 216;
+    --color-accent-soft: 219 234 254;
+
+    --color-risk-critical: 220 38 38;
+    --color-risk-high: 234 88 12;
+    --color-risk-medium: 180 131 4;
+    --color-risk-low: 22 163 74;
+    --color-risk-info: 2 132 199;
+  }
+
+  /* Dark theme — toggled via the `dark` class on <html> (see
+     hooks/useTheme.jsx). Same token names, no component-level branching. */
+  .dark {
+    color-scheme: dark;
+    --shadow-card: rgb(0 0 0 / 0.4);
+
+    --color-base-bg: 11 14 20;
+    --color-base-surface: 17 21 29;
+    --color-base-raised: 22 27 37;
+    --color-base-border: 35 42 56;
+    --color-base-border-muted: 26 32 44;
+
+    --color-text-primary: 230 233 239;
+    --color-text-secondary: 154 164 183;
+    --color-text-muted: 95 107 129;
+
+    --color-accent: 59 130 246;
+    --color-accent-dim: 29 78 216;
+    --color-accent-soft: 22 34 55;
+
+    --color-risk-critical: 239 68 68;
+    --color-risk-high: 249 115 22;
+    --color-risk-medium: 234 179 8;
+    --color-risk-low: 34 197 94;
+    --color-risk-info: 56 189 248;
+  }
+
+  body {
+    @apply bg-base-bg text-text-primary antialiased;
+    font-feature-settings: 'tnum' 1;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  ::selection {
+    @apply bg-accent/30;
+  }
+  * {
+    @apply border-base-border;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-base-border;
+    border-radius: 4px;
+  }
+}

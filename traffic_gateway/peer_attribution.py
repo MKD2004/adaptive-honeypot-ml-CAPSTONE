@@ -8,6 +8,7 @@ who it proxied, so each captured session is matched back by connect time.
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import time
 from datetime import datetime, timezone
@@ -28,13 +29,43 @@ GATEWAY_EVENT_LOG = CONFIG.DATA_DIR / CONFIG.SESSION_LOG_FILE
 MATCH_WINDOW_SEC = 45.0
 _CACHE_TTL_SEC = 2.0
 
-# Addresses that are the proxy itself, never a real peer.
-_PROXY_ADDRS = {"127.0.0.1", "::1", "localhost"}
+# Addresses that are the proxy itself, never a real peer: loopback, and the
+# Docker bridge range (172.17.0.0/16 by default, any user-defined network up
+# to 172.31.x.x). This must be the exact RFC 1918 block 172.16.0.0/12 -- a
+# string-prefix test also matches public space such as 172.100.x.x or
+# 172.217.x.x, and a real attacker there would be re-attributed to whichever
+# peer the gateway happened to proxy around the same time.
+_PROXY_HOSTNAMES = {"localhost"}
+_DOCKER_BRIDGE_NET = ipaddress.ip_network("172.16.0.0/12")
+
+
+def _parse_ip(ip) -> Optional[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    """Parse an address, unwrapping IPv4-mapped IPv6; None when malformed."""
+    try:
+        addr = ipaddress.ip_address(str(ip or "").strip())
+    except ValueError:
+        return None
+    if addr.version == 6 and addr.ipv4_mapped is not None:
+        return addr.ipv4_mapped
+    return addr
+
+
+def is_docker_bridge_addr(ip: str) -> bool:
+    """True only for the Docker bridge range (172.16.0.0/12).
+
+    Narrower than looks_like_proxy(): loopback is a legitimate peer during a
+    single-machine rehearsal, whereas a bridge address as a *peer* means
+    attribution failed and the honeypot only saw the NAT gateway.
+    """
+    addr = _parse_ip(ip)
+    return addr is not None and addr.version == 4 and addr in _DOCKER_BRIDGE_NET
 
 
 def _is_proxy_addr(ip: str) -> bool:
-    ip = str(ip or "")
-    return ip in _PROXY_ADDRS or ip.startswith("172.1") or ip.startswith("172.2")
+    if str(ip or "").strip() in _PROXY_HOSTNAMES:
+        return True
+    addr = _parse_ip(ip)
+    return addr is not None and (addr.is_loopback or is_docker_bridge_addr(addr))
 
 
 def parse_ts(value) -> Optional[float]:

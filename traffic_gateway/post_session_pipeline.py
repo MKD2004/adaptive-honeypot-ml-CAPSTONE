@@ -29,7 +29,7 @@ from .feature_bridge import (
     honeypot_target_for,
     kcvr_valid,
 )
-from .peer_attribution import looks_like_proxy, resolve_peer_ip
+from .peer_attribution import is_docker_bridge_addr, looks_like_proxy, resolve_peer_ip
 from .traffic_classifier import traffic_classifier
 
 log = logging.getLogger("traffic_gateway.post_session")
@@ -231,7 +231,7 @@ class PostSessionPipeline:
                 and peer_ip
                 and pred["phase"] >= CONFIG.MT3_AUTO_BLACKLIST_MIN_PHASE
                 and float(pred["confidence"]) >= CONFIG.MT3_AUTO_BLACKLIST_CONF
-                and not peer_ip.startswith(("172.1", "172.2"))
+                and not is_docker_bridge_addr(peer_ip)
                 and not blacklist_manager.is_whitelisted(peer_ip)
                 and not blacklist_manager.is_blacklisted(peer_ip)):
             try:

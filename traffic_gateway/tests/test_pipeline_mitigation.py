@@ -1,0 +1,195 @@
+"""
+traffic_gateway/tests/test_pipeline_mitigation.py
+
+PostSessionPipeline.process_session -> response_mitigation, end to end, with a
+stand-in MT3 and a stand-in blacklist. Checks what lands in the result record
+and which IPs reach the blacklist. This is the first automated test of the
+auto-blacklist decision. No real model, network, blacklist file or log is used.
+"""
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import numpy as np
+
+from response_mitigation.audit import AuditLog
+from response_mitigation.config import load_config
+from response_mitigation.engine import build_engine
+from traffic_gateway import post_session_pipeline as psp
+
+PUBLIC_IP = "45.33.32.156"
+
+
+class FakeManager:
+    def __init__(self, whitelisted=(), blacklisted=()):
+        self._wl, self._bl = set(whitelisted), set(blacklisted)
+        self.calls = []
+
+    def is_whitelisted(self, ip):
+        return ip in self._wl
+
+    def is_blacklisted(self, ip):
+        return ip in self._bl
+
+    def blacklist(self, ip, *, reason, source, risk_score):
+        self.calls.append((ip, reason, source, risk_score))
+        self._bl.add(ip)
+
+
+class StubMT3:
+    def __init__(self, phase, confidence):
+        self.phase, self.confidence = phase, confidence
+
+    def predict(self, x_raw):
+        return {"micro_state": "SSH_BRUTE_FORCE", "phase": self.phase,
+                "phase_name": "Initial Access", "confidence": self.confidence,
+                "top3": []}
+
+
+def stub_configurator(pred, record):
+    return {"previous_config": None, "new_config": None, "changed": False, "reason": "stub"}
+
+
+class PipelineCase(unittest.TestCase):
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.manager = FakeManager()
+
+        # attribution is not what is under test; keep it from reading real logs
+        for name, kwargs in (("resolve_peer_ip", {"side_effect": lambda t, fallback="": fallback}),
+                             ("extract_features", {"return_value": np.zeros(128)})):
+            patcher = patch.object(psp, name, **kwargs)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def engine(self, manager=None, **kwargs):
+        cfg = load_config({"MITIGATION_AUDIT_PATH": str(self.tmp / "audit.jsonl"),
+                           "MITIGATION_KILL_FILE": str(self.tmp / "STOP")})
+        return build_engine(blacklist_manager=manager or self.manager, config=cfg,
+                            audit=AuditLog(cfg.audit_path), **kwargs)
+
+    def pipeline(self, phase=3, confidence=0.9, engine=None):
+        p = psp.PostSessionPipeline(
+            cowrie_log_dir=self.tmp / "cowrie", results_path=self.tmp / "results.jsonl",
+            configurator=stub_configurator, mitigation=engine or self.engine())
+        p.mt3 = StubMT3(phase, confidence)
+        p.started = True    # skip the slow start-up (threat intel, DistilBERT, checkpoint)
+        return p
+
+    def run_session(self, p, ip=PUBLIC_IP, sid="s1"):
+        record = {"session_id": sid, "src_ip": ip, "t_start": 1_700_000_000.0,
+                  "command_text": "uname -a ; id", "login_attempts": 3,
+                  "session_duration_s": 4.0, "micro_state_sequence": ""}
+        return p.process_session(record, gateway_score=0.2, write=False)
+
+
+class TestAutoBlacklist(PipelineCase):
+
+    def test_attack_from_a_public_ip_is_blacklisted(self):
+        result = self.run_session(self.pipeline(phase=3, confidence=0.9))
+        self.assertIs(result["auto_blacklisted"], True)
+        self.assertEqual(self.manager.calls, [(
+            PUBLIC_IP, "MT3: SSH_BRUTE_FORCE (phase 3 Initial Access, conf 0.90)",
+            "mt3_pipeline", 0.9)])
+        self.assertEqual(result["mitigation"], [
+            {"action": "divert", "rule": "divert_attack", "outcome": "applied"}])
+
+    def test_recon_is_only_recorded(self):
+        result = self.run_session(self.pipeline(phase=0, confidence=0.99))
+        self.assertIs(result["auto_blacklisted"], False)
+        self.assertEqual(self.manager.calls, [])
+        self.assertEqual([m["action"] for m in result["mitigation"]], ["observe"])
+
+    def test_low_confidence_is_only_recorded(self):
+        result = self.run_session(self.pipeline(phase=5, confidence=0.3))
+        self.assertIs(result["auto_blacklisted"], False)
+        self.assertEqual(self.manager.calls, [])
+
+    def test_docker_bridge_address_is_not_blacklisted(self):
+        result = self.run_session(self.pipeline(), ip="172.17.0.1")
+        self.assertIs(result["auto_blacklisted"], False)
+        self.assertEqual(self.manager.calls, [])
+        self.assertEqual(result["mitigation"][0]["outcome"], "skipped")
+
+    def test_public_172_address_is_blacklisted(self):
+        # The case the old "172.1" / "172.2" text check got wrong.
+        result = self.run_session(self.pipeline(), ip="172.217.14.206")
+        self.assertIs(result["auto_blacklisted"], True)
+        self.assertEqual(self.manager.calls[0][0], "172.217.14.206")
+
+    def test_loopback_peer_is_blacklisted_for_the_single_laptop_demo(self):
+        result = self.run_session(self.pipeline(), ip="127.0.0.1")
+        self.assertIs(result["auto_blacklisted"], True)
+
+    def test_whitelisted_and_already_blacklisted_are_left_alone(self):
+        for manager in (FakeManager(whitelisted={PUBLIC_IP}), FakeManager(blacklisted={PUBLIC_IP})):
+            with self.subTest(manager=manager._wl or manager._bl):
+                result = self.run_session(self.pipeline(engine=self.engine(manager)))
+                self.assertIs(result["auto_blacklisted"], False)
+                self.assertEqual(manager.calls, [])
+
+    def test_auto_blacklist_switched_off(self):
+        engine = self.engine(divert_enabled=False)
+        result = self.run_session(self.pipeline(engine=engine))
+        self.assertIs(result["auto_blacklisted"], False)
+        self.assertEqual(self.manager.calls, [])
+
+    def test_the_decision_is_in_the_audit_log(self):
+        self.run_session(self.pipeline())
+        lines = (self.tmp / "audit.jsonl").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIn('"action":"divert"', lines[0])
+        self.assertIn(PUBLIC_IP, lines[0])
+
+
+class TestPipelineSurvivesMitigationFailures(PipelineCase):
+
+    def test_an_engine_that_raises_does_not_lose_the_session(self):
+        engine = self.engine()
+        engine.handle = lambda verdict: (_ for _ in ()).throw(RuntimeError("engine bug"))
+        with self.assertLogs("traffic_gateway.post_session", level="ERROR"):
+            result = self.run_session(self.pipeline(engine=engine))
+        self.assertIs(result["auto_blacklisted"], False)
+        self.assertEqual(result["mitigation"], [])
+        self.assertEqual(result["mt3_prediction"]["micro_state"], "SSH_BRUTE_FORCE")
+
+    def test_the_old_result_fields_are_still_there(self):
+        result = self.run_session(self.pipeline())
+        for key in ("session_id", "src_ip", "mt3_prediction", "honeypot_action",
+                    "auto_blacklisted", "gateway_score", "latency_ms"):
+            self.assertIn(key, result)
+
+
+class TestEngineIsBuiltFromTheEnvironment(PipelineCase):
+
+    def env(self, **extra):
+        base = {"MITIGATION_AUDIT_PATH": str(self.tmp / "audit.jsonl"),
+                "MITIGATION_KILL_FILE": str(self.tmp / "STOP")}
+        return patch.dict(os.environ, {**base, **extra})
+
+    def bare_pipeline(self):
+        return psp.PostSessionPipeline(cowrie_log_dir=self.tmp / "cowrie",
+                                       results_path=self.tmp / "results.jsonl")
+
+    def test_it_uses_the_gateways_own_thresholds_and_is_built_once(self):
+        with self.env(), patch.object(psp, "blacklist_manager", self.manager):
+            p = self.bare_pipeline()
+            engine = p._get_mitigation()
+            self.assertIs(p._get_mitigation(), engine)
+        self.assertEqual(engine.config.policy.divert_min_phase, psp.CONFIG.MT3_AUTO_BLACKLIST_MIN_PHASE)
+        self.assertEqual(engine.config.policy.min_confidence, psp.CONFIG.MT3_AUTO_BLACKLIST_CONF)
+
+    def test_a_bad_mitigation_setting_stops_start_up(self):
+        with self.env(MITIGATION_MODE="enforcing"):
+            with self.assertRaises(ValueError) as ctx:
+                self.bare_pipeline().startup()    # fails before any slow loading
+        self.assertIn("MITIGATION_MODE", str(ctx.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()

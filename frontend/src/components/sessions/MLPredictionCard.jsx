@@ -20,8 +20,9 @@ function Stat({ label, value, mono, big, accent }) {
   )
 }
 
-// Mock ML prediction summary for a single session. No inference happens in
-// the frontend — these values come from frontend/src/data/mockData.js.
+// MT3 prediction summary for a single session. No inference happens in the
+// frontend — these values come from GET /api/live-feed, which reads the
+// pipeline's own logs/pipeline_results.jsonl.
 export default function MLPredictionCard({ session }) {
   return (
     <div className="rounded-lg border border-accent/30 bg-base-surface p-4 shadow-card">

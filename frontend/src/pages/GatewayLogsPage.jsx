@@ -1,29 +1,10 @@
 import PageHeader from '../components/common/PageHeader'
 import StatusBadge from '../components/common/StatusBadge'
-import LoadingState from '../components/common/LoadingState'
-import DisconnectedState from '../components/common/DisconnectedState'
-import ErrorState from '../components/common/ErrorState'
-import EmptyState from '../components/common/EmptyState'
+import DataSection from '../components/common/DataSection'
 import RoutingDecisionsTable from '../components/logs/RoutingDecisionsTable'
 import FootprintsTable from '../components/logs/FootprintsTable'
 import { useApiResource, API_STATUS } from '../hooks/useApiResource'
-import { getLiveAccess, getFootprints, API_BASE_URL } from '../services/api'
-
-const UNREACHABLE_MSG = `Could not reach ${API_BASE_URL}. Start it with: python -m traffic_gateway.run_pipeline (or traffic_gateway.api).`
-
-function DataSection({ resource, emptyTitle, emptyDescription, children }) {
-  if (resource.status === API_STATUS.LOADING) return <LoadingState label="Loading…" />
-  if (resource.status === API_STATUS.UNREACHABLE) {
-    return <DisconnectedState title="Gateway API unreachable" description={UNREACHABLE_MSG} />
-  }
-  if (resource.status === API_STATUS.ERROR) {
-    return <ErrorState title="Request failed" description={resource.error?.message} />
-  }
-  if (resource.status === API_STATUS.EMPTY) {
-    return <EmptyState title={emptyTitle} description={emptyDescription} />
-  }
-  return children
-}
+import { getLiveAccess, getFootprints } from '../services/api'
 
 // Gateway-level activity only — the pre-filter's routing decisions
 // (traffic_classifier.py, via GET /api/live-access) and raw Cowrie keystrokes

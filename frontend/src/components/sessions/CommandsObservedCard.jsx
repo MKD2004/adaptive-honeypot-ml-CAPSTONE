@@ -1,8 +1,7 @@
 import { Terminal } from 'lucide-react'
 
-// Surfaces session.commands / session.login_attempts — both already present
-// on every mock session (data/mockData.js's COMMANDS_BY_PHASE) but not
-// previously rendered anywhere on the details page. `break-all` keeps long
+// Surfaces session.commands / session.login_attempts — the literal commands
+// Cowrie captured, as the pipeline recorded them. `break-all` keeps long
 // captured commands from overflowing the card on narrow screens.
 export default function CommandsObservedCard({ session }) {
   const commands = session.commands || []

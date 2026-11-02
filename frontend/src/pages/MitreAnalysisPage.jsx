@@ -5,33 +5,40 @@ import KillChainOverview from '../components/mitre/KillChainOverview'
 import PhaseDetailPanel from '../components/mitre/PhaseDetailPanel'
 import MicroStateExplorer from '../components/mitre/MicroStateExplorer'
 import TaxonomyExplanation from '../components/mitre/TaxonomyExplanation'
+import DataSection from '../components/common/DataSection'
+import { useApiResource, API_STATUS } from '../hooks/useApiResource'
+import { getSessions } from '../services/sessions'
 import { KILL_CHAIN_PHASES, MICRO_STATES } from '../lib/schema'
-import { mockLiveSessions } from '../data/mockData'
 
-// Deliberately counts straight from mockLiveSessions (the actual 24-session
-// mock array in data/mockData.js), not the larger simulated dataset used by
-// Threat Analytics — this page is meant to reflect "the mock dataset"
-// literally. Most of the 45 micro-states will show 0 here; that's real
-// information (this session batch never touched them), not a bug.
+// Counts straight from the sessions MT3 has actually classified
+// (GET /api/live-feed). Most of the 45 micro-states will show 0: that is real
+// information — this machine's sessions never reached them — not a bug. The
+// 45 rows always render so the taxonomy stays visible even at zero coverage.
 export default function MitreAnalysisPage() {
   const [selectedPhase, setSelectedPhase] = useState('all')
   const [search, setSearch] = useState('')
 
+  const resource = useApiResource(getSessions, {
+    deps: [],
+    isEmpty: (data) => !data?.sessions?.length,
+  })
+  const sessions = resource.data?.sessions ?? []
+
   const phaseCounts = useMemo(() => {
     const counts = new Array(KILL_CHAIN_PHASES.length).fill(0)
-    mockLiveSessions.forEach((s) => {
+    sessions.forEach((s) => {
       if (counts[s.phase] !== undefined) counts[s.phase] += 1
     })
     return counts
-  }, [])
+  }, [sessions])
 
   const microStateCounts = useMemo(() => {
     const counts = {}
-    mockLiveSessions.forEach((s) => {
-      counts[s.micro_state] = (counts[s.micro_state] || 0) + 1
+    sessions.forEach((s) => {
+      if (s.micro_state) counts[s.micro_state] = (counts[s.micro_state] || 0) + 1
     })
     return counts
-  }, [])
+  }, [sessions])
 
   const statesWithCounts = useMemo(
     () => MICRO_STATES.map((s) => ({ ...s, count: microStateCounts[s.label] || 0 })),
@@ -64,10 +71,22 @@ export default function MitreAnalysisPage() {
     <div>
       <PageHeader
         title="MITRE Analysis"
-        subtitle="Kill-chain phases and micro-state coverage, counted from the mock session dataset"
-        actions={<StatusBadge status="mock" label="Mock Data" />}
+        subtitle="Kill-chain phases and micro-state coverage, counted from the sessions MT3 has classified"
+        actions={
+          resource.status === API_STATUS.UNREACHABLE ? (
+            <StatusBadge status="offline" label="Gateway Unreachable" />
+          ) : (
+            <StatusBadge status="running" label="Live: GET /api/live-feed" />
+          )
+        }
       />
 
+      <DataSection
+        resource={resource}
+        loadingLabel="Loading classifications…"
+        emptyTitle="No sessions classified yet"
+        emptyDescription="logs/pipeline_results.jsonl is empty — the taxonomy below is the full 45-state schema, with no observations to count against it yet."
+      >
       <div className="mb-6">
         <KillChainOverview
           phases={phasesWithCounts}
@@ -85,7 +104,7 @@ export default function MitreAnalysisPage() {
       <div className="mb-6">
         <MicroStateExplorer
           states={filteredStates}
-          total={mockLiveSessions.length}
+          total={sessions.length}
           search={search}
           onSearchChange={setSearch}
           phase={selectedPhase}
@@ -93,6 +112,8 @@ export default function MitreAnalysisPage() {
           phases={KILL_CHAIN_PHASES}
         />
       </div>
+
+      </DataSection>
 
       <TaxonomyExplanation />
     </div>

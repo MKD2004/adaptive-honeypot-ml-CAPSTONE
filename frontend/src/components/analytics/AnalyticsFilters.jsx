@@ -4,9 +4,8 @@ const selectCls =
   'rounded-md border border-base-border bg-base-raised px-2.5 py-1.5 text-sm text-text-primary ' +
   'focus:border-accent focus:outline-none'
 
-// Frontend-only filter controls for the Threat Analytics page. Operates
-// entirely on the deterministic mock dataset in data/mockAnalytics.js — no
-// backend call, no randomness.
+// Frontend-only filter controls for the Threat Analytics page. Filters the
+// already-fetched analytics in memory — no backend call of its own.
 export default function AnalyticsFilters({
   search, onSearchChange,
   phase, onPhaseChange,

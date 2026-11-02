@@ -1,7 +1,8 @@
 import RiskBadge, { phaseToRisk } from '../common/RiskBadge'
 import { phaseName } from '../../lib/schema'
 
-// Table of simulated per-micro-state analytics (data/mockAnalytics.js).
+// Table of per-micro-state analytics (services/analytics.js, computed from
+// the sessions MT3 has classified).
 // `total` is the denominator for the percentage column — pass the filtered
 // set's own total so percentages stay meaningful when phase/confidence
 // filters are active, not the full 45-state total.

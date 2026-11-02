@@ -59,20 +59,32 @@ too, since `localhost` would point at the viewer's own machine.
 
 | Page | Route | Data source |
 |---|---|---|
+| Dashboard | `/` | **Live** — `/api/live-feed` |
+| Live Sessions, Session Details | `/sessions` | **Live** — `/api/live-feed` |
+| Threat Analytics | `/analytics` | **Live** — `/api/live-feed` |
+| MITRE Analysis | `/mitre` | **Live** — `/api/live-feed` |
 | Logs | `/logs` | **Live** — `/api/live-access`, `/api/footprints` |
 | Honeypot Configuration | `/adaptive` | **Live** — `/api/active-config`, `/api/config-changes` |
-| Dashboard | `/` | Live system health (`/api/health`) + mock charts |
-| Live Sessions, Session Details | `/sessions` | Mock data (`src/data/mockData.js`) |
-| Threat Analytics | `/analytics` | Mock data |
-| MITRE Analysis | `/mitre` | Mock data |
-| CVE Intelligence | `/cve` | Mock data — `api.py` has no CVE endpoint yet |
+| CVE Intelligence, CVE Details | `/cve` | Mock data (`src/data/mockCves.js`) — `api.py` has no CVE endpoint |
 
-`src/services/api.js` already has `getMt3Results()` and `getLiveFeed()` wrappers
-for `/api/mt3-results` and `/api/live-feed`; the session pages can be switched
-from mock to live by using those once the MT3 checkpoint is on the machine.
+Everything except the CVE pages reads the real pipeline. `/api/live-feed` is used
+for the session pages rather than `/api/mt3-results` because it returns the whole
+`pipeline_results.jsonl` row, which carries the duration, commands, login
+attempts and the configurator's before/after config that the detail view needs.
 
-If the API isn't running, live pages show a "disconnected" state rather than
-breaking; start Terminal 1 and they recover.
+`src/services/sessions.js` maps one of those rows to the shape the session
+components expect. Three fields the API cannot supply — destination address,
+source port, destination port — are reported as `null` and render as a dash
+rather than being invented; see `UNAVAILABLE_FIELDS` in that file.
+
+**"Active Sessions" always reads 0, by design.** MT3 classifies a session only
+when it closes, because it needs the whole session for the temporal features, so
+every row the pipeline emits is a finished session.
+
+If the API isn't running, every live page shows a "disconnected" state rather
+than breaking; start Terminal 1 and they recover. There is no longer a mock
+fallback for the session pages — an empty dashboard means the pipeline has
+genuinely classified nothing yet.
 
 ## Production build (optional)
 
@@ -86,11 +98,14 @@ npm run preview    # serves the built app on http://localhost:4173
 ```
 frontend/
 ├── src/
-│   ├── services/api.js     ← every call to traffic_gateway/api.py lives here
-│   ├── hooks/              ← useApiResource (loading/empty/error/unreachable states)
-│   ├── pages/              ← one file per route
-│   ├── components/         ← grouped by page
-│   └── data/               ← mock data for pages not yet wired to the API
+│   ├── services/api.js        ← every call to traffic_gateway/api.py lives here
+│   ├── services/sessions.js   ← /api/live-feed row → session shape
+│   ├── services/analytics.js  ← per-micro-state aggregates over those sessions
+│   ├── hooks/                 ← useApiResource (loading/empty/error/unreachable)
+│   ├── pages/                 ← one file per route
+│   ├── components/            ← grouped by page; common/DataSection renders the
+│   │                            five useApiResource states
+│   └── data/mockCves.js       ← the one page with no endpoint behind it
 ├── .env.example            ← copy to .env.local to change the API URL
 └── package.json
 ```

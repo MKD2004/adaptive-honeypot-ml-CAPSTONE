@@ -10,20 +10,33 @@ import PhaseAnalyticsChart from '../components/analytics/PhaseAnalyticsChart'
 import ConfidenceHistogram from '../components/analytics/ConfidenceHistogram'
 import MicroStateAnalyticsTable from '../components/analytics/MicroStateAnalyticsTable'
 import FeatureGroupOverview from '../components/analytics/FeatureGroupOverview'
-import { KILL_CHAIN_PHASES } from '../lib/schema'
+import DataSection from '../components/common/DataSection'
+import { useApiResource, API_STATUS } from '../hooks/useApiResource'
+import { getSessions } from '../services/sessions'
 import {
-  MICRO_STATE_ANALYTICS,
-  TOTAL_ANALYZED_SESSIONS,
-  HIGH_CONFIDENCE_TOTAL,
+  microStateAnalytics,
+  analyticsTotals,
+  confidenceBuckets as bucketSessions,
   HIGH_CONFIDENCE_THRESHOLD,
-  OVERALL_AVG_CONFIDENCE,
   CONFIDENCE_BUCKET_DEFS,
-} from '../data/mockAnalytics'
+} from '../services/analytics'
+import { KILL_CHAIN_PHASES } from '../lib/schema'
 
+// Per-micro-state analytics over the sessions MT3 has actually classified.
+// All 45 states always appear, most at zero: that is the honest picture, not
+// a gap to be filled in with simulated counts.
 export default function ThreatAnalyticsPage() {
   const [search, setSearch] = useState('')
   const [phase, setPhase] = useState('all')
   const [confidenceBucket, setConfidenceBucket] = useState('all')
+
+  const resource = useApiResource(getSessions, {
+    deps: [],
+    isEmpty: (data) => !data?.sessions?.length,
+  })
+  const sessions = resource.data?.sessions ?? []
+  const allStates = useMemo(() => microStateAnalytics(sessions), [sessions])
+  const totals = useMemo(() => analyticsTotals(sessions), [sessions])
 
   const isFiltered = search.trim() !== '' || phase !== 'all' || confidenceBucket !== 'all'
 
@@ -36,13 +49,13 @@ export default function ThreatAnalyticsPage() {
   const filteredStates = useMemo(() => {
     const q = search.trim().toLowerCase()
     const bucket = CONFIDENCE_BUCKET_DEFS.find((b) => b.label === confidenceBucket)
-    return MICRO_STATE_ANALYTICS.filter((s) => {
+    return allStates.filter((s) => {
       if (phase !== 'all' && String(s.phase) !== phase) return false
       if (bucket && !(s.avgConfidence >= bucket.min && s.avgConfidence < bucket.max)) return false
       if (q && !(s.label.toLowerCase().includes(q) || s.mitre.toLowerCase().includes(q))) return false
       return true
     })
-  }, [search, phase, confidenceBucket])
+  }, [allStates, search, phase, confidenceBucket])
 
   const filteredTotal = filteredStates.reduce((sum, s) => sum + s.count, 0)
   const filteredHighConfidence = filteredStates.reduce((sum, s) => sum + s.highConfidenceCount, 0)
@@ -68,36 +81,45 @@ export default function ThreatAnalyticsPage() {
     null,
   )
 
-  const confidenceBuckets = useMemo(
-    () =>
-      CONFIDENCE_BUCKET_DEFS.map((b) => ({
-        ...b,
-        count: filteredStates
-          .filter((s) => s.avgConfidence >= b.min && s.avgConfidence < b.max)
-          .reduce((sum, s) => sum + s.count, 0),
-      })),
-    [filteredStates],
-  )
+  // Buckets each session's own confidence, not per-state averages, so the
+  // histogram counts observations rather than inferring them from a mean.
+  const histogramBuckets = useMemo(() => {
+    const shown = new Set(filteredStates.map((s) => s.label))
+    return bucketSessions(sessions.filter((s) => shown.has(s.micro_state)))
+  }, [sessions, filteredStates])
 
   return (
     <div>
       <PageHeader
         title="Threat Analytics"
-        subtitle="Simulated per-micro-state prediction analytics — 45 micro-states, 128 features, model comparison"
-        actions={<StatusBadge status="mock" label="Simulated Data" />}
+        subtitle="Per-micro-state prediction analytics over classified sessions — 45 micro-states, 128 features"
+        actions={
+          resource.status === API_STATUS.UNREACHABLE ? (
+            <StatusBadge status="offline" label="Gateway Unreachable" />
+          ) : (
+            <StatusBadge status="running" label="Live: GET /api/live-feed" />
+          )
+        }
       />
+
+      <DataSection
+        resource={resource}
+        loadingLabel="Loading analytics…"
+        emptyTitle="No sessions classified yet"
+        emptyDescription="logs/pipeline_results.jsonl is empty — run the pipeline and send a session to the honeypot to populate these charts."
+      >
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <MetricCard
           icon={Layers}
-          label="Total Analyzed Sessions"
-          value={isFiltered ? filteredTotal : TOTAL_ANALYZED_SESSIONS}
-          sublabel={isFiltered ? `of ${TOTAL_ANALYZED_SESSIONS} simulated` : 'simulated, deterministic'}
+          label="Sessions Classified"
+          value={isFiltered ? filteredTotal : totals.total}
+          sublabel={isFiltered ? `of ${totals.total} classified` : `${totals.statesObserved} of 45 states observed`}
         />
         <MetricCard
           icon={ShieldCheck}
           label="High-Confidence Predictions"
-          value={isFiltered ? filteredHighConfidence : HIGH_CONFIDENCE_TOTAL}
+          value={isFiltered ? filteredHighConfidence : totals.highConfidenceTotal}
           sublabel={`≥${(HIGH_CONFIDENCE_THRESHOLD * 100).toFixed(0)}% confidence`}
         />
         <MetricCard
@@ -113,8 +135,8 @@ export default function ThreatAnalyticsPage() {
         <MetricCard
           icon={Gauge}
           label="Average Model Confidence"
-          value={`${((isFiltered ? filteredAvgConfidence : OVERALL_AVG_CONFIDENCE) * 100).toFixed(1)}%`}
-          sublabel="simulated probability, not verified accuracy"
+          value={`${((isFiltered ? filteredAvgConfidence : totals.avgConfidence) * 100).toFixed(1)}%`}
+          sublabel="softmax probability, not verified accuracy"
         />
       </div>
 
@@ -134,15 +156,15 @@ export default function ThreatAnalyticsPage() {
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartCard
           title="Threat Distribution by Kill-Chain Phase"
-          subtitle="Simulated session counts per phase — click a bar to filter"
+          subtitle="Classified session counts per phase — click a bar to filter"
         >
           <PhaseAnalyticsChart data={phaseChartData} selectedPhase={phase} onSelectPhase={setPhase} />
         </ChartCard>
         <ChartCard
           title="Confidence Distribution"
-          subtitle="Simulated model probability buckets — not a measure of correctness"
+          subtitle="MT3 confidence per session — not a measure of correctness"
         >
-          <ConfidenceHistogram buckets={confidenceBuckets} />
+          <ConfidenceHistogram buckets={histogramBuckets} />
         </ChartCard>
       </div>
 
@@ -157,6 +179,8 @@ export default function ThreatAnalyticsPage() {
           <MicroStateAnalyticsTable rows={filteredStates} total={filteredTotal} />
         )}
       </div>
+
+      </DataSection>
 
       <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
         <h3 className="mb-3 text-sm font-semibold text-text-primary">Feature Group Overview</h3>

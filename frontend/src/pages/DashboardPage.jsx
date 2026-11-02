@@ -3,29 +3,47 @@ import { Radio, Activity, ShieldAlert, Gauge, ArrowUpRight } from 'lucide-react'
 import PageHeader from '../components/common/PageHeader'
 import MetricCard from '../components/common/MetricCard'
 import StatusBadge from '../components/common/StatusBadge'
+import DataSection from '../components/common/DataSection'
 import SessionTable from '../components/sessions/SessionTable'
 import ThreatDistributionDonut from '../components/dashboard/ThreatDistributionDonut'
 import SystemStatusCard from '../components/dashboard/SystemStatusCard'
-import { mockLiveSessions, MOCK_DATA_GENERATED_AT, getSessionSummary } from '../data/mockData'
+import { useApiResource, API_STATUS } from '../hooks/useApiResource'
+import { getSessions, getSessionSummary } from '../services/sessions'
 
 // Approved Stage 3 layout: 4 metric cards, Recent Sessions, Threat
 // Distribution (by the real 9 kill-chain phases), System Status. Nothing
 // else — no bot-activity trend, top-attacker ranking, geography, or other
 // sections outside this scope.
+//
+// "Active Sessions" reads 0 by design: MT3 classifies a session only once it
+// closes, because it needs the whole session for the temporal features, so
+// every row here is a finished session.
 export default function DashboardPage() {
-  const summary = getSessionSummary(mockLiveSessions)
+  const resource = useApiResource(getSessions, {
+    deps: [],
+    isEmpty: (data) => !data?.sessions?.length,
+  })
+  const sessions = resource.data?.sessions ?? []
+  const summary = getSessionSummary(sessions)
+  const newest = sessions[0]?.timestamp
 
   return (
     <div>
       <PageHeader
         title="Dashboard"
-        subtitle="Real-time overview of honeypot activity and ML-based threat detection"
+        subtitle="Overview of honeypot activity and MT3 threat classification"
         actions={
           <div className="flex flex-col items-end gap-1">
-            <StatusBadge status="mock" label="Mock Data" />
-            <span className="text-[11px] text-text-muted">
-              Last updated {new Date(MOCK_DATA_GENERATED_AT).toLocaleString('en-US', { hour12: false })}
-            </span>
+            {resource.status === API_STATUS.UNREACHABLE ? (
+              <StatusBadge status="offline" label="Gateway Unreachable" />
+            ) : (
+              <StatusBadge status="running" label="Live: GET /api/live-feed" />
+            )}
+            {newest && (
+              <span className="text-[11px] text-text-muted">
+                Latest session {new Date(newest).toLocaleString('en-US', { hour12: false })}
+              </span>
+            )}
           </div>
         }
       />
@@ -35,13 +53,13 @@ export default function DashboardPage() {
           icon={Radio}
           label="Active Sessions"
           value={summary.active}
-          sublabel="currently open"
+          sublabel="MT3 classifies on close"
         />
         <MetricCard
           icon={Activity}
-          label="Total Sessions"
+          label="Sessions Classified"
           value={summary.total}
-          sublabel="in this mock window"
+          sublabel="in this window"
         />
         <MetricCard
           icon={ShieldAlert}
@@ -70,13 +88,27 @@ export default function DashboardPage() {
               <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.75} />
             </Link>
           </div>
-          <SessionTable sessions={mockLiveSessions} limit={5} variant="dashboard" />
+          <DataSection
+            resource={resource}
+            loadingLabel="Loading sessions…"
+            emptyTitle="No sessions classified yet"
+            emptyDescription="logs/pipeline_results.jsonl is empty — run python -m traffic_gateway.run_pipeline and send a session to the honeypot."
+          >
+            <SessionTable sessions={sessions} limit={5} variant="dashboard" />
+          </DataSection>
         </div>
 
         <div className="space-y-4">
           <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
             <h3 className="mb-3 text-sm font-semibold text-text-primary">Threat Distribution</h3>
-            <ThreatDistributionDonut sessions={mockLiveSessions} />
+            <DataSection
+              resource={resource}
+              loadingLabel="Loading…"
+              emptyTitle="Nothing to chart yet"
+              emptyDescription="No classified sessions on this machine."
+            >
+              <ThreatDistributionDonut sessions={sessions} />
+            </DataSection>
           </div>
           <SystemStatusCard />
         </div>

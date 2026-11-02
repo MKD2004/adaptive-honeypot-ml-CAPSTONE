@@ -4,13 +4,15 @@ import PageHeader from '../components/common/PageHeader'
 import EmptyState from '../components/common/EmptyState'
 import StatusBadge from '../components/common/StatusBadge'
 import RiskBadge from '../components/common/RiskBadge'
+import DataSection from '../components/common/DataSection'
 import ConnectionInfoCard from '../components/sessions/ConnectionInfoCard'
 import MLPredictionCard from '../components/sessions/MLPredictionCard'
 import ActivityTimeline from '../components/sessions/ActivityTimeline'
 import AdaptiveDecisionCard from '../components/sessions/AdaptiveDecisionCard'
 import SessionMetadataCard from '../components/sessions/SessionMetadataCard'
 import CommandsObservedCard from '../components/sessions/CommandsObservedCard'
-import { getSessionById } from '../data/mockData'
+import { useApiResource } from '../hooks/useApiResource'
+import { getSessions } from '../services/sessions'
 
 function BackButton({ onClick }) {
   return (
@@ -24,44 +26,25 @@ function BackButton({ onClick }) {
   )
 }
 
-export default function SessionDetailsPage() {
-  const { sessionId } = useParams()
-  const navigate = useNavigate()
-  const session = getSessionById(sessionId)
-
-  if (!session) {
-    return (
-      <div>
-        <PageHeader
-          title="Session not found"
-          subtitle={`No mock session matches "${sessionId}"`}
-          actions={<BackButton onClick={() => navigate('/sessions')} />}
-        />
-        <EmptyState
-          title="No matching session"
-          description="It may have scrolled out of the mock data window. Go back and pick another row."
-        />
-      </div>
-    )
-  }
-
+function SessionBody({ session }) {
   return (
-    <div>
-      <PageHeader
-        title={`Session ${session.session_id}`}
-        subtitle={`Started ${new Date(session.first_seen).toLocaleString('en-US', { hour12: false })}`}
-        actions={<BackButton onClick={() => navigate('/sessions')} />}
-      />
-
+    <>
       <div className="mb-6 flex flex-wrap items-center gap-2">
         <StatusBadge status={session.status} />
         <RiskBadge level={session.risk} />
         <span className="rounded-full border border-base-border px-2.5 py-1 font-mono text-xs text-text-secondary">
           {session.src_ip}
         </span>
-        <span className="rounded-full border border-base-border px-2.5 py-1 text-xs text-text-secondary">
-          {session.protocol}
-        </span>
+        {session.protocol && (
+          <span className="rounded-full border border-base-border px-2.5 py-1 text-xs text-text-secondary">
+            {session.protocol}
+          </span>
+        )}
+        {session.source && (
+          <span className="rounded-full border border-base-border px-2.5 py-1 text-xs text-text-secondary">
+            source: {session.source}
+          </span>
+        )}
       </div>
 
       <div className="mb-6">
@@ -83,6 +66,50 @@ export default function SessionDetailsPage() {
           <CommandsObservedCard session={session} />
         </div>
       </div>
+    </>
+  )
+}
+
+// Reads the same GET /api/live-feed the list page does and picks the matching
+// row out of it. There is no per-session endpoint on api.py, and the result
+// file is small (one line per classified session), so fetching the window and
+// filtering is cheaper than adding a backend route.
+export default function SessionDetailsPage() {
+  const { sessionId } = useParams()
+  const navigate = useNavigate()
+
+  const resource = useApiResource(getSessions, {
+    deps: [],
+    isEmpty: (data) => !data?.sessions?.length,
+  })
+  const session = resource.data?.sessions?.find((s) => s.session_id === sessionId)
+
+  return (
+    <div>
+      <PageHeader
+        title={session ? `Session ${session.session_id}` : 'Session'}
+        subtitle={
+          session
+            ? `Started ${new Date(session.first_seen).toLocaleString('en-US', { hour12: false })}`
+            : sessionId
+        }
+        actions={<BackButton onClick={() => navigate('/sessions')} />}
+      />
+      <DataSection
+        resource={resource}
+        loadingLabel="Loading session…"
+        emptyTitle="No sessions classified yet"
+        emptyDescription="logs/pipeline_results.jsonl is empty — run the pipeline and send a session to the honeypot."
+      >
+        {session ? (
+          <SessionBody session={session} />
+        ) : (
+          <EmptyState
+            title="No matching session"
+            description={`No classified session has the id "${sessionId}". It may have scrolled out of the current window — go back and pick another row.`}
+          />
+        )}
+      </DataSection>
     </div>
   )
 }

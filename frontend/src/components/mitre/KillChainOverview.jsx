@@ -2,7 +2,7 @@ import { PHASE_COLORS } from '../../lib/schema'
 import { cn } from '../../lib/cn'
 
 // All 9 phases, in kill-chain order, with session counts derived from the
-// real mockLiveSessions array (src/data/mockData.js) — see
+// sessions MT3 has classified (GET /api/live-feed) — see
 // MitreAnalysisPage.jsx. Clicking a card selects it for the detail panel
 // below and filters the micro-state explorer.
 export default function KillChainOverview({ phases, selectedPhase, onSelectPhase }) {

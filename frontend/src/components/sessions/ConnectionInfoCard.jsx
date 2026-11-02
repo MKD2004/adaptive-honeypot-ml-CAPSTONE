@@ -10,11 +10,21 @@ function formatTs(iso) {
   return new Date(iso).toLocaleString('en-US', { hour12: false })
 }
 
+// A dash, not a blank cell: the pipeline result carries no destination address
+// and no ports (see services/sessions.js UNAVAILABLE_FIELDS), and an empty row
+// reads as a rendering bug rather than as "the API does not report this".
 function Row({ label, value, mono }) {
+  const missing = value === null || value === undefined || value === ''
   return (
     <>
       <dt className="text-text-muted">{label}</dt>
-      <dd className={`text-right text-text-primary ${mono ? 'font-mono text-xs' : ''}`}>{value}</dd>
+      <dd
+        className={`text-right ${missing ? 'text-text-muted' : 'text-text-primary'} ${
+          mono && !missing ? 'font-mono text-xs' : ''
+        }`}
+      >
+        {missing ? '—' : value}
+      </dd>
     </>
   )
 }

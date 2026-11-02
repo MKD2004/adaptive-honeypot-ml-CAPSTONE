@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -48,6 +50,21 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_SOURCE_TAG = re.compile(r"[A-Za-z0-9_.-]{1,40}")
+
+
+def _source_tag() -> str:
+    """Where this data comes from: PIPELINE_SOURCE, e.g. internet | injected | lab | demo.
+
+    Written on every result so real internet sessions and injected or lab ones are never mixed
+    up in one statistic. A value with odd characters stops start-up instead of being stored.
+    """
+    raw = os.environ.get("PIPELINE_SOURCE", "").strip() or "unspecified"
+    if not _SOURCE_TAG.fullmatch(raw):
+        raise ValueError("PIPELINE_SOURCE: use 1-40 letters, digits, dots, dashes or underscores")
+    return raw
+
+
 @dataclass
 class _TailState:
     """Byte offset plus the partial sessions still awaiting their close event."""
@@ -80,6 +97,7 @@ class PostSessionPipeline:
         self.mt3 = MT3Inference()
         self._configurator = configurator
         self.mitigation = mitigation   # built on first use when not given
+        self.source = _source_tag()    # provenance tag written on every result
 
         self._tails: Dict[str, _TailState] = {}
         self._seen: Set[str] = set()
@@ -286,6 +304,8 @@ class PostSessionPipeline:
         result = {
             "session_id": record.get("session_id", ""),
             "src_ip": record.get("src_ip", ""),
+            "sensor": str(record.get("sensor", "") or ""),
+            "source": self.source,
             "timestamp": (datetime.fromtimestamp(t_start, tz=timezone.utc).isoformat()
                           if t_start else _utcnow()),
             "processed_at": _utcnow(),
@@ -375,6 +395,8 @@ class PostSessionPipeline:
                 record = build_record(events)
                 if record is None:
                     continue
+                # which honeypot saw it: Cowrie writes `sensor` on every event (cowrie.cfg sensor_name)
+                record.setdefault("sensor", next((str(e["sensor"]) for e in events if e.get("sensor")), ""))
                 try:
                     out.append(self.process_session(record))
                 except Exception:

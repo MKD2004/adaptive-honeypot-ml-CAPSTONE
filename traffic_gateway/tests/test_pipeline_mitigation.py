@@ -6,6 +6,7 @@ stand-in MT3 and a stand-in blacklist. Checks what lands in the result record
 and which IPs reach the blacklist. This is the first automated test of the
 auto-blacklist decision. No real model, network, blacklist file or log is used.
 """
+import json
 import os
 import tempfile
 import unittest
@@ -189,6 +190,70 @@ class TestEngineIsBuiltFromTheEnvironment(PipelineCase):
             with self.assertRaises(ValueError) as ctx:
                 self.bare_pipeline().startup()    # fails before any slow loading
         self.assertIn("MITIGATION_MODE", str(ctx.exception))
+
+
+class TestProvenance(PipelineCase):
+    """Every result says which honeypot saw the session and where the data comes from."""
+
+    def with_source(self, value):
+        patcher = patch.dict(os.environ, {"PIPELINE_SOURCE": value} if value is not None else {})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        if value is None:
+            os.environ.pop("PIPELINE_SOURCE", None)
+
+    def test_the_result_carries_the_sensor_and_a_source(self):
+        self.with_source(None)
+        record = {"session_id": "s1", "src_ip": PUBLIC_IP, "t_start": 1_700_000_000.0, "command_text": "id",
+                  "login_attempts": 1, "session_duration_s": 2.0, "micro_state_sequence": "",
+                  "sensor": "sandbox-cowrie-1"}
+        result = self.pipeline().process_session(record, gateway_score=0.2, write=False)
+        self.assertEqual((result["sensor"], result["source"]), ("sandbox-cowrie-1", "unspecified"))
+
+    def test_a_record_without_a_sensor_gets_an_empty_one(self):
+        self.with_source(None)
+        self.assertEqual(self.run_session(self.pipeline())["sensor"], "")
+
+    def test_the_source_comes_from_the_environment(self):
+        for tag in ("internet", "injected", "lab-2", "demo_1", "a.b"):
+            with self.subTest(tag=tag):
+                self.with_source(tag)
+                self.assertEqual(self.run_session(self.pipeline())["source"], tag)
+
+    def test_a_source_with_odd_characters_stops_the_pipeline_instead_of_being_stored(self):
+        for bad in ("in ternet", "x" * 41, "a/b", 'a"b', "naïve", "a;b"):
+            with self.subTest(tag=bad):
+                self.with_source(bad)
+                with self.assertRaises(ValueError) as ctx:
+                    self.pipeline()
+                self.assertIn("PIPELINE_SOURCE", str(ctx.exception))
+
+    def test_the_sensor_name_is_read_from_the_real_cowrie_log(self):
+        self.with_source("internet")
+        logs = self.tmp / "cowrie"
+        logs.mkdir()
+        events = [{"eventid": "cowrie.session.connect", "src_ip": PUBLIC_IP, "src_port": 40000, "dst_port": 2222,
+                   "session": "abc123", "protocol": "ssh", "sensor": "sandbox-cowrie-1", "timestamp": "2026-11-02T08:00:00.000000Z"},
+                  {"eventid": "cowrie.session.closed", "duration_ms": 900, "session": "abc123",
+                   "sensor": "sandbox-cowrie-1", "timestamp": "2026-11-02T08:00:01.000000Z"}]
+        (logs / "cowrie.json").write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
+        p = self.pipeline()
+        p.cowrie_log_dir = logs
+        p.from_start = True
+        results = p.scan_once()
+        self.assertEqual([(r["session_id"], r["sensor"], r["source"]) for r in results], [("abc123", "sandbox-cowrie-1", "internet")])
+        line = json.loads((self.tmp / "results.jsonl").read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual((line["sensor"], line["source"]), ("sandbox-cowrie-1", "internet"))
+
+    def test_a_log_without_sensor_names_still_works(self):
+        logs = self.tmp / "cowrie"
+        logs.mkdir()
+        events = [{"eventid": "cowrie.session.connect", "src_ip": PUBLIC_IP, "session": "x1", "timestamp": "2026-11-02T08:00:00.000000Z"},
+                  {"eventid": "cowrie.session.closed", "session": "x1", "timestamp": "2026-11-02T08:00:01.000000Z"}]
+        (logs / "cowrie.json").write_text("\n".join(json.dumps(e) for e in events), encoding="utf-8")
+        p = self.pipeline()
+        p.cowrie_log_dir = logs
+        self.assertEqual([r["sensor"] for r in p.scan_once()], [""])
 
 
 if __name__ == "__main__":

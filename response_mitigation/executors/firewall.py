@@ -12,10 +12,9 @@ will run, so a reader of the log can see what was asked for.
 """
 from __future__ import annotations
 
-import datetime as _dt
 from typing import Optional
 
-from ..blocklist import BlocklistFile
+from ..blocklist import BlocklistFile, iso_utc
 from ..host.apply_blocklist import add_element_command
 from ..models import PlannedAction, Verdict
 
@@ -28,7 +27,7 @@ class FirewallExecutor:
     def skip_reason(self, verdict: Verdict, planned: PlannedAction) -> Optional[str]:
         entry = self._blocklist.get(verdict.ip)
         if entry is not None:
-            return f"already on the block list until {_iso(entry.expires_at)}"
+            return f"already on the block list until {iso_utc(entry.expires_at)}"
         return None
 
     def apply(self, verdict: Verdict, planned: PlannedAction) -> str:
@@ -36,9 +35,6 @@ class FirewallExecutor:
         command = add_element_command(verdict.ip, ttl)       # checks the IP again; raises if unsafe
         entry = self._blocklist.add(verdict.ip, ttl_s=ttl, reason=planned.reason,
                                     rule=planned.rule, session_id=verdict.session_id)
-        return (f"on the block list until {_iso(entry.expires_at)}; "
+        return (f"on the block list until {iso_utc(entry.expires_at)}; "
                 f"the host will run: nft {command}")
 
-
-def _iso(epoch: int) -> str:
-    return _dt.datetime.fromtimestamp(epoch, _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

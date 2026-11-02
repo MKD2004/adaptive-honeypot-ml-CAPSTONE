@@ -7,13 +7,15 @@ root-side script (host/apply_blocklist.py) reads back exactly what was written.
 import json
 import os
 import stat
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from response_mitigation.blocklist import BlockEntry, BlocklistCorrupt, BlocklistFile
+from response_mitigation.blocklist import BlockEntry, BlocklistBusy, BlocklistCorrupt, BlocklistFile, _ProcessLock
 from response_mitigation.host import apply_blocklist as hb
 
 PUBLIC = "45.33.32.156"
@@ -125,12 +127,12 @@ class TestNeverLeavesAHalfWrittenFile(BlocklistCase):
             with self.assertRaises(OSError):
                 self.block("1.1.1.1")
         self.assertEqual(self.path.read_bytes(), before)
-        self.assertEqual([p.name for p in self.path.parent.iterdir()], ["blocklist.json"])
+        self.assertEqual(sorted(p.name for p in self.path.parent.iterdir()), ["blocklist.json", "blocklist.json.lock"])
 
     def test_no_temp_files_are_left_after_a_normal_save(self):
         self.block()
         self.block("8.8.8.8")
-        self.assertEqual([p.name for p in self.path.parent.iterdir()], ["blocklist.json"])
+        self.assertEqual(sorted(p.name for p in self.path.parent.iterdir()), ["blocklist.json", "blocklist.json.lock"])
 
     def test_many_threads_adding_at_once_lose_nothing(self):
         ips = [f"45.33.{i // 200}.{i % 200 + 1}" for i in range(40)]
@@ -140,6 +142,55 @@ class TestNeverLeavesAHalfWrittenFile(BlocklistCase):
         for t in threads:
             t.join()
         self.assertEqual(sorted(e.ip for e in self.file.entries()), sorted(ips))
+
+
+REPO = Path(__file__).resolve().parents[2]
+
+_WRITER = """
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from response_mitigation.blocklist import BlocklistFile
+f = BlocklistFile(Path(sys.argv[2]))
+for i in range(int(sys.argv[4])):
+    f.add("45.33.%s.%d" % (sys.argv[3], i + 1), ttl_s=3600, reason="p", rule="t")
+"""
+
+
+class TestSeveralProcessesAtOnce(BlocklistCase):
+    """The pipeline, the command line and the dashboard can all write this file."""
+
+    def test_no_update_is_lost_when_four_processes_write_together(self):
+        procs = [subprocess.Popen([sys.executable, "-c", _WRITER, str(REPO), str(self.path), str(k), "15"])
+                 for k in range(4)]
+        for proc in procs:
+            self.assertEqual(proc.wait(timeout=180), 0)
+        # The children use the real clock, this test's clock is fixed in 2027, so count the raw file.
+        doc = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(sorted(e["ip"] for e in doc["entries"]),
+                         sorted(f"45.33.{k}.{i}" for k in range(4) for i in range(1, 16)))
+
+    def test_a_process_that_cannot_get_the_lock_gives_up_and_changes_nothing(self):
+        self.block("8.8.8.8")
+        before = self.path.read_bytes()
+        impatient = BlocklistFile(self.path, clock=self.clock, lock_timeout_s=0.2)
+        with _ProcessLock(self.dir / "sub" / "blocklist.json.lock"):
+            with self.assertRaises(BlocklistBusy):
+                impatient.add(PUBLIC, ttl_s=60, reason="r", rule="r")
+            with self.assertRaises(BlocklistBusy):
+                impatient.remove("8.8.8.8")
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_reading_never_needs_the_lock(self):
+        self.block("8.8.8.8")
+        with _ProcessLock(self.dir / "sub" / "blocklist.json.lock"):
+            self.assertEqual([e.ip for e in self.file.entries()], ["8.8.8.8"])
+
+    def test_the_lock_is_released_after_each_change(self):
+        self.block("8.8.8.8")
+        self.block("1.1.1.1")                                          # would hang if the first kept the lock
+        self.assertTrue(self.file.remove("8.8.8.8"))
+        self.assertEqual(len(self.file.entries()), 1)
 
 
 class TestAFileThatCannotBeReadIsNeverReplaced(BlocklistCase):

@@ -19,8 +19,11 @@ A file that cannot be read is NOT replaced. Replacing it would silently forget
 blocks that are still in force, so the writer raises BlocklistCorrupt and the
 engine records the DENY as failed.
 
-One pipeline process writes this file. The lock below covers threads in that
-process, not two separate processes.
+The pipeline, the command-line tool and the dashboard API can all change this
+file, from separate processes. Every change takes a lock file next to it
+(blocklist.json.lock) first, so two changes can never overwrite each other.
+Reading needs no lock: a save is a rename, so a reader sees the old file or the
+new one, never half of one.
 """
 from __future__ import annotations
 
@@ -29,6 +32,11 @@ import os
 import tempfile
 import threading
 import time
+try:
+    import fcntl                      # Linux, macOS
+except ImportError:                   # Windows
+    fcntl = None
+    import msvcrt
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
@@ -39,6 +47,49 @@ _REASON_MAX = 200
 
 class BlocklistCorrupt(ValueError):
     """The file exists but cannot be understood. It is left untouched."""
+
+
+class BlocklistBusy(OSError):
+    """Another process held the lock for too long. Nothing was changed."""
+
+
+class _ProcessLock:
+    """An exclusive lock on <block list>.lock, shared by every process."""
+
+    def __init__(self, path: Path, timeout_s: float = 10.0) -> None:
+        self._path, self._timeout = Path(path), timeout_s
+        self._fh = None
+
+    def __enter__(self) -> "_ProcessLock":
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = open(self._path, "a+b")
+        deadline = time.monotonic() + self._timeout
+        while True:
+            try:
+                self._try()
+                return self
+            except OSError:
+                if time.monotonic() >= deadline:
+                    self._fh.close()
+                    raise BlocklistBusy(f"{self._path.name} is locked by another process") from None
+                time.sleep(0.02)
+
+    def _try(self) -> None:
+        if fcntl is not None:
+            fcntl.flock(self._fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        else:
+            self._fh.seek(0)
+            msvcrt.locking(self._fh.fileno(), msvcrt.LK_NBLCK, 1)
+
+    def __exit__(self, *exc) -> None:
+        try:
+            if fcntl is not None:
+                fcntl.flock(self._fh, fcntl.LOCK_UN)
+            else:
+                self._fh.seek(0)
+                msvcrt.locking(self._fh.fileno(), msvcrt.LK_UNLCK, 1)
+        finally:
+            self._fh.close()
 
 
 @dataclass(frozen=True)
@@ -52,10 +103,13 @@ class BlockEntry:
 
 
 class BlocklistFile:
-    def __init__(self, path: Path, *, clock: Callable[[], float] = time.time) -> None:
+    def __init__(self, path: Path, *, clock: Callable[[], float] = time.time,
+                 lock_timeout_s: float = 10.0) -> None:
         self.path = Path(path)
         self._clock = clock
+        self._lock_timeout_s = lock_timeout_s
         self._lock = threading.Lock()
+        self._lock_path = self.path.with_name(self.path.name + ".lock")
 
     # -- reading ------------------------------------------------------------
     def entries(self) -> List[BlockEntry]:
@@ -72,7 +126,7 @@ class BlocklistFile:
         is kept as it is (the firewall would not lengthen it anyway)."""
         if isinstance(ttl_s, bool) or not isinstance(ttl_s, int) or ttl_s < 1:
             raise ValueError("ttl_s must be a whole number of seconds, at least 1")
-        with self._lock:
+        with self._lock, _ProcessLock(self._lock_path, self._lock_timeout_s):
             now = int(self._clock())
             live = self._live(self._read(), now)
             for entry in live:
@@ -85,7 +139,7 @@ class BlocklistFile:
 
     def remove(self, ip: str) -> bool:
         """Lift a block (an operator pressing 'unblock'). True if there was one."""
-        with self._lock:
+        with self._lock, _ProcessLock(self._lock_path, self._lock_timeout_s):
             now = int(self._clock())
             live = self._live(self._read(), now)
             kept = [e for e in live if e.ip != ip]
@@ -131,6 +185,12 @@ class BlocklistFile:
             except OSError:
                 pass
             raise
+
+
+def iso_utc(epoch: float) -> str:
+    """Whole seconds since 1970 as a readable UTC time, e.g. 2026-11-02T08:00:00Z."""
+    import datetime as _dt
+    return _dt.datetime.fromtimestamp(epoch, _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _one_line(text: str) -> str:

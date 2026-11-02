@@ -27,12 +27,12 @@ import threading
 import time
 import uuid
 from collections import deque
-from typing import Callable, Deque, Dict, Iterable, List, Mapping, Optional, Protocol, Set
+from typing import Any, Callable, Deque, Dict, Iterable, List, Mapping, Optional, Protocol, Set
 
 from .audit import AuditLog
-from .blocklist import BlocklistFile
+from .blocklist import BlockEntry, BlocklistFile, iso_utc
 from .config import MitigationConfig, load_config
-from .executors.alert import LogAlertExecutor
+from .executors.alert import CompositeAlertExecutor, LogAlertExecutor, WebhookAlertExecutor
 from .executors.firewall import FirewallExecutor
 from .executors.gateway import GatewayExecutor
 from .models import Action, Decision, Mode, Outcome, PlannedAction, Verdict
@@ -60,8 +60,10 @@ class MitigationEngine:
                  audit: AuditLog,
                  executors: Mapping[Action, Executor],
                  divert_enabled: bool = True,
+                 blocklist: Optional[BlocklistFile] = None,
                  clock: Callable[[], float] = time.time) -> None:
         self.config = config
+        self._blocklist = blocklist
         self._safelist = safelist
         self._audit = audit
         self._executors = dict(executors)
@@ -90,6 +92,140 @@ class MitigationEngine:
                 self._write(decision)
                 decisions.append(decision)
             return decisions
+
+    # -- actions by a person (dashboard, command line) ----------------------
+    # These do not go through the policy table, and they work in every mode: a person
+    # is in charge. They still go through the same safety checks as an automatic block
+    # (an operator cannot firewall-block a private address, their own address or an
+    # address on the never-block list), and every one is written to the audit log with
+    # the name of who did it.
+    def _manual(self, action: Action, ip: str, rule: str, reason: str, actor: str,
+                outcome: Outcome, detail: str = "", ttl_s: Optional[int] = None) -> Decision:
+        decision = Decision(Verdict(ip=ip, phase=-1, phase_name="manual", micro_state="manual", confidence=1.0),
+                            PlannedAction(action, rule, reason, ttl_s), self.config.mode, outcome, detail,
+                            actor=actor)
+        self._write(decision)
+        return decision
+
+    def record_manual(self, action: Action, ip: str, *, rule: str, reason: str, actor: str,
+                      outcome: Outcome = Outcome.APPLIED, detail: str = "") -> Decision:
+        """Write down something a person already did (for example a dashboard BLOCK or TRUST click)."""
+        with self._lock:
+            return self._manual(action, str(ip), rule, reason, actor, outcome, detail)
+
+    def firewall_block(self, ip: str, *, reason: str, actor: str, hours: Optional[int] = None) -> Decision:
+        """Put `ip` on the firewall block list for `hours` (default: the configured block time)."""
+        with self._lock:
+            ttl = self.config.policy.deny_ttl_s if hours is None else None
+            if hours is not None and isinstance(hours, int) and not isinstance(hours, bool) and 1 <= hours <= 720:
+                ttl = hours * 3600
+
+            def refuse(why: str) -> Decision:
+                return self._manual(Action.DENY, str(ip), "manual_block", reason, actor, Outcome.SKIPPED, why, ttl)
+
+            clean = canonical(ip)
+            if clean is None:
+                return refuse("not a valid IP address")
+            if ttl is None:
+                return refuse("hours must be a whole number from 1 to 720")
+            if self._blocklist is None:
+                return refuse("no block list is set up")
+            if self._kill_switch_active():
+                return refuse("the kill switch is on; the host script is removing every block")
+            why = self._safelist.skip_reason(clean, Action.DENY)
+            if why:
+                return refuse(why)
+            try:
+                self._audit.check_writable()
+            except OSError as exc:
+                return refuse(f"audit log is not writable ({type(exc).__name__}); refusing to block")
+            try:
+                existing = self._blocklist.get(clean)
+                if existing is not None:
+                    return refuse(f"already on the block list until {iso_utc(existing.expires_at)}")
+                entry = self._blocklist.add(clean, ttl_s=ttl, reason=reason or "manual block",
+                                            rule="manual_block")
+            except Exception as exc:
+                log.exception("manual firewall block failed for %s", clean)
+                return self._manual(Action.DENY, clean, "manual_block", reason, actor, Outcome.FAILED,
+                                    f"{type(exc).__name__}: {exc}", ttl)
+            return self._manual(Action.DENY, clean, "manual_block", reason, actor, Outcome.APPLIED,
+                                f"on the block list until {iso_utc(entry.expires_at)}; "
+                                "the host script applies it within seconds", ttl)
+
+    def firewall_unblock(self, ip: str, *, actor: str, reason: str = "") -> Decision:
+        """Take `ip` off the firewall block list. Works whatever the mode or kill switch."""
+        with self._lock:
+            clean = canonical(ip) or str(ip)
+            why = reason or "unblocked by a person"
+            if self._blocklist is None:
+                return self._manual(Action.DENY, clean, "manual_unblock", why, actor, Outcome.SKIPPED,
+                                    "no block list is set up")
+            try:
+                removed = self._blocklist.remove(clean)
+            except Exception as exc:
+                log.exception("manual unblock failed for %s", clean)
+                return self._manual(Action.DENY, clean, "manual_unblock", why, actor, Outcome.FAILED,
+                                    f"{type(exc).__name__}: {exc}")
+            return self._manual(Action.DENY, clean, "manual_unblock", why, actor,
+                                Outcome.APPLIED if removed else Outcome.SKIPPED,
+                                "taken off the block list; the host script follows within seconds" if removed
+                                else "not on the block list")
+
+    def set_kill_switch(self, on: bool, *, actor: str) -> Decision:
+        """Turn the kill switch on (create the file) or off (remove it)."""
+        with self._lock:
+            path = self.config.kill_file
+            rule = "kill_switch_on" if on else "kill_switch_off"
+            try:
+                if on:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(f"set by {actor} at {iso_utc(self._clock())}\n", encoding="utf-8")
+                else:
+                    path.unlink(missing_ok=True)
+            except OSError as exc:
+                return self._manual(Action.OBSERVE, "", rule, "kill switch change", actor, Outcome.FAILED,
+                                    f"{type(exc).__name__}: {exc.strerror or exc}")
+            return self._manual(Action.OBSERVE, "", rule, "kill switch change", actor, Outcome.APPLIED,
+                                "automatic decisions are off and every firewall block is being removed" if on
+                                else "automatic decisions resume; blocks that have not expired come back")
+
+    def kill_switch_active(self) -> bool:
+        return self._kill_switch_active()
+
+    def active_blocks(self) -> List[BlockEntry]:
+        return self._blocklist.entries() if self._blocklist is not None else []
+
+    def recent_decisions(self, limit: int = 50, ip: str = "") -> List[Dict[str, Any]]:
+        return self._audit.tail(limit, ip=ip)
+
+    def status(self) -> Dict[str, Any]:
+        """A snapshot for the command line and the dashboard. Contains no secrets."""
+        with self._lock:
+            now = self._clock()
+            while self._deny_times and now - self._deny_times[0] >= _HOUR_S:
+                self._deny_times.popleft()
+            killed = self._kill_switch_active()
+            try:
+                blocks = len(self.active_blocks())
+            except Exception:
+                blocks = None
+            return {
+                "mode": self.config.mode.value,
+                "effective_mode": Mode.OFF.value if killed else self.config.mode.value,
+                "firewall_enabled": self.config.firewall,
+                "kill_switch": killed,
+                "kill_file": str(self.config.kill_file),
+                "blocklist_path": str(self.config.blocklist_path),
+                "audit_path": str(self.config.audit_path),
+                "active_blocks": blocks,
+                "new_blocks_this_hour": len(self._deny_times),
+                "max_new_blocks_per_hour": self.config.max_new_blocks_per_hour,
+                "block_hours": self.config.policy.deny_ttl_s // 3600,
+                "never_block": [str(n) for n in self.config.never_block],
+                "alert_webhook": bool(self.config.alert_webhook),
+                "divert_enabled": self._divert_enabled,
+            }
 
     # -- internals ----------------------------------------------------------
     def _kill_switch_active(self) -> bool:
@@ -186,8 +322,16 @@ class MitigationEngine:
                           decision.verdict.ip, decision.outcome.value)
 
 
+def _alert_sink(cfg: MitigationConfig):
+    """The log line always; a chat webhook too if one is configured."""
+    sinks: List[Any] = [LogAlertExecutor()]
+    if cfg.alert_webhook:
+        sinks.append(WebhookAlertExecutor(cfg.alert_webhook, max_per_hour=cfg.alert_max_per_hour))
+    return sinks[0] if len(sinks) == 1 else CompositeAlertExecutor(sinks)
+
+
 def build_engine(*,
-                 blacklist_manager,
+                 blacklist_manager=None,
                  divert_enabled: bool = True,
                  divert_min_phase: int = 1,
                  min_confidence: float = 0.5,
@@ -200,20 +344,28 @@ def build_engine(*,
     MT3_AUTO_BLACKLIST_* settings, so there is one source of truth for what
     counts as an attack. Settings come from the MITIGATION_* environment unless
     `config` is given.
+
+    `blacklist_manager` may be None (the command-line tool has no gateway): DIVERT is
+    then not set up and nothing is treated as whitelisted.
     """
     cfg = config if config is not None else load_config()
     cfg = dataclasses.replace(cfg, policy=dataclasses.replace(
         cfg.policy, divert_min_phase=divert_min_phase, min_confidence=min_confidence))
+    blocklist = BlocklistFile(cfg.blocklist_path)
+    executors: Dict[Action, Executor] = {
+        Action.ALERT: _alert_sink(cfg),
+        # Only reached in enforce mode with MITIGATION_FIREWALL=1; see _holdback.
+        Action.DENY: FirewallExecutor(blocklist, default_ttl_s=cfg.policy.deny_ttl_s),
+    }
+    if blacklist_manager is not None:
+        executors[Action.DIVERT] = GatewayExecutor(blacklist_manager)
     return MitigationEngine(
         cfg,
         safelist=Safelist(never_block=cfg.never_block,
                           own_addresses=own_addresses,
-                          is_whitelisted=blacklist_manager.is_whitelisted),
+                          is_whitelisted=blacklist_manager.is_whitelisted if blacklist_manager is not None else None),
         audit=audit if audit is not None else AuditLog(cfg.audit_path),
-        executors={Action.DIVERT: GatewayExecutor(blacklist_manager),
-                   Action.ALERT: LogAlertExecutor(),
-                   # Only reached in enforce mode with MITIGATION_FIREWALL=1; see _holdback.
-                   Action.DENY: FirewallExecutor(BlocklistFile(cfg.blocklist_path),
-                                                 default_ttl_s=cfg.policy.deny_ttl_s)},
+        executors=executors,
         divert_enabled=divert_enabled,
+        blocklist=blocklist,
     )

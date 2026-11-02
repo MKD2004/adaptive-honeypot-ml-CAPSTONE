@@ -31,13 +31,14 @@ class TestDecisionRecord(unittest.TestCase):
         self.assertEqual(set(rec), {
             "decision_id", "ts", "mode", "ip", "session_id", "action", "rule",
             "reason", "ttl_s", "outcome", "detail", "phase", "phase_name",
-            "micro_state", "confidence", "sessions_seen"})
+            "micro_state", "confidence", "sessions_seen", "actor"})
         self.assertEqual(rec["mode"], "enforce")
         self.assertEqual(rec["action"], "deny")
         self.assertEqual(rec["outcome"], "applied")
         self.assertEqual(rec["ip"], "45.33.32.156")
         self.assertEqual(rec["confidence"], 0.91)
         self.assertEqual(rec["sessions_seen"], 4)
+        self.assertEqual(rec["actor"], "policy")        # automatic decisions say so; a person is named instead
         json.dumps(rec, allow_nan=False)   # must be fully JSON-safe
 
     def test_each_decision_gets_its_own_id(self):
@@ -47,6 +48,62 @@ class TestDecisionRecord(unittest.TestCase):
         for bad in (math.nan, math.inf, -math.inf):
             with self.subTest(conf=bad):
                 self.assertIsNone(decision(conf=bad).to_record()["confidence"])
+
+
+class TestReadingTheTail(unittest.TestCase):
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "audit.jsonl"
+        self.log = AuditLog(self.path)
+
+    def write(self, n, ip_of=lambda i: "45.33.32.156"):
+        for i in range(n):
+            self.log.write(decision(ip=ip_of(i), detail=f"number {i}"))
+
+    def test_newest_first(self):
+        self.write(10)
+        self.assertEqual([r["detail"] for r in self.log.tail(3)], ["number 9", "number 8", "number 7"])
+
+    def test_asking_for_more_than_there_is(self):
+        self.write(4)
+        self.assertEqual([r["detail"] for r in self.log.tail(50)], [f"number {i}" for i in (3, 2, 1, 0)])
+
+    def test_nothing_to_read(self):
+        self.assertEqual(self.log.tail(5), [])                       # no file yet
+        self.write(3)
+        self.assertEqual(self.log.tail(0), [])
+
+    def test_only_one_address(self):
+        self.write(12, ip_of=lambda i: "8.8.8.8" if i % 3 == 0 else "1.1.1.1")
+        got = self.log.tail(10, ip="8.8.8.8")
+        self.assertEqual([r["detail"] for r in got], ["number 9", "number 6", "number 3", "number 0"])
+
+    def test_a_log_bigger_than_one_read_block_comes_back_whole_and_in_order(self):
+        self.write(1500)                                              # a few hundred KB: several 64 KB blocks
+        self.assertGreater(self.path.stat().st_size, 3 * 65536)
+        got = self.log.tail(1200)
+        self.assertEqual([r["detail"] for r in got], [f"number {i}" for i in range(1499, 299, -1)])
+
+    def test_every_line_survives_a_block_boundary(self):
+        self.write(1500)
+        got = self.log.tail(1500)
+        self.assertEqual(len(got), 1500)
+        self.assertEqual(got[-1]["detail"], "number 0")
+
+    def test_damaged_lines_are_skipped(self):
+        self.write(2)
+        with open(self.path, "a", encoding="utf-8") as fh:
+            fh.write('not json\n\n{"truncated": \n')
+        self.write(1)
+        self.assertEqual([r["detail"] for r in self.log.tail(10)], ["number 0", "number 1", "number 0"])
+
+    def test_a_last_line_without_a_newline_is_still_read(self):
+        self.write(1)
+        with open(self.path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"ip": "1.2.3.4", "detail": "no newline"}))
+        self.assertEqual(self.log.tail(1)[0]["detail"], "no newline")
 
 
 class TestAuditLog(unittest.TestCase):

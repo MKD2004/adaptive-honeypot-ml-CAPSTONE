@@ -18,6 +18,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Optional, Tuple
+from urllib.parse import urlsplit
 
 from .models import Mode
 from .policy import PolicyConfig
@@ -39,6 +40,8 @@ class MitigationConfig:
     blocklist_path: Path             # read by the host's firewall script
     audit_path: Path
     policy: PolicyConfig
+    alert_webhook: Optional[str] = None    # chat webhook for ALERT; None = log line only
+    alert_max_per_hour: int = 30
 
 
 def _raw(env: Mapping[str, str], name: str) -> str:
@@ -99,6 +102,20 @@ def _networks(env: Mapping[str, str], name: str) -> Tuple[IPNetwork, ...]:
     return tuple(nets)
 
 
+def _webhook(env: Mapping[str, str], name: str) -> Optional[str]:
+    """An https URL (plain http only to this machine). The URL is a secret: it is never put in an error."""
+    raw = _raw(env, name)
+    if not raw:
+        return None
+    parts = urlsplit(raw)
+    host = (parts.hostname or "").lower()
+    if len(raw) > 2048 or any(c.isspace() for c in raw) or parts.scheme not in ("https", "http") or not host:
+        raise ValueError(f"{name}: expected one https URL with no spaces (the value is not shown: it is a secret)")
+    if parts.scheme == "http" and host not in ("localhost", "127.0.0.1", "::1"):
+        raise ValueError(f"{name}: plain http is only allowed to this machine; use https")
+    return raw
+
+
 def load_config(env: Optional[Mapping[str, str]] = None) -> MitigationConfig:
     """Read the settings. Pass `env` in tests; defaults to os.environ."""
     env = os.environ if env is None else env
@@ -120,4 +137,6 @@ def load_config(env: Optional[Mapping[str, str]] = None) -> MitigationConfig:
         blocklist_path=_path(env, "MITIGATION_BLOCKLIST_PATH", _PACKAGE_DIR / "data" / "blocklist.json"),
         audit_path=_path(env, "MITIGATION_AUDIT_PATH", _PACKAGE_DIR / "logs" / "mitigation_audit.jsonl"),
         policy=policy,
+        alert_webhook=_webhook(env, "MITIGATION_ALERT_WEBHOOK"),
+        alert_max_per_hour=_int(env, "MITIGATION_ALERT_MAX_PER_HOUR", 30, 0, 1000),
     )

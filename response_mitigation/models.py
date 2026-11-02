@@ -79,6 +79,7 @@ class Decision:
     detail: str = ""
     decision_id: str = field(default_factory=_new_id)
     ts: str = field(default_factory=_now_iso)
+    actor: str = "policy"          # "policy" for automatic decisions; "dashboard" or "cli:<user>" for a person
 
     def to_record(self) -> Dict[str, Any]:
         v, p = self.verdict, self.planned
@@ -99,4 +100,5 @@ class Decision:
             "micro_state": v.micro_state,
             "confidence": _finite(float(v.confidence)),
             "sessions_seen": v.sessions_seen,
+            "actor": self.actor,
         }

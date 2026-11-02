@@ -10,7 +10,7 @@ import json
 import os
 import threading
 from pathlib import Path
-from typing import Dict, Set, Union
+from typing import Any, Dict, List, Set, Union
 
 from .models import Decision
 
@@ -49,6 +49,37 @@ class AuditLog:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.path, "a", encoding="utf-8", newline="\n"):
                 pass
+
+    def tail(self, n: int = 50, *, ip: str = "") -> List[Dict[str, Any]]:
+        """The last `n` decisions, newest first. With `ip`, only that address's.
+
+        Reads from the end of the file in blocks, so a large log is cheap. Lines
+        that cannot be read are skipped.
+        """
+        n = max(0, int(n))
+        if n == 0 or not self.path.exists():
+            return []
+        found: List[Dict[str, Any]] = []
+        with open(self.path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            pos, carry = fh.tell(), b""
+            while pos > 0 and len(found) < n:
+                step = min(65536, pos)
+                pos -= step
+                fh.seek(pos)
+                chunk = fh.read(step) + carry
+                lines = chunk.split(b"\n")
+                carry = lines[0] if pos > 0 else b""
+                for raw in reversed(lines[1:] if pos > 0 else lines):
+                    try:
+                        rec = json.loads(raw.decode("utf-8", errors="replace"))
+                    except ValueError:
+                        continue
+                    if isinstance(rec, dict) and (not ip or rec.get("ip") == ip):
+                        found.append(rec)
+                        if len(found) >= n:
+                            break
+        return found
 
     def session_ids_by_ip(self) -> Dict[str, Set[str]]:
         """Sessions already on record, per IP, so a restart keeps its history.

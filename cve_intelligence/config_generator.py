@@ -175,6 +175,8 @@ class HoneypotConfigGenerator:
                 "severity":        str(row.get("severity", "Unknown")),
                 "cvss_score":      _to_native(row.get("cvss_score")),
                 "epss_score":      _to_native(row.get("epss_score")),
+                "epss_percentile": _to_native(row.get("epss_percentile")),
+                "epss_source":     str(row.get("epss_source", "") or ""),
                 "is_kev":          int(row.get("is_kev", 0) or 0),
                 "priority_score":  _to_native(row.get("priority_score")),
                 "priority_tier":   str(row.get("priority_tier", "")),
@@ -208,8 +210,12 @@ class HoneypotConfigGenerator:
             OSError: If the file cannot be written.
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("w", encoding="utf-8") as fh:
+        # Atomic: the configurator may re-read this file at any moment while
+        # the live refresher rewrites it, so it must never see a half file.
+        tmp = output_path.with_suffix(output_path.suffix + ".tmp")
+        with tmp.open("w", encoding="utf-8") as fh:
             json.dump(profiles, fh, indent=2, default=str)
+        tmp.replace(output_path)
 
         size_kb = output_path.stat().st_size / 1024
         logger.info(

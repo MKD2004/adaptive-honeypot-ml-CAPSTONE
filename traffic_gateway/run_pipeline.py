@@ -45,7 +45,8 @@ def _banner(pipe: PostSessionPipeline, info: dict, host: str, port: int,
           f"{mt3.get('device', '?')}, val macro-F1 "
           f"{float(mt3.get('best_val_macro_f1') or 0):.4f})")
     print(f"    Semantic:   {sem}")
-    print(f"    KEV cache:  {info.get('kev_count', 0):,} CVEs loaded")
+    print(f"    KEV:        {info.get('kev_count', 0):,} CVEs ({info.get('kev_source', '?')})")
+    print(f"    CVE intel:  {info.get('cve_intel', '?')}")
     print(f"    Watching:   {info.get('cowrie_log_dir')}  "
           f"({n_logs} log file{'' if n_logs == 1 else 's'}, poll {pipe.poll_interval:.0f}s)")
     print(f"    Results:    {info.get('results_path')} "
@@ -74,6 +75,23 @@ def _gateway_running(host: str = "127.0.0.1", port: int | None = None) -> bool:
         return s.connect_ex((host, int(port))) == 0
 
 
+def _start_intel_refresh(enabled: bool) -> str:
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from cve_intelligence import refresher as ti
+    except Exception as exc:                 # missing pandas/dotenv etc.
+        log.warning("CVE intel refresher unavailable: %s", exc)
+        return f"refresher unavailable ({exc}); using committed snapshot"
+    age = ti.live_age_sec()
+    have = ("no live intel yet" if age is None
+            else f"live intel {age / 3600:.1f} h old")
+    if not enabled:
+        return f"background refresh OFF ({have})"
+    ti.refresher.start()
+    return f"refreshing every {ti.refresher.interval_sec / 3600:g} h ({have})"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Run the adaptive honeypot ML pipeline")
     ap.add_argument("--cowrie-log-dir", default=str(DEFAULT_COWRIE_LOG_DIR))
@@ -86,6 +104,8 @@ def main() -> int:
     ap.add_argument("--no-api", action="store_true", help="skip the Flask API")
     ap.add_argument("--no-watch", action="store_true",
                     help="start everything, then exit instead of blocking (smoke test)")
+    ap.add_argument("--no-intel-refresh", action="store_true",
+                    help="don't re-pull NVD/KEV/EPSS in the background (offline demo)")
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -108,6 +128,11 @@ def main() -> int:
     )
     info = pipe.startup()
     log.info("startup complete in %.1fs", time.time() - t0)
+
+    # 5. Live CVE intel: re-run the NVD + CISA KEV + EPSS pipeline in the
+    # background (now if stale, then every CVE_REFRESH_HOURS). The configurator
+    # picks up each new profiles file on the next session.
+    info["cve_intel"] = _start_intel_refresh(enabled=not args.no_intel_refresh)
 
     # 1. Flask API in a background thread.
     if not args.no_api:

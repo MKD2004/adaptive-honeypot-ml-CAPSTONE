@@ -1,0 +1,277 @@
+/* Styles for components/common/GlideSelect.jsx.
+ *
+ * The supplied snippet imported './GlideSelect.css' but did not include it, so
+ * this is written to the contract the component expects. Three numbers here
+ * MUST stay in step with the constants in the JSX, because the press-and-scrub
+ * handler maps a pointer's Y position back to a row index arithmetically
+ * (rowAt: floor((y - listTop - PAD) / (row + GAP))):
+ *
+ *   PAD      4px   -> .glide-select__list padding
+ *   GAP      1px   -> .glide-select__list row gap
+ *   MENU_GAP 6px   -> offset between trigger and menu
+ *
+ * Colours default to the app's theme tokens so the control matches the Pulse
+ * palette in both themes; the component's accentColor / surfaceColor /
+ * highlightColor / textColor props override them per instance.
+ */
+
+.glide-select {
+  --gs-surface: oklch(var(--card));
+  --gs-highlight: oklch(var(--muted));
+  --gs-text: oklch(var(--foreground));
+  --gs-accent: oklch(var(--chart-1));
+  --gs-border: oklch(var(--border));
+  --gs-muted: oklch(var(--muted-foreground));
+
+  position: relative;
+  display: inline-flex;
+  font-family: inherit;
+}
+
+.glide-select[data-swap] .glide-select__trigger {
+  animation: gs-swap 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glide-select[data-disabled] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* ── Trigger ─────────────────────────────────────────────────────────────── */
+.glide-select__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--gs-chip);
+  max-width: 100%;
+  padding: 0 10px;
+  border: 1px solid var(--gs-border);
+  border-radius: var(--gs-radius);
+  background: oklch(var(--muted) / 0.5);
+  color: var(--gs-text);
+  font-family: inherit;
+  font-size: var(--gs-font);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.glide-select__trigger:hover:not(:disabled) {
+  background: oklch(var(--muted));
+}
+
+.glide-select__trigger:disabled {
+  cursor: not-allowed;
+}
+
+.glide-select__trigger[aria-expanded='true'] {
+  border-color: var(--gs-accent);
+  background: oklch(var(--muted));
+}
+
+.glide-select__trigger:focus-visible {
+  outline: 2px solid var(--gs-accent);
+  outline-offset: 2px;
+}
+
+/* Remounted on every value change (key={current}), so this plays on select. */
+.glide-select__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  animation: gs-label-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glide-select__label[data-empty] {
+  color: var(--gs-muted);
+}
+
+.glide-select__chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--gs-muted);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glide-select__trigger[aria-expanded='true'] .glide-select__chevron {
+  transform: rotate(180deg);
+  color: var(--gs-accent);
+}
+
+/* ── Menu ────────────────────────────────────────────────────────────────── */
+.glide-select__menu {
+  position: absolute;
+  z-index: 50;
+  width: var(--gs-menu-w);
+  max-width: min(var(--gs-menu-w), calc(100vw - 24px));
+  border: 1px solid var(--gs-border);
+  border-radius: var(--gs-radius);
+  background: var(--gs-surface);
+  box-shadow:
+    0 1px 2px oklch(0 0 0 / 0.04),
+    0 8px 24px -8px oklch(0 0 0 / 0.14),
+    0 16px 48px -16px oklch(0 0 0 / 0.12);
+  transform-origin: var(--gs-origin);
+  transition:
+    opacity var(--gs-pop) cubic-bezier(0.16, 1, 0.3, 1),
+    transform var(--gs-pop) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glide-select__menu[data-state='open'] {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+/* The component resets the inline duration before flipping to closed, so the
+   close uses --gs-pop-out (two thirds of the open duration). */
+.glide-select__menu[data-state='closed'] {
+  opacity: 0;
+  transform: scale(0.96) translateY(-4px);
+  transition-duration: var(--gs-pop-out), var(--gs-pop-out);
+  pointer-events: none;
+}
+
+.glide-select__menu[data-side='bottom'] {
+  top: calc(100% + 6px);
+}
+
+.glide-select__menu[data-side='top'] {
+  bottom: calc(100% + 6px);
+}
+
+.glide-select__menu[data-side='top'][data-state='closed'] {
+  transform: scale(0.96) translateY(4px);
+}
+
+.glide-select__menu[data-align='left'] {
+  left: 0;
+}
+
+.glide-select__menu[data-align='right'] {
+  right: 0;
+}
+
+/* ── List ────────────────────────────────────────────────────────────────── */
+/* padding == PAD and gap == GAP in the JSX. Do not change independently. */
+.glide-select__list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  touch-action: none; /* press-and-scrub owns the gesture */
+}
+
+/* The gliding highlight. The transition list order matters: the component
+   writes `transitionDuration = '0ms, 150ms'` to jump the pill without
+   animating, which assumes transform first and opacity second. */
+.glide-select__pill {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  right: 4px;
+  height: var(--gs-row);
+  border-radius: var(--gs-inner-radius);
+  background: var(--gs-highlight);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--gs-glide) cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 150ms ease;
+}
+
+.glide-select__option {
+  position: relative; /* sit above the pill */
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--gs-row);
+  padding: 0 8px;
+  border-radius: var(--gs-inner-radius);
+  color: var(--gs-text);
+  font-size: var(--gs-font);
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.glide-select__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.glide-select__tag {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: oklch(var(--muted-foreground) / 0.14);
+  color: var(--gs-muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.glide-select__check {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--gs-accent);
+  opacity: 0;
+  transform: scale(0.8);
+  transition:
+    opacity 150ms ease,
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glide-select__check[data-on] {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+/* The component listens for an animationend whose animationName is exactly
+   'gs-swap' to clear its data-swap flag. Renaming this strands the attribute. */
+@keyframes gs-swap {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(0.96);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes gs-label-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glide-select__menu,
+  .glide-select__pill,
+  .glide-select__check,
+  .glide-select__chevron,
+  .glide-select__trigger {
+    transition: none !important;
+  }
+  .glide-select__label,
+  .glide-select[data-swap] .glide-select__trigger {
+    animation: none !important;
+  }
+}

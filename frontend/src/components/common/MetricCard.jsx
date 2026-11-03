@@ -1,22 +1,35 @@
 import { cn } from '../../lib/cn'
+import Panel from './Panel'
 
-export default function MetricCard({ icon: Icon, label, value, sublabel, accent = 'default' }) {
-  const accentCls = {
-    default: 'text-accent',
-    low: 'text-risk-low',
-    medium: 'text-risk-medium',
-    high: 'text-risk-high',
-    critical: 'text-risk-critical',
-  }[accent]
+// The Pulse console's metric card: a tinted rounded-xl icon tile top-left, an
+// optional note top-right, then the value and its label. The icon tile's tint
+// is what carries the severity, so the number itself stays foreground-coloured
+// and the four cards in a row read as one object.
+const TONE = {
+  default: { fg: 'text-chart-1', bg: 'bg-chart-1/10' },
+  info: { fg: 'text-info', bg: 'bg-info/10' },
+  low: { fg: 'text-success', bg: 'bg-success/10' },
+  medium: { fg: 'text-chart-4', bg: 'bg-chart-4/15' },
+  high: { fg: 'text-destructive', bg: 'bg-destructive/10' },
+  critical: { fg: 'text-destructive', bg: 'bg-destructive/15' },
+}
+
+export default function MetricCard({ icon: Icon, label, value, sublabel, accent = 'default', note }) {
+  const tone = TONE[accent] ?? TONE.default
 
   return (
-    <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wide text-text-muted">{label}</span>
-        {Icon && <Icon className={cn('h-4 w-4', accentCls)} strokeWidth={1.75} />}
+    <Panel padding="p-5">
+      <div className="mb-3 flex items-start justify-between">
+        {Icon && (
+          <div className={cn('rounded-xl p-2.5', tone.bg)}>
+            <Icon className={cn('h-5 w-5', tone.fg)} strokeWidth={1.75} />
+          </div>
+        )}
+        {note && <span className="text-xs font-medium text-muted-foreground">{note}</span>}
       </div>
-      <div className="mt-2 text-2xl font-semibold tabular-nums text-text-primary">{value}</div>
-      {sublabel && <div className="mt-1 text-xs text-text-secondary">{sublabel}</div>}
-    </div>
+      <p className="mb-1 text-2xl font-semibold tabular-nums text-foreground">{value}</p>
+      <p className="text-sm text-muted-foreground">{label}</p>
+      {sublabel && <p className="mt-1 text-xs text-muted-foreground/80">{sublabel}</p>}
+    </Panel>
   )
 }

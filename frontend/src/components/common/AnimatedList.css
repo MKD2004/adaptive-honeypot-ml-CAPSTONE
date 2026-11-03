@@ -1,0 +1,223 @@
+/* Styles for components/common/AnimatedList.jsx.
+ *
+ * The snippet imported './AnimatedList.css' but did not include it, so this is
+ * written to the contract the engine expects. Three structural requirements are
+ * load-bearing — the engine measures the DOM rather than assuming fixed sizes:
+ *
+ *  1. .animated-list__viewport and .animated-list__track must both be
+ *     positioned. measure() computes an item's position within the scroller as
+ *     `track.offsetTop + item.offsetTop`, which is only correct when the track
+ *     offsets from the viewport and items offset from the track.
+ *  2. .animated-list__indicator is absolutely positioned and the engine writes
+ *     its transform and height every frame. Do not set either in CSS.
+ *  3. Item transition and transition-delay are written by the engine as
+ *     three-part values (transform, opacity, filter) in that order. CSS must
+ *     not declare a competing `transition` on .animated-list__item.
+ *
+ * Colours come from the --al-* variables the component sets inline; its
+ * default 'app' theme maps them onto this project's design tokens.
+ */
+
+.animated-list {
+  position: relative;
+  width: var(--al-width);
+  max-width: 100%;
+  color: var(--al-ink);
+}
+
+.animated-list--framed {
+  padding: var(--al-gap);
+  border-radius: calc(var(--al-radius) + var(--al-gap));
+  background: var(--al-frame);
+  box-shadow: var(--al-frame-shadow);
+}
+
+/* Hairline edge + inner highlight, drawn without affecting layout. */
+.animated-list__frame-rim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 1px var(--al-frame-edge),
+    inset 0 1px 0 0 var(--al-frame-highlight);
+}
+
+/* ── Viewport ────────────────────────────────────────────────────────────── */
+.animated-list__viewport {
+  position: relative; /* requirement 1 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  --al-fade-top: 0px;
+  --al-fade-bottom: 0px;
+}
+
+.animated-list__viewport:focus {
+  outline: none;
+}
+
+.animated-list__viewport:focus-visible {
+  outline: 2px solid var(--al-ring);
+  outline-offset: 2px;
+  border-radius: var(--al-radius);
+}
+
+.animated-list__viewport::-webkit-scrollbar {
+  width: 6px;
+}
+
+.animated-list__viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.animated-list__viewport::-webkit-scrollbar-thumb {
+  background: var(--al-thumb);
+  border-radius: 3px;
+}
+
+.animated-list__viewport--bare {
+  scrollbar-width: none;
+}
+
+.animated-list__viewport--bare::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* ── Track ───────────────────────────────────────────────────────────────── */
+.animated-list__track {
+  position: relative; /* requirement 1, and the indicator's containing block */
+  display: flex;
+  flex-direction: column;
+  gap: var(--al-gap);
+}
+
+/* ── Items ───────────────────────────────────────────────────────────────── */
+/* No `transition` here on purpose — the engine owns it (requirement 3). */
+.animated-list__item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--al-radius);
+  background: var(--al-tile);
+  box-shadow: var(--al-tile-shadow);
+  cursor: pointer;
+  text-align: left;
+  will-change: transform, opacity;
+}
+
+.animated-list[data-animated] .animated-list__item {
+  /* Keeps the spring's sub-pixel transforms from shimmering mid-flight. */
+  backface-visibility: hidden;
+}
+
+.animated-list__item:hover {
+  filter: var(--al-hover);
+}
+
+.animated-list__item:active {
+  filter: var(--al-press);
+}
+
+.animated-list__item[data-selected] {
+  filter: var(--al-active);
+  background: var(--al-well);
+}
+
+.animated-list__rim {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 1px var(--al-tile-edge),
+    inset 0 1px 0 0 var(--al-tile-highlight);
+}
+
+.animated-list__lead {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: calc(var(--al-radius) - 5px);
+  background: var(--al-well);
+  color: var(--al-accent);
+  overflow: hidden;
+}
+
+.animated-list__lead img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.animated-list__text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.animated-list__title {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.animated-list__description {
+  overflow: hidden;
+  color: var(--al-muted);
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.animated-list__meta {
+  flex-shrink: 0;
+  color: var(--al-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Selection indicator ─────────────────────────────────────────────────── */
+/* transform and height are written by the spring every frame (requirement 2). */
+.animated-list__indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, height;
+}
+
+.animated-list__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--al-radius);
+  background: var(--al-ring-fill);
+  box-shadow: inset 0 0 0 1px var(--al-ring);
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The engine already swaps to its 'fade' pose and snaps the spring when the
+     media query matches; this covers the CSS-driven filters. */
+  .animated-list__item,
+  .animated-list__item:hover,
+  .animated-list__item:active {
+    filter: none;
+  }
+}

@@ -75,7 +75,7 @@ export default function CveIntelligencePage() {
         actions={<StatusBadge status="mock" label="Sample Data" />}
       />
 
-      <p className="mb-6 text-xs text-text-muted">{CVE_DATA_SNAPSHOT_NOTE}</p>
+      <p className="mb-6 text-xs text-muted-foreground">{CVE_DATA_SNAPSHOT_NOTE}</p>
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <MetricCard icon={Database} label="Total CVE Records" value={TOTAL_CVES} sublabel="sample dataset" />
@@ -114,10 +114,10 @@ export default function CveIntelligencePage() {
         isFiltered={isFiltered}
       />
 
-      <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-text-primary">CVE Records</h3>
-          <span className="text-xs text-text-muted">{filtered.length} of {TOTAL_CVES}</span>
+          <h3 className="text-base font-semibold text-foreground">CVE Records</h3>
+          <span className="text-xs text-muted-foreground">{filtered.length} of {TOTAL_CVES}</span>
         </div>
         {filtered.length === 0 ? (
           <EmptyState

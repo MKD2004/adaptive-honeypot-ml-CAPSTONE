@@ -13,17 +13,17 @@ function formatTs(iso) {
 // shape are rendered — nothing here is invented.
 export default function ConfigChangeHistory({ changes }) {
   return (
-    <ol className="divide-y divide-base-borderMuted">
+    <ol className="divide-y divide-border/60">
       {changes.map((c, i) => {
         const trigger = c.trigger || {}
         const newCfg = c.new_config || {}
         return (
           <li key={i} className="py-3 first:pt-0 last:pb-0">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <p className="text-sm text-text-primary">{c.reason || '—'}</p>
-              <span className="font-mono text-xs text-text-muted">{formatTs(c.ts)}</span>
+              <p className="text-sm text-foreground">{c.reason || '—'}</p>
+              <span className="font-mono text-xs text-muted-foreground">{formatTs(c.ts)}</span>
             </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-text-muted">
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               {newCfg.interaction_level && (
                 <RiskBadge
                   level={newCfg.phase !== undefined ? phaseToRisk(newCfg.phase) : 'info'}
@@ -37,7 +37,7 @@ export default function ConfigChangeHistory({ changes }) {
                 </span>
               )}
               {trigger.micro_state && (
-                <span className="font-mono text-accent">{trigger.micro_state}</span>
+                <span className="font-mono text-chart-1">{trigger.micro_state}</span>
               )}
               {typeof trigger.confidence === 'number' && (
                 <span>p={trigger.confidence.toFixed(3)}</span>

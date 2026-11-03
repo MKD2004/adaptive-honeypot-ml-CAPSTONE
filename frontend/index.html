@@ -6,7 +6,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
     <title>Adaptive Honeypot — SOC Console</title>
@@ -17,20 +17,23 @@
       (function () {
         try {
           var stored = localStorage.getItem('honeypot-frontend-theme')
+          // The Pulse theme this dashboard uses is designed light-first, so
+          // light is the default unless the viewer explicitly chose dark or
+          // their OS asks for it.
           var theme =
             stored === 'light' || stored === 'dark'
               ? stored
-              : window.matchMedia('(prefers-color-scheme: light)').matches
-                ? 'light'
-                : 'dark'
+              : window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light'
           if (theme === 'dark') document.documentElement.classList.add('dark')
         } catch (e) {
-          document.documentElement.classList.add('dark')
+          /* leave the light default in place */
         }
       })()
     </script>
   </head>
-  <body class="bg-base-bg text-text-primary">
+  <body class="bg-background text-foreground">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

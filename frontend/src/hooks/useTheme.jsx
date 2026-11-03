@@ -6,8 +6,11 @@ const STORAGE_KEY = 'honeypot-frontend-theme'
 const ThemeContext = createContext(null)
 
 function getSystemTheme() {
-  if (typeof window === 'undefined') return 'dark'
-  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  // Light-first: the Pulse theme this dashboard uses is designed light-only,
+  // so dark is opt-in (explicit choice or an OS that asks for it). Keep this in
+  // sync with the pre-paint script in index.html.
+  if (typeof window === 'undefined') return 'light'
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
 function getInitialTheme() {

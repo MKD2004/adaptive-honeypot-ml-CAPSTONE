@@ -2,85 +2,235 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme ported from pulse-engineering-metrics-and-incident-response-console
+   (app/globals.css). That project is Next.js + Tailwind v4, which declares
+   tokens with @theme inline; this app is Vite + Tailwind v3, so the same oklch
+   values live here as CSS variables and are mapped in tailwind.config.js.
+
+   Tokens hold the oklch CHANNELS only ("L C H", no function call) so
+   tailwind.config.js can wrap them as oklch(var(--x) / <alpha-value>) and the
+   opacity modifiers the design leans on -- bg-destructive/10, bg-success/15,
+   bg-chart-1/20 -- keep working. */
+
 @layer base {
-  /* Light theme (default). Values are "R G B" triples so Tailwind's
-     rgb(var(--x) / <alpha-value>) pattern in tailwind.config.js can apply
-     opacity modifiers (e.g. bg-risk-low/10) on top of them. */
   :root {
     color-scheme: light;
-    --shadow-card: rgb(15 23 42 / 0.08);
 
-    --color-base-bg: 248 250 252;
-    --color-base-surface: 255 255 255;
-    --color-base-raised: 248 250 252;
-    --color-base-border: 226 232 240;
-    --color-base-border-muted: 241 245 249;
+    --background: 0.965 0.003 250;
+    --foreground: 0.2 0.015 250;
+    --card: 1 0 0;
+    --card-foreground: 0.2 0.015 250;
+    --popover: 1 0 0;
+    --popover-foreground: 0.2 0.015 250;
+    --primary: 0.25 0.015 250;
+    --primary-foreground: 0.99 0 0;
+    --secondary: 0.97 0.003 250;
+    --secondary-foreground: 0.3 0.015 250;
+    --muted: 0.96 0.003 250;
+    --muted-foreground: 0.55 0.01 250;
+    --accent: 0.78 0.18 85;
+    --accent-foreground: 0.25 0.05 85;
+    --destructive: 0.6 0.2 25;
+    --destructive-foreground: 0.99 0 0;
+    --border: 0.92 0.005 250;
+    --input: 0.97 0.003 250;
+    --ring: 0.55 0.12 250;
 
-    --color-text-primary: 15 23 42;
-    --color-text-secondary: 71 85 105;
-    --color-text-muted: 148 163 184;
+    --chart-1: 0.55 0.18 250;
+    --chart-2: 0.65 0.15 155;
+    --chart-3: 0.7 0.18 350;
+    --chart-4: 0.78 0.18 85;
+    --chart-5: 0.6 0.12 200;
 
-    --color-accent: 37 99 235;
-    --color-accent-dim: 29 78 216;
-    --color-accent-soft: 219 234 254;
+    --sidebar: 1 0 0;
+    --sidebar-foreground: 0.2 0.015 250;
+    --sidebar-border: 0.94 0.003 250;
 
-    --color-risk-critical: 220 38 38;
-    --color-risk-high: 234 88 12;
-    --color-risk-medium: 180 131 4;
-    --color-risk-low: 22 163 74;
-    --color-risk-info: 2 132 199;
+    --surface-elevated: 1 0 0;
+    --surface-sunken: 0.975 0.003 250;
+    --success: 0.6 0.17 155;
+    --warning: 0.78 0.18 85;
+    --info: 0.55 0.15 250;
+
+    --radius: 0.75rem;
+
+    /* The signature multi-layer card shadow from the Pulse cards, which set it
+       inline on every panel. Exposed as a variable so shadow-card in the
+       Tailwind config applies it once. */
+    --shadow-card:
+      rgba(14, 63, 126, 0.04) 0px 0px 0px 1px,
+      rgba(42, 51, 69, 0.04) 0px 1px 1px -0.5px,
+      rgba(42, 51, 70, 0.04) 0px 3px 3px -1.5px,
+      rgba(42, 51, 70, 0.04) 0px 6px 6px -3px,
+      rgba(14, 63, 126, 0.04) 0px 12px 12px -6px,
+      rgba(14, 63, 126, 0.04) 0px 24px 24px -12px;
+    --shadow-card-hover: 0 8px 30px -12px oklch(0.3 0.02 60 / 0.15);
   }
 
-  /* Dark theme — toggled via the `dark` class on <html> (see
-     hooks/useTheme.jsx). Same token names, no component-level branching. */
+  /* Pulse ships light only. These dark values are derived from the same hues
+     so the existing theme toggle (hooks/useTheme.jsx) keeps working rather
+     than dropping users into an unstyled page -- the light theme above is the
+     design of record and the default. */
   .dark {
     color-scheme: dark;
-    --shadow-card: rgb(0 0 0 / 0.4);
 
-    --color-base-bg: 11 14 20;
-    --color-base-surface: 17 21 29;
-    --color-base-raised: 22 27 37;
-    --color-base-border: 35 42 56;
-    --color-base-border-muted: 26 32 44;
+    --background: 0.17 0.012 250;
+    --foreground: 0.95 0.004 250;
+    --card: 0.21 0.014 250;
+    --card-foreground: 0.95 0.004 250;
+    --popover: 0.21 0.014 250;
+    --popover-foreground: 0.95 0.004 250;
+    --primary: 0.93 0.006 250;
+    --primary-foreground: 0.2 0.015 250;
+    --secondary: 0.25 0.014 250;
+    --secondary-foreground: 0.9 0.006 250;
+    --muted: 0.26 0.014 250;
+    --muted-foreground: 0.68 0.012 250;
+    --accent: 0.78 0.18 85;
+    --accent-foreground: 0.2 0.05 85;
+    --destructive: 0.65 0.19 25;
+    --destructive-foreground: 0.99 0 0;
+    --border: 0.29 0.014 250;
+    --input: 0.26 0.014 250;
+    --ring: 0.62 0.12 250;
 
-    --color-text-primary: 230 233 239;
-    --color-text-secondary: 154 164 183;
-    --color-text-muted: 95 107 129;
+    --chart-1: 0.65 0.17 250;
+    --chart-2: 0.72 0.14 155;
+    --chart-3: 0.75 0.16 350;
+    --chart-4: 0.8 0.17 85;
+    --chart-5: 0.68 0.11 200;
 
-    --color-accent: 59 130 246;
-    --color-accent-dim: 29 78 216;
-    --color-accent-soft: 22 34 55;
+    --sidebar: 0.21 0.014 250;
+    --sidebar-foreground: 0.95 0.004 250;
+    --sidebar-border: 0.29 0.014 250;
 
-    --color-risk-critical: 239 68 68;
-    --color-risk-high: 249 115 22;
-    --color-risk-medium: 234 179 8;
-    --color-risk-low: 34 197 94;
-    --color-risk-info: 56 189 248;
+    --surface-elevated: 0.24 0.014 250;
+    --surface-sunken: 0.19 0.012 250;
+    --success: 0.7 0.16 155;
+    --warning: 0.8 0.17 85;
+    --info: 0.65 0.14 250;
+
+    --shadow-card: rgba(0, 0, 0, 0.4) 0px 0px 0px 1px, rgba(0, 0, 0, 0.25) 0px 6px 16px -8px;
+    --shadow-card-hover: 0 10px 34px -14px rgba(0, 0, 0, 0.6);
+  }
+
+  * {
+    @apply border-border;
   }
 
   body {
-    @apply bg-base-bg text-text-primary antialiased;
-    font-feature-settings: 'tnum' 1;
-    transition: background-color 0.15s ease, color 0.15s ease;
-  }
-  ::selection {
-    @apply bg-accent/30;
-  }
-  * {
-    @apply border-base-border;
+    @apply bg-background text-foreground font-sans antialiased;
   }
 }
 
-@layer utilities {
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(0.85 0.01 250);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.75 0.01 250);
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: oklch(0.34 0.014 250);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.42 0.014 250);
+}
+
+:focus-visible {
+  outline: 2px solid oklch(var(--primary));
+  outline-offset: 2px;
+}
+
+/* Animations, verbatim from the Pulse theme */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
+.animate-slide-up { animation: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-slide-in-left { animation: slide-in-left 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-scale-in { animation: scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.95 0.005 250) 25%,
+    oklch(0.92 0.005 250) 50%,
+    oklch(0.95 0.005 250) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+.dark .animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.24 0.014 250) 25%,
+    oklch(0.28 0.014 250) 50%,
+    oklch(0.24 0.014 250) 75%
+  );
+  background-size: 200% 100%;
+}
+
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+.stagger-6 { animation-delay: 0.3s; }
+.stagger-7 { animation-delay: 0.35s; }
+.stagger-8 { animation-delay: 0.4s; }
+
+.card-hover {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+}
+
+/* The sidebar's gliding highlight sets its transition inline (the geometry is
+   measured, not fixed), so the reduced-motion override has to outrank it. */
+@media (prefers-reduced-motion: reduce) {
+  .nav-glide-pill {
+    transition: none !important;
   }
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-slide-in-left,
+  .animate-scale-in,
+  .animate-shimmer {
+    animation: none;
   }
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    @apply bg-base-border;
-    border-radius: 4px;
+  .card-hover:hover {
+    transform: none;
   }
 }

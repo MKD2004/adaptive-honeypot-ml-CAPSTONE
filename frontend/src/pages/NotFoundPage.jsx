@@ -18,7 +18,7 @@ export default function NotFoundPage() {
         title="This page doesn't exist"
         description="Check the URL, or use the sidebar to get back to a known page."
       />
-      <Link to="/" className="mt-4 inline-block text-sm font-medium text-accent hover:underline">
+      <Link to="/" className="mt-4 inline-block text-sm font-medium text-chart-1 hover:underline">
         Go to Dashboard
       </Link>
     </div>

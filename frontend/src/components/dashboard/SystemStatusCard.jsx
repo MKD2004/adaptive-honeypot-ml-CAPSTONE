@@ -9,8 +9,8 @@ import ErrorState from '../common/ErrorState'
 function StatusRow({ icon: Icon, label, ok, value }) {
   return (
     <li className="flex items-center justify-between text-sm">
-      <span className="flex items-center gap-2 text-text-secondary">
-        <Icon className="h-3.5 w-3.5 text-text-muted" strokeWidth={1.75} />
+      <span className="flex items-center gap-2 text-foreground/80">
+        <Icon className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.75} />
         {label}
       </span>
       <StatusBadge status={ok ? 'running' : 'offline'} label={value} />
@@ -26,10 +26,10 @@ export default function SystemStatusCard() {
   const { status, data, error, reload } = useApiResource(getHealth, { deps: [] })
 
   return (
-    <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
+    <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-text-primary">System Status</h3>
+          <h3 className="text-base font-semibold text-foreground">System Status</h3>
           {(status === API_STATUS.SUCCESS || status === API_STATUS.EMPTY) && (
             <StatusBadge status="running" label="Live: /api/health" />
           )}
@@ -37,7 +37,7 @@ export default function SystemStatusCard() {
         <button
           onClick={reload}
           disabled={status === API_STATUS.LOADING}
-          className="text-text-muted transition-colors hover:text-text-primary disabled:opacity-50"
+          className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
           title="Re-check /api/health"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${status === API_STATUS.LOADING ? 'animate-spin' : ''}`} strokeWidth={1.75} />
@@ -80,7 +80,7 @@ export default function SystemStatusCard() {
               value={data.results_exist ? 'Present' : 'Not yet created'}
             />
           </ul>
-          <p className="mt-3 border-t border-base-borderMuted pt-3 text-xs text-text-muted">
+          <p className="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">
             Reflects only <code className="font-mono">/api/health</code>. A reachable API does
             not mean the traffic proxy, Cowrie, or the adaptive honeypot are running — those are
             separate processes (see traffic_gateway/run_pipeline.py).

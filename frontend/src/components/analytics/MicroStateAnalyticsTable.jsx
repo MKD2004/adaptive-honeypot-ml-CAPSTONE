@@ -11,7 +11,7 @@ export default function MicroStateAnalyticsTable({ rows, total }) {
     <div className="overflow-x-auto scrollbar-thin">
       <table className="w-full min-w-[680px] border-collapse text-sm">
         <thead>
-          <tr className="border-b border-base-border text-left text-xs uppercase tracking-wide text-text-muted">
+          <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
             <th className="py-2 pr-4 font-medium">Micro-State</th>
             <th className="py-2 pr-4 font-medium">MITRE</th>
             <th className="py-2 pr-4 font-medium">Phase</th>
@@ -23,15 +23,15 @@ export default function MicroStateAnalyticsTable({ rows, total }) {
         </thead>
         <tbody>
           {rows.map((s) => (
-            <tr key={s.id} className="border-b border-base-borderMuted">
-              <td className="py-2.5 pr-4 font-mono text-xs text-accent">{s.label}</td>
-              <td className="py-2.5 pr-4 font-mono text-xs text-text-muted">{s.mitre}</td>
-              <td className="py-2.5 pr-4 text-text-secondary">{phaseName(s.phase)}</td>
-              <td className="py-2.5 pr-4 tabular-nums text-text-primary">{s.count}</td>
-              <td className="py-2.5 pr-4 tabular-nums text-text-muted">
+            <tr key={s.id} className="border-b border-border/60">
+              <td className="py-2.5 pr-4 font-mono text-xs text-chart-1">{s.label}</td>
+              <td className="py-2.5 pr-4 font-mono text-xs text-muted-foreground">{s.mitre}</td>
+              <td className="py-2.5 pr-4 text-foreground/80">{phaseName(s.phase)}</td>
+              <td className="py-2.5 pr-4 tabular-nums text-foreground">{s.count}</td>
+              <td className="py-2.5 pr-4 tabular-nums text-muted-foreground">
                 {total ? `${((s.count / total) * 100).toFixed(1)}%` : '—'}
               </td>
-              <td className="py-2.5 pr-4 tabular-nums text-text-secondary">{(s.avgConfidence * 100).toFixed(1)}%</td>
+              <td className="py-2.5 pr-4 tabular-nums text-foreground/80">{(s.avgConfidence * 100).toFixed(1)}%</td>
               <td className="py-2.5 pr-4">
                 <RiskBadge level={phaseToRisk(s.phase)} />
               </td>

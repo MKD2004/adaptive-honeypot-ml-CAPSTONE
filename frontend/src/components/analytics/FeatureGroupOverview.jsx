@@ -11,7 +11,7 @@ const GROUP_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#eab308', '#2
 export default function FeatureGroupOverview() {
   return (
     <div>
-      <div className="mb-3 flex h-3 w-full overflow-hidden rounded-full border border-base-border">
+      <div className="mb-3 flex h-3 w-full overflow-hidden rounded-full border border-border">
         {FEATURE_GROUPS.map((g, i) => (
           <div
             key={g.key}
@@ -23,21 +23,21 @@ export default function FeatureGroupOverview() {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {FEATURE_GROUPS.map((g, i) => (
-          <div key={g.key} className="rounded-md border border-base-borderMuted p-3">
+          <div key={g.key} className="rounded-md border border-border/60 p-3">
             <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 font-mono text-xs text-text-primary">
+              <span className="flex items-center gap-2 font-mono text-xs text-foreground">
                 <span className="h-2 w-2 rounded-full" style={{ background: GROUP_COLORS[i] }} />
                 {g.key}
               </span>
-              <span className="text-xs text-text-muted">{g.size} / {N_FEATURES}</span>
+              <span className="text-xs text-muted-foreground">{g.size} / {N_FEATURES}</span>
             </div>
-            <p className="mt-1.5 text-xs text-text-secondary">{g.desc}</p>
-            <p className="mt-1 text-[11px] text-text-muted">indices {g.range} &middot; {g.branch} branch</p>
+            <p className="mt-1.5 text-xs text-foreground/80">{g.desc}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">indices {g.range} &middot; {g.branch} branch</p>
           </div>
         ))}
       </div>
 
-      <p className="mt-3 border-t border-base-borderMuted pt-3 text-xs text-text-muted">
+      <p className="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">
         This describes the model's input feature structure, not feature importance or a measured
         contribution to any prediction.
       </p>

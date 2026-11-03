@@ -17,9 +17,9 @@ function Row({ label, value, mono }) {
   const missing = value === null || value === undefined || value === ''
   return (
     <>
-      <dt className="text-text-muted">{label}</dt>
+      <dt className="text-muted-foreground">{label}</dt>
       <dd
-        className={`text-right ${missing ? 'text-text-muted' : 'text-text-primary'} ${
+        className={`text-right ${missing ? 'text-muted-foreground' : 'text-foreground'} ${
           mono && !missing ? 'font-mono text-xs' : ''
         }`}
       >
@@ -31,10 +31,10 @@ function Row({ label, value, mono }) {
 
 export default function ConnectionInfoCard({ session }) {
   return (
-    <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
+    <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
       <div className="mb-3 flex items-center gap-2">
-        <Network className="h-4 w-4 text-accent" strokeWidth={1.75} />
-        <h3 className="text-sm font-semibold text-text-primary">Connection Information</h3>
+        <Network className="h-4 w-4 text-chart-1" strokeWidth={1.75} />
+        <h3 className="text-base font-semibold text-foreground">Connection Information</h3>
       </div>
       <dl className="grid grid-cols-2 gap-y-2.5 text-sm">
         <Row label="Source IP" value={session.src_ip} mono />

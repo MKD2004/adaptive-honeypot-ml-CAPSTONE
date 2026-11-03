@@ -40,9 +40,9 @@ export default function GatewayLogsPage() {
         actions={headerBadge}
       />
 
-      <div className="mb-6 rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
-        <h3 className="mb-1 text-sm font-semibold text-text-primary">Routing Decisions</h3>
-        <p className="mb-3 text-xs text-text-muted">
+      <div className="mb-6 rounded-2xl border border-border bg-card p-6 shadow-card">
+        <h3 className="mb-1 text-sm font-semibold text-foreground">Routing Decisions</h3>
+        <p className="mb-3 text-xs text-muted-foreground">
           traffic_classifier.py's pre-filter verdict per connection (GET /api/live-access) — a
           heuristic score in [0,1], not an MT3 confidence or MITRE classification.
         </p>
@@ -55,9 +55,9 @@ export default function GatewayLogsPage() {
         </DataSection>
       </div>
 
-      <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
-        <h3 className="mb-1 text-sm font-semibold text-text-primary">Honeypot Footprints</h3>
-        <p className="mb-3 text-xs text-text-muted">
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
+        <h3 className="mb-1 text-sm font-semibold text-foreground">Honeypot Footprints</h3>
+        <p className="mb-3 text-xs text-muted-foreground">
           Raw commands and login attempts captured by Cowrie (GET /api/footprints) — literal
           attacker input, not a MITRE-classified event.
         </p>

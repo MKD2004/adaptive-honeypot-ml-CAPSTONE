@@ -19,7 +19,7 @@ export default function FootprintsTable({ footprints }) {
     <div className="overflow-x-auto scrollbar-thin">
       <table className="w-full min-w-[600px] border-collapse text-sm">
         <thead>
-          <tr className="border-b border-base-border text-left text-xs uppercase tracking-wide text-text-muted">
+          <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
             <th className="py-2 pr-4 font-medium">Time</th>
             <th className="py-2 pr-4 font-medium">IP</th>
             <th className="py-2 pr-4 font-medium">Kind</th>
@@ -28,11 +28,11 @@ export default function FootprintsTable({ footprints }) {
         </thead>
         <tbody>
           {footprints.map((f, i) => (
-            <tr key={i} className="border-b border-base-borderMuted">
-              <td className="py-2.5 pr-4 text-xs text-text-muted">{formatTs(f.ts)}</td>
-              <td className="py-2.5 pr-4 font-mono text-xs text-text-primary">{f.ip || '—'}</td>
-              <td className="py-2.5 pr-4 text-text-secondary">{KIND_LABEL[f.kind] || f.kind || '—'}</td>
-              <td className="py-2.5 pr-4 font-mono text-xs text-text-secondary">{f.detail || '—'}</td>
+            <tr key={i} className="border-b border-border/60">
+              <td className="py-2.5 pr-4 text-xs text-muted-foreground">{formatTs(f.ts)}</td>
+              <td className="py-2.5 pr-4 font-mono text-xs text-foreground">{f.ip || '—'}</td>
+              <td className="py-2.5 pr-4 text-foreground/80">{KIND_LABEL[f.kind] || f.kind || '—'}</td>
+              <td className="py-2.5 pr-4 font-mono text-xs text-foreground/80">{f.detail || '—'}</td>
             </tr>
           ))}
         </tbody>

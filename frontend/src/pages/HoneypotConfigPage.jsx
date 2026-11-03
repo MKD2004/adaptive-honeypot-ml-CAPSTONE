@@ -49,8 +49,8 @@ export default function HoneypotConfigPage() {
           activeConfig.data?.active_config && <ActiveConfigCard config={activeConfig.data.active_config} />}
       </div>
 
-      <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
-        <h3 className="mb-3 text-sm font-semibold text-text-primary">Configuration History</h3>
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
+        <h3 className="mb-4 text-base font-semibold text-foreground">Configuration History</h3>
 
         {history.status === API_STATUS.LOADING && <LoadingState label="Loading configuration history…" />}
         {history.status === API_STATUS.UNREACHABLE && (

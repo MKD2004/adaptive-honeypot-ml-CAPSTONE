@@ -5,13 +5,13 @@ import { cn } from '../../lib/cn'
 function Stat({ label, value, mono, big, accent }) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wide text-text-muted">{label}</div>
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
       <div
         className={cn(
           'mt-1',
           big ? 'text-2xl font-semibold tabular-nums' : 'text-sm font-medium',
           mono && 'font-mono',
-          accent ? 'text-accent' : 'text-text-primary',
+          accent ? 'text-chart-1' : 'text-foreground',
         )}
       >
         {value}
@@ -25,11 +25,11 @@ function Stat({ label, value, mono, big, accent }) {
 // pipeline's own logs/pipeline_results.jsonl.
 export default function MLPredictionCard({ session }) {
   return (
-    <div className="rounded-lg border border-accent/30 bg-base-surface p-4 shadow-card">
+    <div className="rounded-2xl border border-chart-1/30 bg-card p-6 shadow-card">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <BrainCircuit className="h-4 w-4 text-accent" strokeWidth={1.75} />
-          <h3 className="text-sm font-semibold text-text-primary">ML Prediction</h3>
+          <BrainCircuit className="h-4 w-4 text-chart-1" strokeWidth={1.75} />
+          <h3 className="text-base font-semibold text-foreground">ML Prediction</h3>
         </div>
         <RiskBadge level={session.risk} />
       </div>
@@ -42,20 +42,20 @@ export default function MLPredictionCard({ session }) {
       </div>
 
       {Array.isArray(session.top3) && session.top3.length > 0 && (
-        <div className="mt-4 border-t border-base-borderMuted pt-3">
-          <div className="mb-1.5 text-xs uppercase tracking-wide text-text-muted">Top-3 Candidates</div>
+        <div className="mt-4 border-t border-border/60 pt-3">
+          <div className="mb-1.5 text-xs uppercase tracking-wide text-muted-foreground">Top-3 Candidates</div>
           <ul className="space-y-1">
             {session.top3.map((t, i) => (
               <li key={i} className="flex items-center justify-between text-xs">
-                <span className="font-mono text-text-secondary">{t.label}</span>
-                <span className="tabular-nums text-text-muted">{(t.prob * 100).toFixed(1)}%</span>
+                <span className="font-mono text-foreground/80">{t.label}</span>
+                <span className="tabular-nums text-muted-foreground">{(t.prob * 100).toFixed(1)}%</span>
               </li>
             ))}
           </ul>
         </div>
       )}
 
-      <p className="mt-4 border-t border-base-borderMuted pt-3 text-xs text-text-muted">
+      <p className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-foreground">
         Mock prediction for UI development — the frontend performs no inference; this mirrors the
         shape of the real MT3 pipeline output.
       </p>

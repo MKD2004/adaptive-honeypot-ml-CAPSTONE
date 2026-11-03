@@ -168,8 +168,8 @@ export default function ThreatAnalyticsPage() {
         </ChartCard>
       </div>
 
-      <div className="mb-6 rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
-        <h3 className="mb-3 text-sm font-semibold text-text-primary">Micro-State Analysis</h3>
+      <div className="mb-6 rounded-2xl border border-border bg-card p-6 shadow-card">
+        <h3 className="mb-4 text-base font-semibold text-foreground">Micro-State Analysis</h3>
         {filteredStates.length === 0 ? (
           <EmptyState
             title="No micro-states match these filters"
@@ -182,8 +182,8 @@ export default function ThreatAnalyticsPage() {
 
       </DataSection>
 
-      <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
-        <h3 className="mb-3 text-sm font-semibold text-text-primary">Feature Group Overview</h3>
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
+        <h3 className="mb-4 text-base font-semibold text-foreground">Feature Group Overview</h3>
         <FeatureGroupOverview />
       </div>
     </div>

@@ -18,7 +18,7 @@ function BackButton({ onClick }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 rounded-md border border-base-border bg-base-raised px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:text-text-primary"
+      className="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
     >
       <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.75} />
       Back to Sessions
@@ -32,16 +32,16 @@ function SessionBody({ session }) {
       <div className="mb-6 flex flex-wrap items-center gap-2">
         <StatusBadge status={session.status} />
         <RiskBadge level={session.risk} />
-        <span className="rounded-full border border-base-border px-2.5 py-1 font-mono text-xs text-text-secondary">
+        <span className="rounded-full border border-border px-2.5 py-1 font-mono text-xs text-foreground/80">
           {session.src_ip}
         </span>
         {session.protocol && (
-          <span className="rounded-full border border-base-border px-2.5 py-1 text-xs text-text-secondary">
+          <span className="rounded-full border border-border px-2.5 py-1 text-xs text-foreground/80">
             {session.protocol}
           </span>
         )}
         {session.source && (
-          <span className="rounded-full border border-base-border px-2.5 py-1 text-xs text-text-secondary">
+          <span className="rounded-full border border-border px-2.5 py-1 text-xs text-foreground/80">
             source: {session.source}
           </span>
         )}
@@ -57,8 +57,8 @@ function SessionBody({ session }) {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card lg:col-span-2">
-          <h3 className="mb-4 text-sm font-semibold text-text-primary">Activity Timeline</h3>
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-card lg:col-span-2">
+          <h3 className="mb-4 text-base font-semibold text-foreground">Activity Timeline</h3>
           <ActivityTimeline events={session.timeline} />
         </div>
         <div className="space-y-4">

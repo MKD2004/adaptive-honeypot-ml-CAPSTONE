@@ -9,7 +9,7 @@ export default function ThemeToggle() {
     <div
       role="radiogroup"
       aria-label="Theme"
-      className="flex items-center gap-1 rounded-md border border-base-border bg-base-raised p-1"
+      className="flex items-center gap-1 rounded-md border border-border bg-muted/50 p-1"
     >
       <button
         type="button"
@@ -19,8 +19,8 @@ export default function ThemeToggle() {
         className={cn(
           'flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors',
           theme === 'light'
-            ? 'bg-base-surface text-text-primary shadow-card'
-            : 'text-text-muted hover:text-text-secondary',
+            ? 'bg-card text-foreground shadow-card'
+            : 'text-muted-foreground hover:text-foreground/80',
         )}
       >
         <Sun className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -34,8 +34,8 @@ export default function ThemeToggle() {
         className={cn(
           'flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors',
           theme === 'dark'
-            ? 'bg-base-surface text-text-primary shadow-card'
-            : 'text-text-muted hover:text-text-secondary',
+            ? 'bg-card text-foreground shadow-card'
+            : 'text-muted-foreground hover:text-foreground/80',
         )}
       >
         <Moon className="h-3.5 w-3.5" strokeWidth={1.75} />

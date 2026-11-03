@@ -40,7 +40,7 @@ export default function DashboardPage() {
               <StatusBadge status="running" label="Live: GET /api/live-feed" />
             )}
             {newest && (
-              <span className="text-[11px] text-text-muted">
+              <span className="text-[11px] text-muted-foreground">
                 Latest session {new Date(newest).toLocaleString('en-US', { hour12: false })}
               </span>
             )}
@@ -77,12 +77,12 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card lg:col-span-2">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-card lg:col-span-2">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-text-primary">Recent Sessions</h3>
+            <h3 className="text-base font-semibold text-foreground">Recent Sessions</h3>
             <Link
               to="/sessions"
-              className="flex items-center gap-1 text-xs font-medium text-accent hover:underline"
+              className="flex items-center gap-1 text-xs font-medium text-chart-1 hover:underline"
             >
               View all
               <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -99,8 +99,8 @@ export default function DashboardPage() {
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
-            <h3 className="mb-3 text-sm font-semibold text-text-primary">Threat Distribution</h3>
+          <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
+            <h3 className="mb-4 text-base font-semibold text-foreground">Threat Distribution</h3>
             <DataSection
               resource={resource}
               loadingLabel="Loading…"

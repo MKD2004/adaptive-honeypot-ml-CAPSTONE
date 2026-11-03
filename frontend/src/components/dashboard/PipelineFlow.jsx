@@ -7,19 +7,19 @@ const STAGES = [
 
 export default function PipelineFlow({ activeIndex = -1 }) {
   return (
-    <div className="flex flex-wrap items-center gap-y-2 rounded-lg border border-base-border bg-base-surface px-4 py-3">
+    <div className="flex flex-wrap items-center gap-y-2 rounded-lg border border-border bg-card px-4 py-3">
       {STAGES.map((stage, i) => (
         <div key={stage} className="flex items-center">
           <span
             className={
               i === activeIndex
-                ? 'rounded-md border border-accent/40 bg-accent-soft px-2.5 py-1 text-xs font-medium text-accent'
-                : 'px-2.5 py-1 text-xs text-text-secondary'
+                ? 'rounded-md border border-chart-1/40 bg-chart-1/10 px-2.5 py-1 text-xs font-medium text-chart-1'
+                : 'px-2.5 py-1 text-xs text-foreground/80'
             }
           >
             {stage}
           </span>
-          {i < STAGES.length - 1 && <ChevronRight className="h-3.5 w-3.5 text-text-muted" />}
+          {i < STAGES.length - 1 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
         </div>
       ))}
     </div>

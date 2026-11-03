@@ -1,4 +1,5 @@
 import { Search, RotateCcw } from 'lucide-react'
+import GlideSelect from '../common/GlideSelect'
 
 const RISK_LEVELS = ['low', 'medium', 'high', 'critical']
 const STATUSES = ['active', 'idle', 'closed']
@@ -10,13 +11,21 @@ export const SORT_OPTIONS = [
   { value: 'session_id_asc', label: 'Session ID (A–Z)' },
 ]
 
-const selectCls =
-  'rounded-md border border-base-border bg-base-raised px-2.5 py-1.5 text-sm text-text-primary ' +
-  'focus:border-accent focus:outline-none'
-
 function cap(s) {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
+
+// Option lists for the GlideSelect dropdowns. "all" is always first so the
+// unfiltered state is the top row and the highlight pill starts there.
+const RISK_OPTIONS = [
+  { value: 'all', label: 'All risk' },
+  ...RISK_LEVELS.map((r) => ({ value: r, label: cap(r) })),
+]
+
+const STATUS_OPTIONS = [
+  { value: 'all', label: 'All status' },
+  ...STATUSES.map((s) => ({ value: s, label: cap(s) })),
+]
 
 // Frontend-only search/filter/sort controls for the Live Sessions table.
 // Operates entirely on the mock session array passed in by the page — no
@@ -33,48 +42,57 @@ export default function SessionFilters({
   isFiltered,
 }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-base-border bg-base-surface p-3">
+    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3">
       <div className="relative min-w-[220px] flex-1">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted" />
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
         <input
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder="Search by Session ID, IP, or micro-state…"
-          className="w-full rounded-md border border-base-border bg-base-raised py-1.5 pl-8 pr-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+          className="w-full rounded-md border border-border bg-muted/50 py-1.5 pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-chart-1 focus:outline-none"
         />
       </div>
 
-      <select value={risk} onChange={(e) => onRiskChange(e.target.value)} className={selectCls} aria-label="Filter by risk">
-        <option value="all">All risk</option>
-        {RISK_LEVELS.map((r) => (
-          <option key={r} value={r}>{cap(r)}</option>
-        ))}
-      </select>
+      <GlideSelect
+        options={RISK_OPTIONS}
+        value={risk}
+        onChange={onRiskChange}
+        ariaLabel="Filter by risk"
+        menuWidth={150}
+      />
 
-      <select value={phase} onChange={(e) => onPhaseChange(e.target.value)} className={selectCls} aria-label="Filter by phase">
-        <option value="all">All phases</option>
-        {phases.map((p) => (
-          <option key={p.id} value={String(p.id)}>{p.name}</option>
-        ))}
-      </select>
+      <GlideSelect
+        options={[
+          { value: 'all', label: 'All phases' },
+          ...phases.map((p) => ({ value: String(p.id), label: p.name, tag: `P${p.id}` })),
+        ]}
+        value={phase}
+        onChange={onPhaseChange}
+        ariaLabel="Filter by phase"
+        menuWidth={220}
+      />
 
-      <select value={status} onChange={(e) => onStatusChange(e.target.value)} className={selectCls} aria-label="Filter by status">
-        <option value="all">All status</option>
-        {STATUSES.map((s) => (
-          <option key={s} value={s}>{cap(s)}</option>
-        ))}
-      </select>
+      <GlideSelect
+        options={STATUS_OPTIONS}
+        value={status}
+        onChange={onStatusChange}
+        ariaLabel="Filter by status"
+        menuWidth={150}
+      />
 
-      <select value={sortBy} onChange={(e) => onSortByChange(e.target.value)} className={selectCls} aria-label="Sort sessions">
-        {SORT_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>Sort: {o.label}</option>
-        ))}
-      </select>
+      <GlideSelect
+        options={SORT_OPTIONS}
+        value={sortBy}
+        onChange={onSortByChange}
+        ariaLabel="Sort sessions"
+        menuWidth={210}
+        align="right"
+      />
 
       {isFiltered && (
         <button
           onClick={onClear}
-          className="flex items-center gap-1.5 rounded-md border border-base-border bg-base-raised px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:text-text-primary"
+          className="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
         >
           <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
           Clear Filters

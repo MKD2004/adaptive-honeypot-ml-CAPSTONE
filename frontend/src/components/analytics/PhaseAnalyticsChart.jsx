@@ -18,7 +18,7 @@ function CustomTooltip({ active, payload, colors }) {
 }
 
 // Clickable bar chart of the 9 kill-chain phases — clicking a bar sets the
-// page's phase filter (bidirectional with the phase <select>). Selected
+// page's phase filter (bidirectional with the phase dropdown). Selected
 // phase is highlighted; others dim slightly so the selection reads clearly.
 export default function PhaseAnalyticsChart({ data, selectedPhase, onSelectPhase }) {
   const colors = useChartColors()

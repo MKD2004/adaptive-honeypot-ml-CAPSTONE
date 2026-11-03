@@ -14,11 +14,11 @@ export default function ActiveConfigCard({ config }) {
   const isDefault = !config.micro_state
 
   return (
-    <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
+    <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <ShieldHalf className="h-4 w-4 text-accent" strokeWidth={1.75} />
-          <h3 className="text-sm font-semibold text-text-primary">Adaptive Honeypot — Active Config</h3>
+          <ShieldHalf className="h-4 w-4 text-chart-1" strokeWidth={1.75} />
+          <h3 className="text-base font-semibold text-foreground">Adaptive Honeypot — Active Config</h3>
         </div>
         <RiskBadge level={phaseToRisk(config.phase)} label={`${LEVEL_LABEL[config.interaction_level]} interaction`} />
       </div>
@@ -30,20 +30,20 @@ export default function ActiveConfigCard({ config }) {
       )}
 
       <dl className="grid grid-cols-2 gap-y-2.5 text-sm">
-        <dt className="text-text-muted">Honeypot target</dt>
-        <dd className="text-right font-mono text-xs text-text-primary">{config.honeypot_target}</dd>
+        <dt className="text-muted-foreground">Honeypot target</dt>
+        <dd className="text-right font-mono text-xs text-foreground">{config.honeypot_target}</dd>
 
-        <dt className="text-text-muted">Kill-chain phase</dt>
-        <dd className="text-right text-text-primary">{config.phase_name}</dd>
+        <dt className="text-muted-foreground">Kill-chain phase</dt>
+        <dd className="text-right text-foreground">{config.phase_name}</dd>
 
-        <dt className="text-text-muted">Triggering micro-state</dt>
-        <dd className="text-right font-mono text-xs text-accent">{config.micro_state ?? '—'}</dd>
+        <dt className="text-muted-foreground">Triggering micro-state</dt>
+        <dd className="text-right font-mono text-xs text-chart-1">{config.micro_state ?? '—'}</dd>
 
-        <dt className="text-text-muted">Banner</dt>
-        <dd className="text-right font-mono text-xs text-text-secondary">{config.banner}</dd>
+        <dt className="text-muted-foreground">Banner</dt>
+        <dd className="text-right font-mono text-xs text-foreground/80">{config.banner}</dd>
       </dl>
 
-      <p className="mt-3 border-t border-base-borderMuted pt-3 text-xs text-text-muted">{config.reason}</p>
+      <p className="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">{config.reason}</p>
     </div>
   )
 }

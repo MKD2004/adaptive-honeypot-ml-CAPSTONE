@@ -33,7 +33,7 @@ export default function SessionTable({ sessions, limit, variant = 'default' }) {
     <div className="overflow-x-auto scrollbar-thin">
       <table className="w-full min-w-[760px] border-collapse text-sm">
         <thead>
-          <tr className="border-b border-base-border text-left text-xs uppercase tracking-wide text-text-muted">
+          <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
             {showSessionId && <th className="py-2 pr-4 font-medium">Session ID</th>}
             <th className="py-2 pr-4 font-medium">Source IP</th>
             {showProtocol && <th className="py-2 pr-4 font-medium">Protocol</th>}
@@ -51,18 +51,18 @@ export default function SessionTable({ sessions, limit, variant = 'default' }) {
             <tr
               key={s.session_id}
               onClick={() => navigate(`/sessions/${s.session_id}`)}
-              className="cursor-pointer border-b border-base-borderMuted transition-colors hover:bg-base-raised"
+              className="cursor-pointer border-b border-border/60 transition-colors hover:bg-muted/50"
             >
               {showSessionId && (
-                <td className="py-2.5 pr-4 font-mono text-xs text-text-primary">{s.session_id}</td>
+                <td className="py-2.5 pr-4 font-mono text-xs text-foreground">{s.session_id}</td>
               )}
-              <td className="py-2.5 pr-4 font-mono text-xs text-text-primary">{s.src_ip}</td>
-              {showProtocol && <td className="py-2.5 pr-4 text-text-secondary">{s.protocol}</td>}
-              <td className="py-2.5 pr-4 font-mono text-xs text-accent">{s.micro_state}</td>
-              {showMitreId && <td className="py-2.5 pr-4 font-mono text-xs text-text-muted">{s.mitre}</td>}
-              <td className="py-2.5 pr-4 text-text-secondary">{s.phase_name}</td>
+              <td className="py-2.5 pr-4 font-mono text-xs text-foreground">{s.src_ip}</td>
+              {showProtocol && <td className="py-2.5 pr-4 text-foreground/80">{s.protocol}</td>}
+              <td className="py-2.5 pr-4 font-mono text-xs text-chart-1">{s.micro_state}</td>
+              {showMitreId && <td className="py-2.5 pr-4 font-mono text-xs text-muted-foreground">{s.mitre}</td>}
+              <td className="py-2.5 pr-4 text-foreground/80">{s.phase_name}</td>
               {showConfidence && (
-                <td className="py-2.5 pr-4 tabular-nums text-text-secondary">
+                <td className="py-2.5 pr-4 tabular-nums text-foreground/80">
                   {(s.confidence * 100).toFixed(1)}%
                 </td>
               )}
@@ -74,7 +74,7 @@ export default function SessionTable({ sessions, limit, variant = 'default' }) {
                   <StatusBadge status={s.status} />
                 </td>
               )}
-              <td className="py-2.5 pr-4 text-xs text-text-muted">{timeAgo(s.timestamp)}</td>
+              <td className="py-2.5 pr-4 text-xs text-muted-foreground">{timeAgo(s.timestamp)}</td>
             </tr>
           ))}
         </tbody>

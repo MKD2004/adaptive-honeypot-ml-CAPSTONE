@@ -1,11 +1,12 @@
-export default function PageHeader({ title, subtitle, actions }) {
-  return (
-    <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h1 className="text-lg font-semibold text-text-primary">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-text-muted">{subtitle}</p>}
-      </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
-    </div>
-  )
+// The page title and subtitle now live in the shell's header bar
+// (components/layout/Topbar.jsx), driven by the route — that is how the Pulse
+// console is laid out, and it keeps one title per screen. This component is
+// what remains: a page's own actions, right-aligned above its content.
+//
+// `title` and `subtitle` are still accepted so pages did not all need editing,
+// but they are intentionally not rendered. Dynamic titles that the route map
+// cannot produce belong in the page body.
+export default function PageHeader({ actions }) {
+  if (!actions) return null
+  return <div className="mb-6 flex flex-wrap items-center justify-end gap-2">{actions}</div>
 }

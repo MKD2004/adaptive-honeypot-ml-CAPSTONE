@@ -137,10 +137,10 @@ export default function LiveSessionsPage() {
         isFiltered={isFiltered}
       />
 
-      <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-text-primary">Sessions</h3>
-          <span className="text-xs text-text-muted">
+          <h3 className="text-base font-semibold text-foreground">Sessions</h3>
+          <span className="text-xs text-muted-foreground">
             {filtered.length} of {sessions.length}
           </span>
         </div>

@@ -66,19 +66,19 @@ export default function ThreatDistributionDonut({ sessions }) {
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-semibold tabular-nums text-text-primary">{total}</span>
-          <span className="text-[11px] text-text-muted">Total Sessions</span>
+          <span className="text-2xl font-semibold tabular-nums text-foreground">{total}</span>
+          <span className="text-[11px] text-muted-foreground">Total Sessions</span>
         </div>
       </div>
 
       <ul className="flex-1 space-y-1.5 text-xs">
         {data.map((d) => (
           <li key={d.name} className="flex items-center justify-between gap-3">
-            <span className="flex items-center gap-2 text-text-secondary">
+            <span className="flex items-center gap-2 text-foreground/80">
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: d.color }} />
               {d.name}
             </span>
-            <span className="tabular-nums text-text-muted">{Math.round((d.value / total) * 100)}%</span>
+            <span className="tabular-nums text-muted-foreground">{Math.round((d.value / total) * 100)}%</span>
           </li>
         ))}
       </ul>

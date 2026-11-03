@@ -15,7 +15,7 @@ function BackButton({ onClick }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 rounded-md border border-base-border bg-base-raised px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:text-text-primary"
+      className="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-3 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:text-foreground"
     >
       <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.75} />
       Back to CVE Intelligence
@@ -26,8 +26,8 @@ function BackButton({ onClick }) {
 function Row({ label, value, mono }) {
   return (
     <div className="flex items-center justify-between gap-3 py-2">
-      <dt className="text-text-muted">{label}</dt>
-      <dd className={`text-right text-text-primary ${mono ? 'font-mono text-xs' : ''}`}>{value}</dd>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className={`text-right text-foreground ${mono ? 'font-mono text-xs' : ''}`}>{value}</dd>
     </div>
   )
 }
@@ -66,28 +66,28 @@ export default function CveDetailsPage() {
       <div className="mb-6 flex flex-wrap items-center gap-2">
         <RiskBadge level={cve.severity.toLowerCase()} />
         {cve.is_kev && <StatusBadge status="offline" label="CISA KEV listed" />}
-        <span className="rounded-full border border-base-border px-2.5 py-1 text-xs text-text-secondary">
+        <span className="rounded-full border border-border px-2.5 py-1 text-xs text-foreground/80">
           {cve.priority_tier}
         </span>
         {cve.cwe && (
-          <span className="rounded-full border border-base-border px-2.5 py-1 font-mono text-xs text-text-secondary">
+          <span className="rounded-full border border-border px-2.5 py-1 font-mono text-xs text-foreground/80">
             {cve.cwe}
           </span>
         )}
       </div>
 
-      <div className="mb-6 rounded-lg border border-accent/30 bg-base-surface p-4 shadow-card">
+      <div className="mb-6 rounded-2xl border border-chart-1/30 bg-card p-6 shadow-card">
         <div className="mb-3 flex items-center gap-2">
-          <ShieldAlert className="h-4 w-4 text-accent" strokeWidth={1.75} />
-          <h3 className="text-sm font-semibold text-text-primary">Description</h3>
+          <ShieldAlert className="h-4 w-4 text-chart-1" strokeWidth={1.75} />
+          <h3 className="text-base font-semibold text-foreground">Description</h3>
         </div>
-        <p className="whitespace-pre-wrap break-words text-sm text-text-secondary">{cve.description}</p>
+        <p className="whitespace-pre-wrap break-words text-sm text-foreground/80">{cve.description}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
-          <h3 className="mb-1 text-sm font-semibold text-text-primary">Scoring</h3>
-          <dl className="divide-y divide-base-borderMuted">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
+          <h3 className="mb-1 text-sm font-semibold text-foreground">Scoring</h3>
+          <dl className="divide-y divide-border/60">
             <Row label="CVSS Score" value={cve.cvss_score.toFixed(1)} />
             <Row label="EPSS Score" value={`${(cve.epss_score * 100).toFixed(1)}%`} />
             <Row label="Severity" value={cve.severity} />
@@ -97,9 +97,9 @@ export default function CveDetailsPage() {
           </dl>
         </div>
 
-        <div className="rounded-lg border border-base-border bg-base-surface p-4 shadow-card">
-          <h3 className="mb-1 text-sm font-semibold text-text-primary">Timeline &amp; KEV Status</h3>
-          <dl className="divide-y divide-base-borderMuted">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-card">
+          <h3 className="mb-1 text-sm font-semibold text-foreground">Timeline &amp; KEV Status</h3>
+          <dl className="divide-y divide-border/60">
             <Row label="Published" value={formatDate(cve.published)} />
             <Row label="Last Modified" value={formatDate(cve.last_modified)} />
             <Row label="CISA KEV Listed" value={cve.is_kev ? 'Yes' : 'No'} />
@@ -109,7 +109,7 @@ export default function CveDetailsPage() {
         </div>
       </div>
 
-      <p className="mt-6 text-xs text-text-muted">{CVE_DATA_SNAPSHOT_NOTE}</p>
+      <p className="mt-6 text-xs text-muted-foreground">{CVE_DATA_SNAPSHOT_NOTE}</p>
     </div>
   )
 }

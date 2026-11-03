@@ -6,9 +6,15 @@
 //
 // Base URL is configurable via VITE_API_BASE_URL (frontend/.env.example),
 // falling back to the gateway's documented default port.
+//
+// 127.0.0.1, not localhost, on purpose. On Windows `localhost` resolves to the
+// IPv6 address ::1 first, while Flask's --host 0.0.0.0 binds IPv4 ONLY -- so
+// every request to http://localhost:5000 is refused and the whole dashboard
+// reports "Gateway API unreachable" even though the API is running fine. The
+// IPv4 literal skips name resolution and cannot hit that mismatch.
 export const API_BASE_URL =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) ||
-  'http://localhost:5000'
+  'http://127.0.0.1:5000'
 
 const DEFAULT_TIMEOUT_MS = 6000
 

@@ -274,9 +274,13 @@ ablation of the classifier inside the loop — with the tie reported plainly and
 - [ ] This produces the paper's headline figure.
 
 ### M4 — Broaden (optional, strengthens scope)
+**Planned in full in `MULTI_HONEYPOT.md`** — phases, honeypot selection, and the
+six things that will bite. Read that before starting any of the below.
 - [ ] Add a second protocol honeypot (web/HTTP via a real honeypot, not the demo
       prop) so the loop is shown to generalise beyond SSH.
 - [ ] Consider T-Pot as the deployment substrate if going multi-honeypot.
+- [ ] Keep it off this milestone's critical path: multi-honeypot data must not
+      mix into the M3 A/B result (`MULTI_HONEYPOT.md` §7.4).
 
 ### M5 — Write
 - [ ] Contribution = the adaptive loop (Section 2). MT3 comparison = ablation.

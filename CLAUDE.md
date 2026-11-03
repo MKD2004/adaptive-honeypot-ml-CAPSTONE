@@ -150,6 +150,9 @@ project state/rules across machines):
 - `ERRORS.md` — bugs already hit and fixed; check before re-debugging the same crash
 - `ROADMAP.md` — capstone -> research-paper plan: contribution, novelty positioning
   (literature survey), the A/B experiment, milestones. Read before paper decisions.
+- `MULTI_HONEYPOT.md` — the plan for growing from one honeypot (Cowrie SSH) to four
+  (+ auth portal, web app, database). Expansion of ROADMAP M4. Read before adding
+  a honeypot or claiming the system has more than one.
 - `TEAMMATES.md` — HARD RULES for collaborators + any AI assistant (do NOT run/edit
   the dataset pipeline, notebooks, or `tabsyn/`; stay in your assigned module)
 

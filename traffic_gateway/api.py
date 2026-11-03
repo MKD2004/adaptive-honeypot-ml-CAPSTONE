@@ -12,6 +12,7 @@ import ipaddress
 import json
 import logging
 import queue
+import sys
 import threading
 from collections import Counter
 from datetime import datetime, timezone
@@ -281,6 +282,48 @@ def active_config():
 def config_changes():
     limit = request.args.get("limit", default=25, type=int)
     return jsonify({"changes": _configurator().recent_changes(limit=limit)})
+
+
+# ── Threat intelligence (CVE feed driving the honeypot's CVE overlay) ───────
+def _intel():
+    ensure_paths()
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from cve_intelligence import refresher  # type: ignore
+
+    return refresher
+
+
+@app.get("/api/threat-intel")
+def threat_intel():
+    """Which CVE intel the configurator is using, how fresh it is, and what
+    the live pipeline fetched (NVD / CISA KEV / FIRST EPSS)."""
+    limit = request.args.get("limit", default=25, type=int)
+    try:
+        snap = _intel().snapshot()
+    except Exception as exc:
+        return jsonify({"error": f"cve_intelligence unavailable: {exc}"}), 503
+    profiles = sorted(snap.pop("profiles"), key=lambda p: -(p.get("priority_score") or 0))
+    snap["profiles"] = [{k: v for k, v in p.items() if k != "honeypot_config"}
+                        for p in profiles[:max(1, min(limit, 200))]]
+    snap["mt3_threat_intel"] = (_pipeline.ti.status()
+                                if _pipeline is not None and getattr(_pipeline, "ti", None) else None)
+    return jsonify(snap)
+
+
+@app.post("/api/threat-intel/refresh")
+def threat_intel_refresh():
+    """Re-pull NVD / KEV / EPSS now, in the background (takes ~1 minute)."""
+    try:
+        ti = _intel()
+    except Exception as exc:
+        return jsonify({"error": f"cve_intelligence unavailable: {exc}"}), 503
+    if ti.refresher.running:
+        return jsonify({"ok": True, "started": False, "note": "already running",
+                        "refresher": ti.refresher.status()}), 202
+    threading.Thread(target=ti.refresher.refresh_now, daemon=True,
+                     name="threat_intel_manual_refresh").start()
+    return jsonify({"ok": True, "started": True, "refresher": ti.refresher.status()}), 202
 
 
 # ── Live access control (the two-laptop demo) ────────────────────────────────
@@ -580,6 +623,8 @@ def main() -> None:
     ap.add_argument("--results", default=str(DEFAULT_RESULTS_PATH))
     ap.add_argument("--no-events", action="store_true",
                     help="do not tail the gateway event log for /events")
+    ap.add_argument("--no-intel-refresh", action="store_true",
+                    help="do not re-pull NVD/KEV/EPSS in the background")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO,
@@ -587,6 +632,12 @@ def main() -> None:
     print(f"  API       : http://localhost:{args.port}/api/live-feed")
     print(f"  Dashboard : http://localhost:{args.port}/")
     print(f"  Pipeline  : http://localhost:{args.port}/pipeline")
+    if not args.no_intel_refresh:
+        try:
+            _intel().refresher.start()
+            print("  CVE intel : background refresh on (GET /api/threat-intel)")
+        except Exception as exc:
+            print(f"  CVE intel : refresher unavailable ({exc})")
     serve(args.host, args.port, results_path=Path(args.results),
           events=not args.no_events)
 

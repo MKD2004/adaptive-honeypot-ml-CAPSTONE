@@ -21,7 +21,10 @@ FIRST_API_KEY: str | None = os.environ.get("FIRST_API_KEY")  # optional
 # ── API Base URLs ─────────────────────────────────────────────────────────────
 NVD_BASE_URL: str = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 CISA_KEV_URL: str = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
-EPSS_API_URL: str = "https://api.first.org/data/1.0/epss"
+# FIRST moved the API to /data/v1/. The old /data/1.0/ path now answers 404
+# for every CVE (even CVE-2021-44228), which silently turned every EPSS score
+# in this pipeline into a simulated one.
+EPSS_API_URL: str = "https://api.first.org/data/v1/epss"
 # Fixed: official GitLab raw endpoint (not the old Offensive Security CSV)
 EXPLOITDB_CSV_URL: str = "https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv"
 
@@ -38,6 +41,13 @@ NVD_DATE_FORMAT: str = "%Y-%m-%dT%H:%M:%S.000Z"
 
 # ── EPSS ──────────────────────────────────────────────────────────────────────
 EPSS_BATCH_SIZE: int = 100
+# Fill CVEs FIRST hasn't scored yet with random Beta draws? Off by default: an
+# unscored CVE gets 0.0 and epss_source="unscored", never an invented number.
+ALLOW_SIMULATED_EPSS: bool = os.environ.get("CVE_ALLOW_SIMULATED_EPSS") == "1"
+
+# ── Live refresh (cve_intelligence/refresher.py) ──────────────────────────────
+# How often the running system re-pulls NVD / CISA KEV / EPSS.
+REFRESH_INTERVAL_HOURS: float = float(os.environ.get("CVE_REFRESH_HOURS", "6"))
 
 # ── HTTP request defaults ─────────────────────────────────────────────────────
 REQUEST_TIMEOUT: int = 30  # seconds

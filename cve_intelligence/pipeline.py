@@ -30,8 +30,10 @@ Usage (CLI):
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -101,6 +103,8 @@ class CVEIntelligencePipeline:
         self._mitre    = MITREClient() if include_mitre else None
         self._exploitdb = ExploitDBClient() if include_exploitdb else None
         self._generator = HoneypotConfigGenerator()
+        # What each source actually returned on the last run -> meta sidecar.
+        self.stats: Dict[str, Any] = {}
 
     # ==========================================================════════════════
     # Stage runners (each returns the DataFrame it produces/enriches)
@@ -119,6 +123,8 @@ class CVEIntelligencePipeline:
         if is_fallback:
             logger.warning("NVD returned only fallback data. Trying CVE.org...")
             records = []
+        self.stats["nvd_cves"] = len(records)
+        self.stats["cve_source"] = "nvd" if records else None
 
         # 2. CVE.org fallback for recent CVEs
         if not records:
@@ -128,6 +134,7 @@ class CVEIntelligencePipeline:
             )
             records = self._cveorg.parse(raw_cveorg)
             if records:
+                self.stats["cve_source"] = "cve.org"
                 logger.info("CVE.org fallback: %d CVEs loaded.", len(records))
             else:
                 logger.warning("CVE.org also returned no results.")
@@ -170,6 +177,7 @@ class CVEIntelligencePipeline:
 
         kev_df  = self._cisa.fetch_dataframe()
         kev_ids = set(kev_df["cve_id"].tolist()) if not kev_df.empty else set()
+        self.stats["kev_catalog_size"] = len(kev_ids)
 
         df = df.copy()
         df["is_kev"] = df["cve_id"].apply(lambda x: 1 if x in kev_ids else 0)
@@ -182,13 +190,16 @@ class CVEIntelligencePipeline:
                 df[col] = None
 
         kev_count = int(df["is_kev"].sum())
+        self.stats["kev_flagged"] = kev_count
         logger.info("KEV flagged: %d / %d CVEs.", kev_count, len(df))
         return df
 
     def _stage_enrich_epss(self, df: pd.DataFrame) -> pd.DataFrame:
         """Stage 3b: Fetch real EPSS scores, fill gaps with simulation."""
         logger.info("-- Stage 3b: EPSS Enrichment -----------------------------")
-        return analyzers.enrich_epss(df)
+        df = analyzers.enrich_epss(df)
+        self.stats["epss"] = {str(k): int(v) for k, v in df["epss_source"].value_counts().items()}
+        return df
 
     def _stage_enrich_mitre(self, df: pd.DataFrame) -> pd.DataFrame:
         """Stage 3c: Enrich with MITRE CWE descriptions (optional)."""
@@ -249,11 +260,48 @@ class CVEIntelligencePipeline:
 
         profiles = self._generator.build_trending_profiles(df_sorted, df_trending)
         self._generator.save_to_disk(profiles, self.output_path)
+        self._write_meta(df_sorted, df_trending, profiles)
 
         if self.csv_path:
             self._generator.save_csv(df_sorted, self.csv_path)
 
         return profiles
+
+    @staticmethod
+    def meta_path_for(output_path: Path) -> Path:
+        """trending_profiles.json -> trending_profiles.meta.json"""
+        return Path(output_path).with_suffix(".meta.json")
+
+    def _write_meta(
+        self,
+        df_sorted: pd.DataFrame,
+        df_trending: pd.DataFrame,
+        profiles: List[dict],
+    ) -> None:
+        """Provenance sidecar: when this intel was fetched and from what."""
+        meta = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "lookback_days": self.lookback_days,
+            "trending_window_days": self.trending_window,
+            "cve_source": self.stats.get("cve_source"),
+            "cves_processed": int(len(df_sorted)),
+            "kev_catalog_size": self.stats.get("kev_catalog_size", 0),
+            "kev_flagged": self.stats.get("kev_flagged", 0),
+            "epss": self.stats.get("epss", {}),
+            "trending": int(len(df_trending)),
+            "profiles": len(profiles),
+            "profiles_basis": "trending" if not df_trending.empty else "all",
+            "sources": {
+                "nvd": config.NVD_BASE_URL,
+                "cisa_kev": config.CISA_KEV_URL,
+                "epss": config.EPSS_API_URL,
+            },
+        }
+        path = self.meta_path_for(self.output_path)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        tmp.replace(path)
+        logger.info("Provenance saved -> %s", path)
 
     # ==========================================================════════════════
     # Summary printer

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env.local
+*.log
+
+# The repo-root .gitignore ignores every logs/ folder (runtime logs);
+# this one is source code for the Logs page, so keep it tracked.
+!src/components/logs/

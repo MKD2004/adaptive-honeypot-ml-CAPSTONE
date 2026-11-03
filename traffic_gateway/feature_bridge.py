@@ -10,7 +10,9 @@ cached for an hour rather than per session.
 from __future__ import annotations
 
 import logging
+import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -57,41 +59,87 @@ _PORT_TO_HONEYPOT = {
 
 
 class ThreatIntelCache:
-    """KEV set + EPSS scores, refreshed at most once per TTL."""
+    """KEV set + EPSS scores, refreshed at most once per TTL.
+
+    Fetched live from the official feeds through cve_intelligence's clients
+    (CISA KEV JSON, FIRST EPSS /data/v1). The extractor's own helpers are NOT
+    used for this: get_kev_set() returns its ti_cache.json copy forever once
+    one exists, and fetch_epss() calls FIRST's retired /data/1.0/ path, which
+    now 404s for every CVE. The cached KEV list is only an offline fallback.
+    """
 
     def __init__(self, ttl: float = TI_CACHE_TTL_SEC) -> None:
         self.ttl = ttl
         self._kev: set = set()
         self._epss: Dict[str, dict] = {}
         self._fetched_at = 0.0
+        self.kev_source = "not fetched"
+        self.kev_fetched_at: Optional[str] = None
 
     @property
     def age_sec(self) -> float:
         return time.time() - self._fetched_at if self._fetched_at else float("inf")
 
+    @staticmethod
+    def _live_kev() -> set:
+        if str(REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(REPO_ROOT))
+        from cve_intelligence.clients.cisa import CISAClient  # type: ignore
+
+        return CISAClient().fetch_id_set()       # empty set on any failure
+
+    @staticmethod
+    def _live_epss(cves: List[str]) -> Dict[str, dict]:
+        if str(REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(REPO_ROOT))
+        from cve_intelligence.analyzers import fetch_epss_details  # type: ignore
+
+        # the extractor reads {"score", "pct"}
+        return {c: {"score": d["epss"], "pct": d["percentile"]}
+                for c, d in fetch_epss_details(cves).items()}
+
     def prefetch(self, cves: Optional[List[str]] = None, force: bool = False) -> Dict[str, Any]:
         """Fetch (or refresh) the KEV catalog and any EPSS scores we need."""
         ensure_paths()
         pin_ti_cache()
-        from src.extractors.threat_intel import fetch_epss, get_kev_set  # type: ignore
 
         if force or self.age_sec > self.ttl:
+            kev: set = set()
             try:
-                self._kev = get_kev_set()
-            except Exception as exc:                      # offline / API down
-                log.warning("KEV fetch failed (%s); continuing with %d cached ids",
-                            exc, len(self._kev))
+                kev = self._live_kev()
+            except Exception as exc:
+                log.warning("live KEV fetch failed: %s", exc)
+            if kev:
+                self._kev = kev
+                self.kev_source = "cisa.gov (live)"
+                self.kev_fetched_at = datetime.now(timezone.utc).isoformat()
+            elif not self._kev:
+                # Offline: fall back to the last catalog the extractor cached.
+                from src.extractors.threat_intel import _cache  # type: ignore
+
+                self._kev = set(_cache.get("kev_ids") or [])
+                self.kev_source = "ti_cache.json (offline fallback)"
+                log.warning("KEV: cisa.gov unreachable; using %d cached ids", len(self._kev))
+            else:
+                log.warning("KEV refresh failed; keeping the %d ids fetched at %s",
+                            len(self._kev), self.kev_fetched_at)
             self._fetched_at = time.time()
 
         wanted = [c for c in (cves or []) if c and c not in self._epss]
         if wanted:
             try:
-                self._epss.update(fetch_epss(wanted))
+                self._epss.update(self._live_epss(wanted))
             except Exception as exc:
                 log.warning("EPSS fetch failed (%s); scores default to 0", exc)
 
-        return {"kev_count": len(self._kev), "epss_count": len(self._epss),
-                "age_sec": round(self.age_sec, 1)}
+        return {"kev_count": len(self._kev), "kev_source": self.kev_source,
+                "kev_fetched_at": self.kev_fetched_at,
+                "epss_count": len(self._epss), "age_sec": round(self.age_sec, 1)}
+
+    def status(self) -> Dict[str, Any]:
+        return {"kev_count": len(self._kev), "kev_source": self.kev_source,
+                "kev_fetched_at": self.kev_fetched_at, "epss_cached": len(self._epss),
+                "ttl_sec": self.ttl}
 
     @property
     def kev_set(self) -> set:

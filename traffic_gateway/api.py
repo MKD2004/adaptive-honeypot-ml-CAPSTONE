@@ -12,6 +12,7 @@ import ipaddress
 import json
 import logging
 import queue
+import sys
 import threading
 from collections import Counter
 from datetime import datetime, timezone
@@ -281,6 +282,16 @@ def active_config():
 def config_changes():
     limit = request.args.get("limit", default=25, type=int)
     return jsonify({"changes": _configurator().recent_changes(limit=limit)})
+
+
+# ── Threat intelligence (background refresher for the CVE overlay) ──────────
+def _intel():
+    ensure_paths()
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from cve_intelligence import refresher  # type: ignore
+
+    return refresher
 
 
 # ── Live access control (the two-laptop demo) ────────────────────────────────
@@ -580,6 +591,8 @@ def main() -> None:
     ap.add_argument("--results", default=str(DEFAULT_RESULTS_PATH))
     ap.add_argument("--no-events", action="store_true",
                     help="do not tail the gateway event log for /events")
+    ap.add_argument("--no-intel-refresh", action="store_true",
+                    help="do not re-pull NVD/KEV/EPSS in the background")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO,
@@ -587,6 +600,12 @@ def main() -> None:
     print(f"  API       : http://localhost:{args.port}/api/live-feed")
     print(f"  Dashboard : http://localhost:{args.port}/")
     print(f"  Pipeline  : http://localhost:{args.port}/pipeline")
+    if not args.no_intel_refresh:
+        try:
+            _intel().refresher.start()
+            print("  CVE intel : background refresh on (NVD / CISA KEV / FIRST EPSS)")
+        except Exception as exc:
+            print(f"  CVE intel : refresher unavailable ({exc})")
     serve(args.host, args.port, results_path=Path(args.results),
           events=not args.no_events)
 

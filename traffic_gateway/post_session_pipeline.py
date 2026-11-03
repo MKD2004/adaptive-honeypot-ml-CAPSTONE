@@ -100,6 +100,7 @@ class PostSessionPipeline:
 
         self.startup_info = {
             "kev_count": ti_info["kev_count"],
+            "kev_source": ti_info.get("kev_source"),
             "semantic_available": sem_ok,
             "semantic_status": self.semantic.status(),
             "mt3": self.mt3.meta,
@@ -417,6 +418,7 @@ class PostSessionPipeline:
             "cowrie_log_dir": str(self.cowrie_log_dir),
             "cowrie_logs_found": len(self._log_files()),
             "ti_cache_age_sec": round(self.ti.age_sec, 1) if self.ti.age_sec != float("inf") else None,
+            "threat_intel": self.ti.status(),
             "results_path": str(self.results_path),
         }
 

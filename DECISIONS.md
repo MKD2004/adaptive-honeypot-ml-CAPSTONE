@@ -5,6 +5,69 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-03 — EPSS CORRECTION: every EPSS score the project has produced is a random number
+
+**Finding:** `cve_intelligence/config.py` pointed at
+`https://api.first.org/data/1.0/epss`, which FIRST has retired. It now returns
+**404 for every CVE**, verified live today against CVE-2021-44228 (Log4Shell):
+
+```
+OLD  /data/1.0/epss?cve=CVE-2021-44228  ->  HTTP 404
+NEW  /data/v1/epss?cve=CVE-2021-44228   ->  200 OK
+     {"cve":"CVE-2021-44228","epss":"0.999990000","percentile":"1.000000000"}
+```
+
+That alone would have left EPSS empty. The damage is the fallback —
+`analyzers.py:137-141` (pre-fix):
+
+```python
+real_epss = fetch_epss_scores(df["cve_id"].tolist())
+simulated = simulate_epss(df)
+df["epss_score"] = df["cve_id"].map(real_epss)
+df["epss_score"] = df["epss_score"].combine_first(simulated).fillna(0.0)
+```
+
+`simulate_epss()` draws from **Beta distributions** — Beta(5,2) for KEV entries,
+Beta(3,3) for CVSS >= 9.0, Beta(1,8) otherwise. Because the live fetch always
+returned nothing, *every* row took the simulated branch, and nothing in the
+output marked it as synthetic. Measured on a live run before the fix:
+**0 of 517 CVEs had a real EPSS score.** After: **507 scored by FIRST, 10 not
+yet scored.**
+
+**Why this matters more than a dead URL:** `ROADMAP.md` 3.4 leads the dataset's
+novelty claim with **EPSS drift**. Any EPSS-drift figure computed from this
+pipeline is drift in a Beta random walk, not in real exploit-prediction data.
+`cve_intelligence/data/trending_profiles.json` (the June 2026 snapshot) has no
+`epss_source` field, so its values are most likely simulated too.
+
+**Do not quote any existing EPSS number in the paper.** Recompute from live data
+and state the fetch date.
+
+**What this does NOT change:**
+- MT3's training data. The Cowrie parser always sets `associated_cve = ""`, so
+  the 14 threat-intel features (indices 106-119) are zero for live sessions —
+  as they were in training. The model never consumed these scores.
+- CVSS, CISA KEV membership, or the NVD CVE records themselves. Only EPSS was
+  synthesised.
+
+**Fixed by** Anusha on `frontend-threat-intelligence-anusha` (2026-11-03):
+endpoint moved to `/data/v1/epss`; simulation now opt-in behind
+`CVE_ALLOW_SIMULATED_EPSS=1` and **off by default**; unscored CVEs get 0.0
+rather than a random draw; every profile records `epss_source`
+(`first.org` / `unscored` / `simulated`); a failed run logs an ERROR instead of
+passing silently. Also found in the same pass: KEV was frozen at 1,675 entries
+from `ti_cache.json` (live catalog: 1,766), and `ATTACK_TYPE_PHASES` in
+`configurator.py` keyed on labels the classifier never emits
+(`"remote code execution"`, `"deserialization"`) while missing brute force, file
+inclusion, SSRF and XXE — so no CVE overlay ever matched on live data.
+
+**Still outstanding:** `honeypot_dataset/src/extractors/threat_intel.py` is the
+dataset owner's file and still carries the dead URL, a hardcoded 2024-04-15
+reference date, and an `epss_7d_delta` that is always 0. The live system routes
+around it; the extractor itself needs the same URL fix before any EPSS-drift
+claim is recomputed.
+
+
 ## 2026-08-28 — PROVENANCE CORRECTION: the "real Cowrie" data is SYNTHETIC (teammate-confirmed)
 
 **Finding:** The 15,000 Cowrie honeypot sessions previously treated as REAL are

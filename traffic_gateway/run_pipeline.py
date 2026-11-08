@@ -79,7 +79,13 @@ def main() -> int:
     ap.add_argument("--cowrie-log-dir", default=str(DEFAULT_COWRIE_LOG_DIR))
     ap.add_argument("--results", default=str(DEFAULT_RESULTS_PATH))
     ap.add_argument("--poll", type=float, default=DEFAULT_POLL_SEC)
-    ap.add_argument("--host", default="0.0.0.0")
+    # Loopback by default. The API has no reason to be reachable from the
+    # network: the React dashboard calls 127.0.0.1:5000 and peers in the
+    # two-laptop demo connect to the GATEWAY on 8080, never to this. Binding it
+    # wide was how POST /api/whitelist became reachable by anyone
+    # (HONEYPOT_AUDIT.md PART 3). Pass --host 0.0.0.0 deliberately if you really
+    # need it, and set GATEWAY_API_TOKEN when you do.
+    ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=5000)
     ap.add_argument("--from-start", action="store_true",
                     help="process the existing Cowrie backlog instead of tailing from EOF")
@@ -87,6 +93,13 @@ def main() -> int:
     ap.add_argument("--no-watch", action="store_true",
                     help="start everything, then exit instead of blocking (smoke test)")
     args = ap.parse_args()
+
+    # BEFORE the slow loads. serve() applies the same guard, but this entry point
+    # calls app.run() directly and bypasses it -- and this is what live_demo.py
+    # runs, so it is where the check matters most. Failing here costs a second;
+    # failing after startup() costs ninety.
+    from .api_auth import assert_safe_to_serve
+    assert_safe_to_serve(args.host)
 
     logging.basicConfig(
         level=logging.INFO,

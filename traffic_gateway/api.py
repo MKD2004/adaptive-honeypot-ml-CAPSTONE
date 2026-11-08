@@ -25,6 +25,10 @@ from .blacklist_manager import blacklist_manager
 from .config import CONFIG
 from .ext_paths import REPO_ROOT, ensure_paths
 from .ip_classifier import IPStatus, classifier
+from .api_auth import (
+    InsecureExposure, allowed_origins, assert_safe_to_serve, auth_status,
+    require_token,
+)
 from .peer_attribution import attributor, looks_like_proxy
 from .post_session_pipeline import DEFAULT_RESULTS_PATH, read_results
 from .rate_limiter import rate_limiter
@@ -42,7 +46,11 @@ PHASE_NAMES = [
 ]
 
 app = Flask(__name__, static_folder=None)
-CORS(app)
+# Not CORS(app): that allowed EVERY browser origin, which is half of the bypass
+# HONEYPOT_AUDIT.md PART 3 describes. Origins come from GATEWAY_API_ORIGINS and
+# default to the local dev servers. Credentials are not allowed, because auth
+# here is a bearer token the caller sends explicitly, not a cookie.
+CORS(app, origins=allowed_origins(), supports_credentials=False)
 
 _results_path: Path = DEFAULT_RESULTS_PATH
 _pipeline = None          # set by run_pipeline.py so /api/stats can report it
@@ -185,6 +193,7 @@ def get_blacklist():
 
 
 @app.post("/api/blacklist")
+@require_token
 def add_blacklist():
     data = _body()
     ok, ip = _valid_ip(data.get("ip"))
@@ -199,6 +208,7 @@ def add_blacklist():
 
 
 @app.delete("/api/blacklist/<ip>")
+@require_token
 def remove_blacklist(ip: str):
     ok, ip_norm = _valid_ip(ip)
     if not ok:
@@ -231,6 +241,7 @@ def get_whitelist():
 
 
 @app.post("/api/whitelist")
+@require_token
 def add_whitelist():
     data = _body()
     ok, ip = _valid_ip(data.get("ip"))
@@ -249,6 +260,7 @@ def add_whitelist():
 
 
 @app.delete("/api/whitelist/<ip>")
+@require_token
 def remove_whitelist(ip: str):
     """Not in the Step 5 list, but the dashboard needs the inverse of POST."""
     ok, ip_norm = _valid_ip(ip)
@@ -471,6 +483,9 @@ def health():
         "results_exist": _results_path.exists(),
         "pipeline_started": bool(_pipeline and _pipeline.started),
         "mt3": (_pipeline.mt3.meta if _pipeline and _pipeline.started else None),
+        # Never contains the token or any part of it -- just what the API will do,
+        # so an operator can confirm the writes are protected without guessing.
+        "auth": auth_status(),
     })
 
 
@@ -560,9 +575,18 @@ def start_event_stream(log_path: Path = GATEWAY_EVENT_LOG) -> bool:
         return False
 
 
-def serve(host: str = "0.0.0.0", port: int = 5000, *,
+def serve(host: str = "127.0.0.1", port: int = 5000, *,
           results_path: Optional[Path] = None, pipeline: Any = None,
           events: bool = True, debug: bool = False) -> None:
+    # Before anything binds: a reachable address with no token means POST/DELETE
+    # on the blacklist and whitelist would be open to the network. Raises
+    # InsecureExposure with instructions rather than starting.
+    assert_safe_to_serve(host)
+    status = auth_status(host)
+    log.info("API auth: token_configured=%s writes_require_token=%s "
+             "reads_require_token=%s origins=%s",
+             status["token_configured"], status["writes_require_token"],
+             status["reads_require_token"], ",".join(status["allowed_origins"]))
     configure(results_path, pipeline)
     if events:
         start_event_stream()
@@ -575,7 +599,9 @@ def main() -> None:
     import argparse
 
     ap = argparse.ArgumentParser(description="Adaptive honeypot gateway API")
-    ap.add_argument("--host", default="0.0.0.0")
+    # Loopback by default -- see the note in run_pipeline.py. serve() refuses a
+    # reachable address with no GATEWAY_API_TOKEN set.
+    ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=5000)
     ap.add_argument("--results", default=str(DEFAULT_RESULTS_PATH))
     ap.add_argument("--no-events", action="store_true",

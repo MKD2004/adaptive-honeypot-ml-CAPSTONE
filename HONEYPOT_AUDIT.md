@@ -537,7 +537,35 @@ sessions` diluting a score to 0.136.
 Note also that the gateway's only identity check is the source address. SSH needs a full TCP
 handshake so blind spoofing fails, but ARP-spoofing onto a whitelisted LAN address would work.
 
-**Three fixes, in priority order:**
+**Three fixes, in priority order** — #1 and #2 are now DONE (2026-11-04), #3 is open:
+
+1. ✅ **DONE.** `traffic_gateway/api_auth.py`: a bearer token on all four
+   state-changing endpoints, CORS narrowed from every origin to
+   `GATEWAY_API_ORIGINS`, and — the part that actually protects anyone — a
+   start-up guard that **refuses to bind a reachable address with no token**,
+   because the realistic mistake is deploying to a VPS having never set one. The
+   API host also now defaults to `127.0.0.1` rather than `0.0.0.0`: the React
+   dashboard calls `127.0.0.1:5000` and two-laptop peers connect to the gateway
+   on 8080, so the API never needed to be network-reachable at all.
+
+   `run_pipeline.py` calls `app.run()` directly and so bypassed `serve()`'s
+   guard; it now calls the guard itself, before the ~90 s of model loading rather
+   than after. Refusal takes 0.4 s.
+
+   Leaving `GATEWAY_API_TOKEN` unset on loopback keeps today's behaviour exactly,
+   so the demo is unaffected. 37 tests in `tests/test_api_auth.py`.
+
+   Still no TLS: a bearer token over plain HTTP is readable in transit, so on a
+   public host this belongs behind an SSH tunnel or a TLS proxy. The guard stops
+   the no-token mistake, not every transport mistake.
+
+2. ✅ **DONE.** MT3 can now override the whitelist — see the status note at the
+   top of this finding.
+
+3. ⬜ **OPEN. Make the heuristic use a recent-window maximum, not a lifetime
+   average**, so one serious session cannot be diluted away by history.
+
+**The original text of the three fixes follows.**
 
 1. **Get the dashboard authentication committed before anything faces the internet.** Her
    uncommitted work already does this; right now `api.py` on `main` has open CORS and no login on

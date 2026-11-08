@@ -119,6 +119,39 @@ def cowrie_source(log_dir: Path = None) -> LogSource:  # type: ignore[assignment
     )
 
 
+DEFAULT_HERALDING_LOG_DIR = REPO_ROOT / "deploy" / "heralding" / "logs"
+
+
+def heralding_source(log_dir: Path = None,                 # type: ignore[assignment]
+                     *, credentials_as_payload: bool = True) -> LogSource:
+    """Heralding, the auth-portal honeypot. MULTI_HONEYPOT.md Phase 2.
+
+    Unlike Cowrie, one log line is a whole session (`log_session.json` is
+    jsonlines with `session_ended` on the final record), so `is_closed` asks
+    "is this record final" and `build` takes the last element.
+
+    Group D note: Phase 1b decided to ZERO-FILL the semantic block for every
+    non-SSH protocol -- the shell-fitted PCA keeps only 71.4% of credential-text
+    variance. That is not enforced here; `feature_bridge` still applies the
+    global `SemanticEncoder`. Wiring the per-protocol zero-fill is the remaining
+    Phase 2 code task, and until it lands a Heralding session's Group D is
+    off-domain rather than zero-filled. See DECISIONS.md 2026-11-04.
+    """
+    ensure_paths()
+    from src.parsers import heralding_parser as hp  # type: ignore
+    import functools
+
+    return LogSource(
+        name="heralding",
+        log_dir=Path(DEFAULT_HERALDING_LOG_DIR if log_dir is None else log_dir),
+        glob=hp.HERALDING_SESSION_GLOB,
+        session_key="session_id",
+        is_closed=hp.is_session_final,
+        build=functools.partial(hp.build_record,
+                                credentials_as_payload=credentials_as_payload),
+    )
+
+
 class PostSessionPipeline:
     """Cowrie log -> features -> MT3 -> honeypot config -> pipeline_results.jsonl."""
 

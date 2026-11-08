@@ -5,6 +5,74 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-04 — Phase 2 STOP: MT3 cannot classify Heralding sessions, and auto-blacklist must be gated
+
+**Finding, and it blocks the rest of Phase 2.** The Heralding parser works and
+emits contract-clean records that route correctly. But pushing those records
+through the real feature extraction and the trained MT3 gives **zero agreement
+with the rule labeller on 6 of 6 scenarios**, with high confidence on nonsense:
+
+```
+scenario            rule label            MT3 (Group D live)      conf  phase
+http brute force    ACCESS_BRUTE_HTTP     RECON_OS_DETECT        0.567      0
+factory defaults    ACCESS_DEFAULT_CRED   EXEC_WGET_EXEC         0.985      2
+cred stuffing       ACCESS_CRED_STUFF     EVASION_HIST_ERASE     0.491      6
+user enum           RECON_USER_ENUM       PERSIST_BACKDOOR_ADD   0.742      5
+bare connect        RECON_IP_SCAN         ACCESS_BRUTE_SSH       0.888      1
+ftp brute force     ACCESS_BRUTE_HTTP     EXEC_SHELL_OPEN        0.834      2
+```
+
+**Group D is not the cause.** Applying Phase 1b's zero-fill decision does not
+rescue it -- still 0/5, and one case gets *worse*:
+
+```
+scenario      rule label            Group D LIVE               Group D ZERO-FILLED
+http brute    ACCESS_BRUTE_HTTP     EVASION_HIST_ERASE 0.915   DISC_NETSTAT_SCAN 1.000
+defaults      ACCESS_DEFAULT_CRED   EXEC_WGET_EXEC 0.985       EXEC_WGET_EXEC 0.459
+stuffing      ACCESS_CRED_STUFF     EVASION_HIST_ERASE 0.491   EXEC_WGET_EXEC 0.559
+user enum     RECON_USER_ENUM       PERSIST_BACKDOOR_ADD 0.742 EXEC_WGET_EXEC 0.580
+bare          RECON_IP_SCAN         ACCESS_BRUTE_SSH 0.888     DISC_NETSTAT_SCAN 1.000
+```
+
+**Why.** A Heralding session has no shell, no bytes counted, no packet sizes, no
+TCP flags and no TLS -- Heralding simply does not report them. So Groups B, C, E
+and F are mostly *defaults*, Group D is either off-domain or constant, and MT3 is
+extrapolating into a region of feature space it never saw in training. The 1b
+finding that "98 of 128 features transfer cleanly" was about the *schema*
+supporting HTTP. It is not a claim that a Heralding-shaped vector is
+in-distribution, and this measurement shows it is not.
+
+**The safety consequence, which is worse than the accuracy one.**
+`CONFIG.MT3_AUTO_BLACKLIST` fires at phase >= 1 and confidence >= 0.5. A **bare
+connect with no authentication attempt at all** is predicted `DISC_NETSTAT_SCAN`
+at confidence **1.000** (phase 3). Deploying Heralding behind the current
+pipeline would auto-blacklist users who merely opened a TCP connection, on a
+confident wrong answer, and would escalate the honeypot off the same verdict.
+
+**Decisions taken:**
+
+1. **Do not run MT3 on non-SSH sessions until it is retrained for them.** The
+   rule labeller carries Heralding for now. This is a per-protocol gate, not a
+   confidence threshold -- the verdicts are confidently wrong, so a threshold
+   does not help.
+2. **`MT3_AUTO_BLACKLIST` must be gated by protocol too**, for the same reason.
+   An ungated deployment is a false-positive generator.
+3. **Phase 2 deployment is paused** pending (1) and (2). The parser, labeller,
+   `heralding_source()` and tests are committed and useful; standing Heralding up
+   in front of this pipeline is not safe yet.
+
+**What would unblock it:** generating Heralding-shaped training rows (the
+honeyfs/kill-chain simulator already produces synthetic sessions, so this is
+tractable) and retraining MT3, then re-running the six scenarios above as the
+acceptance test. That is M2-scale work and belongs on the roadmap, not inside
+Phase 2.
+
+**Do not quote MT3 numbers for any non-SSH protocol** until this is fixed. The
+45-class macro-F1 figures are Cowrie- and netflow-derived and say nothing about
+Heralding.
+
+---
+
 ## 2026-11-04 — Phase 1b: ZERO-FILL Group D for non-SSH sessions, do not feed it off-domain text
 
 **The question.** `semantic_pca.pkl` (Group D, features 76-105) was fitted on

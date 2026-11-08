@@ -1071,6 +1071,142 @@ implying 128 live features on every protocol.
 ---
 ---
 
+---
+---
+
+# PART 7 — Phase 2a: the Heralding parser works, MT3 does not (2026-11-04)
+
+Phase 2 was going to be "deploy Heralding, let MT3 classify it". The parser half
+is done and clean. The classification half **fails**, and the failure mode is
+unsafe rather than merely inaccurate. Read this before standing Heralding up.
+
+## Two prerequisites were missing, so deployment never started
+
+- **Docker Desktop was down** (`npipe:////./pipe/dockerDesktopLinuxEngine` and
+  the `default` context both refused), so Heralding was never run and the
+  fixtures below are schema-faithful but **unverified against real output**.
+- **`deploy/sandbox/` does not exist on `main`** -- it is 18 files on the
+  unmerged `feature/mitigation-layer` branch. The compose entry and
+  `verify_sandbox.sh` extension have nowhere to go until that branch lands.
+
+## What was built
+
+| File | Contents |
+|---|---|
+| `honeypot_dataset/src/parsers/heralding_parser.py` | **new** -- `log_session.json` -> session contract, rule-based labeller, UTC-correct timestamps |
+| `traffic_gateway/post_session_pipeline.py` | `heralding_source()` factory beside `cowrie_source()` |
+| `traffic_gateway/tests/test_heralding_parser.py` | **new** -- 36 tests across timezone, contract, labelling, taxonomy gap, payload choice, routing, wiring |
+
+Schema taken from Heralding's own source (`heralding/misc/session.py`,
+`Session.get_session_info`), not the README:
+
+```python
+{'timestamp','duration','session_id','source_ip','source_port',
+ 'destination_ip','destination_port','protocol','num_auth_attempts',
+ 'auth_attempts':[{'timestamp','username','password'}],
+ 'session_ended','auxiliary_data'}
+```
+
+Three structural differences from Cowrie, all handled:
+
+1. **One line is a whole session.** `log_session.json` is jsonlines with a final
+   record flagged `session_ended`, so `is_closed` asks "is this final" and
+   `build` takes the last element. The Phase 1 `LogSource` abstraction absorbed
+   this without change.
+2. **Naive UTC timestamps.** Heralding writes
+   `datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')`. `fromisoformat` accepts
+   that and reads it as LOCAL time -- measured 19,800 s (5.5 h) off on this box.
+   Reusing `cowrie_parser.to_ts()` would have shifted every session and broken
+   `peer_attribution.resolve_peer_ip()`, which matches the gateway log by connect
+   time. Hence a dedicated `_utc_ts()`.
+3. **No commands, only credentials.** `n_commands` is always 0;
+   `credentials_as_payload` (default True) puts `"user:pass ; user:pass"` into
+   `command_text` so Group C sees the real attack content.
+
+## Parser verification -- all clean
+
+```
+scenario                    protocol  port logins  micro_state           contract
+bare connect, no auth       http        80      0  RECON_IP_SCAN         OK
+user enum (no passwords)    http        80      3  RECON_USER_ENUM       OK
+credential stuffing         http        80      4  ACCESS_CRED_STUFF     OK
+factory defaults            http        80      1  ACCESS_DEFAULT_CRED   OK
+http brute force            http        80      3  ACCESS_BRUTE_HTTP     OK
+ssh brute force             ssh         22      2  ACCESS_BRUTE_SSH      OK
+ftp brute force             ftp         21      1  ACCESS_BRUTE_HTTP     OK
+mysql (taxonomy gap)        mysql     3306      1  ACCESS_BRUTE_HTTP     OK + loud warning
+```
+
+Timezone confirmed: log says `2026-11-04 10:00:00` naive UTC, parser yields
+`2026-11-04 10:00:00` UTC. Routing confirmed: http/80 and https/443 ->
+`WEB_HONEYPOT`, ssh/22 -> `SSH_HONEYPOT`, override to mysql/3306 -> `DB_HONEYPOT`.
+
+Tests: **36 new, 110 passed** across the suite (the one failure is still the
+pre-existing `test_honeypot_round_robin`).
+
+## MT3 verification -- 0 of 6, confidently wrong
+
+Synthetic Heralding records through the real `extract_features()` + the trained
+`best.pt`:
+
+```
+scenario            rule label            MT3 prediction          conf  phase
+http brute force    ACCESS_BRUTE_HTTP     RECON_OS_DETECT        0.567      0
+factory defaults    ACCESS_DEFAULT_CRED   EXEC_WGET_EXEC         0.985      2
+cred stuffing       ACCESS_CRED_STUFF     EVASION_HIST_ERASE     0.491      6
+user enum           RECON_USER_ENUM       PERSIST_BACKDOOR_ADD   0.742      5
+bare connect        RECON_IP_SCAN         ACCESS_BRUTE_SSH       0.888      1
+ftp brute force     ACCESS_BRUTE_HTTP     EXEC_SHELL_OPEN        0.834      2
+```
+
+**Phase 1b's zero-fill does not rescue it** -- still 0/5, one case worse:
+
+```
+scenario      rule label            Group D LIVE               Group D ZERO-FILLED
+http brute    ACCESS_BRUTE_HTTP     EVASION_HIST_ERASE 0.915   DISC_NETSTAT_SCAN 1.000
+defaults      ACCESS_DEFAULT_CRED   EXEC_WGET_EXEC 0.985       EXEC_WGET_EXEC 0.459
+stuffing      ACCESS_CRED_STUFF     EVASION_HIST_ERASE 0.491   EXEC_WGET_EXEC 0.559
+user enum     RECON_USER_ENUM       PERSIST_BACKDOOR_ADD 0.742 EXEC_WGET_EXEC 0.580
+bare          RECON_IP_SCAN         ACCESS_BRUTE_SSH 0.888     DISC_NETSTAT_SCAN 1.000
+```
+
+**Diagnosis.** Heralding reports no bytes, no packet sizes, no TCP flags, no TLS
+and no commands, so Groups B, C, E and F are largely *defaults* and Group D is
+off-domain or constant. MT3 is extrapolating into feature space it never saw.
+The earlier "98 of 128 features transfer cleanly" claim was about the *schema*
+accommodating HTTP; it was never evidence that a Heralding-shaped vector is
+in-distribution, and it is not.
+
+## The safety finding
+
+`MT3_AUTO_BLACKLIST` fires at phase >= 1 and confidence >= 0.5. A **bare connect
+with no authentication attempt** is predicted `DISC_NETSTAT_SCAN` at confidence
+**1.000** (phase 3). Deployed as-is, Heralding behind this pipeline would
+auto-blacklist users for opening a TCP connection, and escalate the honeypot off
+the same verdict. **This is the reason Phase 2 deployment is paused**, not the
+accuracy numbers.
+
+## Consequent decisions (DECISIONS.md, 2026-11-04)
+
+1. Do not run MT3 on non-SSH sessions until retrained for them -- a per-protocol
+   gate, not a confidence threshold, because the verdicts are confidently wrong.
+2. Gate `MT3_AUTO_BLACKLIST` by protocol for the same reason.
+3. Phase 2 deployment paused. Parser, labeller, factory and tests stand.
+
+**Do not quote MT3 numbers for any non-SSH protocol.** The published macro-F1
+figures are Cowrie- and netflow-derived.
+
+## Secondary gap found
+
+`feature_bridge._PORT_TO_HONEYPOT` has no entry for FTP (21), Telnet (23), POP3,
+IMAP, SMTP or VNC, and `_PROTO_TO_HONEYPOT` has no `ftp`/`telnet`, so those
+sessions fall through to the `SSH_HONEYPOT` default -- visible above, where
+`ftp brute force` routed to `SSH_HONEYPOT`. Harmless while only HTTP is enabled;
+needs entries before Heralding's other listeners are turned on.
+
+---
+---
+
 ## Colophon
 
 2026-11-02 · ASUS TUF laptop, Windows 11 · repo back on `main` @ `ae1761b`

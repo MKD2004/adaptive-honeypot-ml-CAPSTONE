@@ -1,6 +1,7 @@
 # MULTI_HONEYPOT — adding auth-portal, web-app and database honeypots
 
-Last updated: 2026-11-04 — **Phase 1 and Phase 1b are DONE** (`7cf0030`, `79186b0`).
+Last updated: 2026-11-04 — **Phase 1 and 1b DONE; Phase 2 parser done, deployment
+PAUSED on a safety finding** (see Phase 2 below and `HONEYPOT_AUDIT.md` PART 7).
 Blockers 3.1-3.3 resolved; the Group D question in §7.2 is decided (zero-fill).
 Next actionable work is Phase 2 (Heralding). Verification output lives in
 `HONEYPOT_AUDIT.md` PARTS 5-6; the reasoning in `DECISIONS.md` 2026-11-04.
@@ -323,24 +324,52 @@ is real.
       Cost: Group D becomes constant per protocol, so non-SSH is classified by
       **98 of 128 features**. See DECISIONS.md 2026-11-04.
 
-### Phase 2 — Heralding (auth portal)
+### Phase 2 — Heralding (auth portal) — ⚠️ PARSER DONE, DEPLOYMENT PAUSED
+
+**Status 2026-11-04.** The parser, labeller, `heralding_source()` factory and 36
+tests are done and committed. **Deployment is paused on a safety finding:** MT3
+agrees with the rule labeller on **0 of 6** Heralding scenarios and is
+*confidently* wrong — a bare connect with no auth attempt is predicted
+`DISC_NETSTAT_SCAN` at confidence **1.000**. Since `MT3_AUTO_BLACKLIST` fires at
+phase ≥ 1 / confidence ≥ 0.5, deploying as-is would blacklist users for opening a
+TCP connection. Phase 1b's zero-fill does not rescue it.
+
+Cause: Heralding reports no bytes, packets, TCP flags, TLS or commands, so most
+of the 128 features are defaults and MT3 is extrapolating into unseen feature
+space. The "98 of 128 features transfer cleanly" line in §2 was about the
+*schema* accommodating HTTP — it was never evidence that a Heralding-shaped
+vector is in-distribution.
+
+**Before deploying:** gate MT3 and `MT3_AUTO_BLACKLIST` by protocol, then either
+retrain MT3 on Heralding-shaped rows (M2 scale) or run Heralding for collection
+with rule labels only. Full numbers in `HONEYPOT_AUDIT.md` PART 7; decisions in
+`DECISIONS.md` 2026-11-04.
+
 Start here, not with web. Lowest risk, cleanest taxonomy fit, fastest proof the
 pipeline is genuinely multi-protocol.
 
-- [ ] Add to `deploy/sandbox/docker-compose.yml` on `honeypot_net`, same
-      `cap_drop` / `no-new-privileges` / `pids_limit` / `mem_limit` posture as Cowrie
+- [ ] **BLOCKED** — `deploy/` does not exist on `main`; it is 18 files on the
+      unmerged `feature/mitigation-layer` branch. Merge that first.
 - [ ] **Enable HTTP / HTTPS / FTP / Telnet auth only. Leave Heralding's MySQL and
       Postgres listeners OFF.** Heralding ships them, and switching them on walks
       straight into the missing-SQLi-class problem (§7.1) in *this* phase — which is
       exactly what deferring Dionaea was meant to avoid. Turn them on only after the
       §7.1 decision is made.
-- [ ] `heralding_parser.py` -> the Phase 1 contract, `protocol`/`dst_port` set
-      correctly, Group D handled per the Phase 1b decision
-- [ ] **A rule-based `micro_state` labeller in the parser**, as `build_record` has.
-      Without it there is nothing to compare MT3 against on unlabelled real
-      traffic — see §7.6, and decide the labelling plan *before* collecting.
-- [ ] Confirm MT3 lands sessions on ids 5, 7, 8, 9, 11 rather than collapsing to SSH classes
-- [ ] `verify_sandbox.sh` extended to cover the new port and container
+- [x] **Done** — `src/parsers/heralding_parser.py`. Schema taken from Heralding's
+      own `Session.get_session_info`, not the README. Note its timestamps are
+      naive UTC: `fromisoformat` would read them as local time and shift every
+      session 5.5 h here, breaking peer attribution, so it has its own `_utc_ts`.
+      Group D zero-fill is DECIDED but **not yet wired** (still the global flag).
+- [x] **Done** — `label_session()`: no-auth → `RECON_IP_SCAN`, usernames without
+      passwords → `RECON_USER_ENUM`, many users/few passwords → `ACCESS_CRED_STUFF`,
+      factory pairs → `ACCESS_DEFAULT_CRED`, else per-protocol brute force. It is a
+      heuristic: agreement with it is **not** accuracy (§7.6). It is currently the
+      only usable label source for Heralding, since MT3 is not.
+- [x] **Tested and it FAILED — 0 of 6.** Predictions were `RECON_OS_DETECT`,
+      `EXEC_WGET_EXEC` (0.985), `EVASION_HIST_ERASE`, `PERSIST_BACKDOOR_ADD`,
+      `ACCESS_BRUTE_SSH`, `EXEC_SHELL_OPEN` — none of 5/7/8/9/11. This is the
+      finding that paused deployment.
+- [ ] **BLOCKED** — same branch problem as the compose entry.
 
 ### Phase 3 — Dionaea (database)
 - [ ] **Resolve the taxonomy gap first (§7.1) — this is a decision, not a task**

@@ -72,6 +72,22 @@ def _int(env: Mapping[str, str], name: str, default: int, lo: int, hi: int) -> i
     return value
 
 
+def _float(env: Mapping[str, str], name: str, default: float,
+           lo: float, hi: float) -> float:
+    raw = _raw(env, name)
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError(f"{name}={raw!r}: expected a number") from None
+    if value != value:                      # NaN
+        raise ValueError(f"{name}={raw!r}: must be a number, not NaN")
+    if not lo <= value <= hi:
+        raise ValueError(f"{name}={value}: must be between {lo} and {hi}")
+    return value
+
+
 def _mode(env: Mapping[str, str], name: str, default: Mode) -> Mode:
     raw = _raw(env, name).lower()
     if not raw:
@@ -121,6 +137,12 @@ def load_config(env: Optional[Mapping[str, str]] = None) -> MitigationConfig:
     env = os.environ if env is None else env
     defaults = PolicyConfig()
     policy = PolicyConfig(
+        whitelist_override_min_phase=_int(
+            env, "MITIGATION_WHITELIST_OVERRIDE_MIN_PHASE",
+            defaults.whitelist_override_min_phase, 0, 8),
+        whitelist_override_min_confidence=_float(
+            env, "MITIGATION_WHITELIST_OVERRIDE_MIN_CONF",
+            defaults.whitelist_override_min_confidence, 0.0, 1.0),
         alert_min_phase=_int(env, "MITIGATION_ALERT_MIN_PHASE", defaults.alert_min_phase, 0, 8),
         deny_min_phase=_int(env, "MITIGATION_DENY_MIN_PHASE", defaults.deny_min_phase, 0, 8),
         deny_repeat_sessions=_int(env, "MITIGATION_DENY_REPEAT_SESSIONS",

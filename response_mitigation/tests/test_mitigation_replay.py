@@ -67,10 +67,24 @@ class TestWhatTheReplayDoes(unittest.TestCase):
         self.assertNotIn("deny", report["sources_acted_on"])
         self.assertTrue(any("never-block" in r["why"] for r in report["skipped_because"]))
 
-    def test_a_trusted_source_is_not_acted_on(self):
-        report = replay([row(BENIGN, 3)], whitelist=[BENIGN])
+    def test_a_trusted_source_is_not_acted_on_for_a_weak_verdict(self):
+        """Changed 2026-11-04 with the whitelist-override fix.
+
+        This used to pass a phase-3 verdict and assert the whitelist protected it.
+        A phase-3 verdict is now strong enough to override trust for DIVERT (the
+        PART 3 bypass fix), so the weak case is tested with the override floors
+        raised out of reach, and the strong case gets its own test below.
+        """
+        report = replay([row(BENIGN, 3)], whitelist=[BENIGN],
+                        env={"MITIGATION_WHITELIST_OVERRIDE_MIN_PHASE": "8",
+                             "MITIGATION_WHITELIST_OVERRIDE_MIN_CONF": "1.0"})
         self.assertEqual(report["sources_acted_on"], {})
         self.assertTrue(any(r["why"] == "whitelisted" for r in report["skipped_because"]))
+
+    def test_a_strong_verdict_overrides_trust_in_the_replay_too(self):
+        report = replay([row(BENIGN, 3)], whitelist=[BENIGN])
+        self.assertIn("divert", report["sources_acted_on"],
+                      "a strong verdict must override a whitelist for DIVERT")
 
     def test_policy_settings_can_be_changed(self):
         rows = attacker_sessions(ATTACKER, count=2)

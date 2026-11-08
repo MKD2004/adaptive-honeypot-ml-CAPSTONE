@@ -62,20 +62,28 @@ class EngineCase(unittest.TestCase):
         self.divert, self.alert, self.deny = FakeExecutor(), FakeExecutor(), FakeExecutor()
 
     def make(self, mode="observe", firewall="0", cap="50", whitelisted=(),
-             divert_enabled=True, executors=None, audit=None):
+             divert_enabled=True, executors=None, audit=None, env=None):
         cfg = load_config({
             "MITIGATION_MODE": mode,
             "MITIGATION_FIREWALL": firewall,
             "MITIGATION_MAX_NEW_BLOCKS_PER_HOUR": cap,
             "MITIGATION_KILL_FILE": str(self.kill_file),
             "MITIGATION_AUDIT_PATH": str(self.audit_path),
+            **(env or {}),          # per-test overrides, e.g. the whitelist-override floors
         })
         self.audit = audit or AuditLog(self.audit_path)
         if executors is None:
             executors = {Action.DIVERT: self.divert, Action.ALERT: self.alert,
                          Action.DENY: self.deny}
         return MitigationEngine(
-            cfg, safelist=Safelist(is_whitelisted=lambda ip: ip in whitelisted),
+            cfg, safelist=Safelist(
+                is_whitelisted=lambda ip: ip in whitelisted,
+                # Mirror build_engine: the whitelist-override floors come from the
+                # policy. Omitting them here silently pinned the Safelist to its
+                # own defaults and made MITIGATION_WHITELIST_OVERRIDE_* inert in
+                # these tests.
+                override_min_phase=cfg.policy.whitelist_override_min_phase,
+                override_min_confidence=cfg.policy.whitelist_override_min_confidence),
             audit=self.audit, executors=executors, divert_enabled=divert_enabled,
             clock=lambda: self.now)
 
@@ -184,12 +192,40 @@ class TestSafety(EngineCase):
         self.assertEqual(result[Action.DIVERT].outcome, Outcome.APPLIED)
         self.assertEqual(result[Action.DENY].outcome, Outcome.APPLIED)
 
-    def test_whitelisted_address_is_left_alone(self):
-        engine = self.make(mode="enforce", firewall="1", whitelisted={PUBLIC_IP})
+    def test_whitelisted_address_is_left_alone_on_a_weak_verdict(self):
+        """A whitelist still protects when the evidence is ordinary.
+
+        Changed 2026-11-04: this used to assert the whitelist protects against
+        EVERY verdict, at any phase and confidence. That was the bypass
+        HONEYPOT_AUDIT.md PART 3 called the most serious finding in the project --
+        an attacker who earned a whitelist (about 70 minutes of good behaviour
+        through the promoter) became immune to the detection half of the system.
+        Now a strong verdict can override it for DIVERT; see the next test.
+        """
+        engine = self.make(mode="enforce", firewall="1", whitelisted={PUBLIC_IP},
+                           env={"MITIGATION_WHITELIST_OVERRIDE_MIN_PHASE": "8",
+                                "MITIGATION_WHITELIST_OVERRIDE_MIN_CONF": "1.0"})
         result = by_action(self.sessions(engine))
         self.assertEqual(result[Action.DIVERT].detail, "whitelisted")
         self.assertEqual(result[Action.DENY].detail, "whitelisted")
         self.assertEqual(self.divert.applied + self.deny.applied, [])
+
+    def test_a_strong_verdict_overrides_a_whitelist_for_divert_but_never_for_deny(self):
+        """The fix for the PART 3 whitelist bypass.
+
+        DIVERT only re-routes to the honeypot and is reversible, so a confident
+        high-phase verdict may override explicit trust. DENY is a firewall drop
+        that can cut off admin access, so a whitelist always wins there -- that
+        asymmetry is the whole point, and it is why this is one test.
+        """
+        engine = self.make(mode="enforce", firewall="1", whitelisted={PUBLIC_IP})
+        result = by_action(self.sessions(engine))
+        self.assertEqual(result[Action.DIVERT].outcome, Outcome.APPLIED,
+                         "a strong verdict must be able to divert a trusted address")
+        self.assertEqual(result[Action.DENY].detail, "whitelisted",
+                         "a whitelist must NEVER be overridden for a firewall drop")
+        self.assertEqual(self.deny.applied, [])
+        self.assertNotEqual(self.divert.applied, [])
 
     def test_already_blacklisted_is_a_skip(self):
         self.divert = FakeExecutor(skip="already blacklisted")

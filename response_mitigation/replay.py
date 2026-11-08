@@ -133,7 +133,9 @@ def replay(records: Iterable[Dict[str, Any]], *, mode: str = "observe", firewall
         gateway = _Gateway(whitelist)
         blocklist = BlocklistFile(cfg.blocklist_path, clock=lambda: now[0])
         engine = MitigationEngine(
-            cfg, safelist=Safelist(never_block=cfg.never_block, is_whitelisted=gateway.is_whitelisted),
+            cfg, safelist=Safelist(never_block=cfg.never_block, is_whitelisted=gateway.is_whitelisted,
+                                   override_min_phase=cfg.policy.whitelist_override_min_phase,
+                                   override_min_confidence=cfg.policy.whitelist_override_min_confidence),
             audit=AuditLog(cfg.audit_path),
             executors={Action.DIVERT: GatewayExecutor(gateway), Action.ALERT: LogAlertExecutor(),
                        Action.DENY: FirewallExecutor(blocklist, default_ttl_s=cfg.policy.deny_ttl_s)},

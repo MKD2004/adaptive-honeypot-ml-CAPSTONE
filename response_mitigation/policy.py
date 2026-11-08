@@ -34,6 +34,13 @@ class PolicyConfig:
     # defaults, so DIVERT behaves exactly as the inline blacklist does today.
     min_confidence: float = 0.5
     divert_min_phase: int = 1
+    # How strong a verdict must be before DIVERT may override an explicit
+    # whitelist. Stricter than the two above on purpose: overriding a human trust
+    # decision should need more evidence than blocking a stranger. DENY never
+    # overrides a whitelist at all. See response_mitigation/safelist.py and
+    # HONEYPOT_AUDIT.md PART 3 (the whitelist bypass).
+    whitelist_override_min_phase: int = 2
+    whitelist_override_min_confidence: float = 0.90
     # The rest are proposals that need a team decision (design doc, section 15).
     alert_min_phase: int = 7
     deny_min_phase: int = 4
@@ -43,7 +50,20 @@ class PolicyConfig:
     def __post_init__(self) -> None:
         if not 0.0 <= self.min_confidence <= 1.0:
             raise ValueError(f"min_confidence={self.min_confidence}: must be between 0 and 1")
-        for name in ("divert_min_phase", "alert_min_phase", "deny_min_phase"):
+        if not 0.0 <= self.whitelist_override_min_confidence <= 1.0:
+            raise ValueError(
+                f"whitelist_override_min_confidence="
+                f"{self.whitelist_override_min_confidence}: must be between 0 and 1")
+        # Invariant: overriding an explicit trust decision must never be EASIER
+        # than blocking a stranger. Clamped rather than raised, so raising
+        # divert_min_phase above the override default stays a valid config instead
+        # of an error -- an explicitly stricter override is still honoured.
+        object.__setattr__(self, "whitelist_override_min_phase",
+                           max(self.whitelist_override_min_phase, self.divert_min_phase))
+        object.__setattr__(self, "whitelist_override_min_confidence",
+                           max(self.whitelist_override_min_confidence, self.min_confidence))
+        for name in ("divert_min_phase", "alert_min_phase", "deny_min_phase",
+                     "whitelist_override_min_phase"):
             value = getattr(self, name)
             if not 0 <= value <= _MAX_PHASE:
                 raise ValueError(f"{name}={value}: must be between 0 and {_MAX_PHASE}")

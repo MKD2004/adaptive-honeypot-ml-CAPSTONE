@@ -467,7 +467,44 @@ so `traffic_classifier`'s verdict is telemetry only (`gateway_score` / `gateway_
 
 ## Improvements
 
-### The most serious finding — the whitelist bypass
+### The most serious finding — the whitelist bypass — ✅ PARTLY FIXED 2026-11-04
+
+**Status.** Fix #2 below (let MT3 override the whitelist) is implemented and
+tested. Fixes #1 (dashboard authentication) and #3 (recent-window maximum rather
+than a lifetime average) are **still open**, and #1 is still the one that matters
+most before anything faces a network.
+
+What changed: `safelist.skip_reason()` now receives the verdict's phase and
+confidence, so it can weigh evidence instead of short-circuiting on
+`is_whitelisted`. A DIVERT may override a whitelist above
+`whitelist_override_min_phase` (2) and `whitelist_override_min_confidence`
+(0.90) — stricter than the ordinary blacklist floors (1 / 0.50), because
+overriding explicit trust should need more evidence than blocking a stranger.
+A DENY never overrides a whitelist, because a firewall drop of a trusted address
+can lock you out.
+
+Measured after the change:
+
+```
+                                                DIVERT                 DENY
+untrusted IP, strong verdict (ph6/0.98)         applied                applied (nft rule)
+WHITELISTED, strong verdict  (ph6/0.98)         applied   <-- fixed    skipped: whitelisted
+WHITELISTED, phase ok low conf (ph6/0.60)       skipped: whitelisted
+WHITELISTED, conf ok low phase (ph1/0.98)       skipped: whitelisted
+WHITELISTED, weak verdict    (ph1/0.60)         skipped: whitelisted
+```
+
+`never_block` and `own_addresses` stay DENY-only, as originally designed
+("must never be DENIED") and as `test_never_block_list_does_not_stop_a_divert`
+asserts. An earlier draft extended them to DIVERT; that was scope creep past what
+this finding recommended and was reverted. **Residual question for the team, not
+settled here:** an admin address is usually whitelisted too, so a strong verdict
+can now divert it to the decoy. If that is unacceptable, extend `never_block` to
+DIVERT deliberately and update that test.
+
+The original finding follows, unchanged, for the record.
+
+#### Original finding
 
 This outranks everything else on the list, including the A/B tension. It is a chain, and every link
 is confirmed in code:

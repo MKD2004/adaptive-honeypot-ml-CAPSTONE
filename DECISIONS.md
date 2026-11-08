@@ -5,6 +5,52 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-04 — Whitelist bypass: DIVERT may override trust, DENY never may
+
+HONEYPOT_AUDIT.md PART 3 rated this the most serious finding in the project.
+`safelist.skip_reason(ip, action)` did not receive the verdict at all, so it
+could not weigh evidence: `is_whitelisted` short-circuited everything and every
+MT3 verdict on a whitelisted address came back "skipped: whitelisted" at any
+phase and any confidence. An attacker who earned a whitelist -- roughly 70 minutes
+of good behaviour through the promoter -- became immune to the detection half of
+the system, and the longer they behaved the safer they got.
+
+**Fix.** The verdict is threaded into `skip_reason`. DIVERT may override a
+whitelist above `whitelist_override_min_phase` (2) and
+`whitelist_override_min_confidence` (0.90). DENY never may.
+
+**Why that asymmetry.** DIVERT re-routes to the honeypot and is reversible; the
+attacker just stops seeing the real service. DENY is a firewall drop that can cut
+off admin access. Automating the first is worth it; automating the second is not.
+
+**Why stricter floors than the ordinary blacklist (1 / 0.50).** Overriding an
+explicit human trust decision should need more evidence than blocking a stranger.
+The invariant is enforced by clamping in `PolicyConfig.__post_init__`
+(`max(override, divert)`) rather than by raising, so raising `divert_min_phase`
+above the override default stays a valid config instead of an error.
+
+**Scope creep caught and reverted.** A first draft also extended `never_block`
+and `own_addresses` to DIVERT. They were designed DENY-only ("must never be
+DENIED") and `test_never_block_list_does_not_stop_a_divert` asserts it, so that
+went beyond what the finding recommended. Reverted. Residual question left for the
+team: an admin address is usually whitelisted, so a strong verdict can divert it.
+
+**Tests.** The parity suite `test_mitigation_same_as_today.py` exists to prove the
+mitigation layer matches the old inline blacklist. Rather than exclude the
+whitelisted combinations, it now ASSERTS the divergence for them and parity
+everywhere else, with `test_override_floors_match_policy` so the constants cannot
+drift from `PolicyConfig`. Also found and fixed: the engine test helper built its
+own `Safelist` without the override floors, which made
+`MITIGATION_WHITELIST_OVERRIDE_*` inert in those tests, and `replay.py` had the
+same gap.
+
+**Still open from that finding:** dashboard authentication (#1 -- `POST`/`DELETE`
+on `/api/blacklist` and `/api/whitelist` have none, and CORS is open) and the
+reputation scorer's lifetime average (#3). #1 is the one that matters before
+anything faces a network.
+
+---
+
 ## 2026-11-04 — Heralding retrain: a SEPARATE model, fine-tuned with replay
 
 Two choices the retrain was blocked on.

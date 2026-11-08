@@ -132,6 +132,9 @@ class MitigationEngine:
                 return refuse("no block list is set up")
             if self._kill_switch_active():
                 return refuse("the kill switch is on; the host script is removing every block")
+            # No verdict here: a person is acting, so there is nothing to weigh.
+            # The whitelist therefore still protects, which is what we want for a
+            # firewall drop.
             why = self._safelist.skip_reason(clean, Action.DENY)
             if why:
                 return refuse(why)
@@ -274,7 +277,12 @@ class MitigationEngine:
         if action is Action.DIVERT and not self._divert_enabled:
             return done(Outcome.SKIPPED, "auto-blacklist is switched off (GATEWAY_MT3_AUTO_BLACKLIST=0)")
 
-        why = self._safelist.skip_reason(verdict.ip, action)
+        # The verdict goes in so a strong one can override a whitelist for
+        # DIVERT. Without it the safelist cannot weigh evidence, which is the
+        # bypass HONEYPOT_AUDIT.md PART 3 describes.
+        why = self._safelist.skip_reason(verdict.ip, action,
+                                         phase=verdict.phase,
+                                         confidence=verdict.confidence)
         if why:
             return done(Outcome.SKIPPED, why)
 
@@ -361,7 +369,9 @@ def build_engine(*,
         executors[Action.DIVERT] = GatewayExecutor(blacklist_manager)
     return MitigationEngine(
         cfg,
-        safelist=Safelist(never_block=cfg.never_block,
+        safelist=Safelist(override_min_phase=cfg.policy.whitelist_override_min_phase,
+                          override_min_confidence=cfg.policy.whitelist_override_min_confidence,
+                          never_block=cfg.never_block,
                           own_addresses=own_addresses,
                           is_whitelisted=blacklist_manager.is_whitelisted if blacklist_manager is not None else None),
         audit=audit if audit is not None else AuditLog(cfg.audit_path),

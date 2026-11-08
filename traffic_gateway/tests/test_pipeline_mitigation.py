@@ -132,12 +132,34 @@ class TestAutoBlacklist(PipelineCase):
         result = self.run_session(self.pipeline(), ip="127.0.0.1")
         self.assertIs(result["auto_blacklisted"], True)
 
-    def test_whitelisted_and_already_blacklisted_are_left_alone(self):
-        for manager in (FakeManager(whitelisted={PUBLIC_IP}), FakeManager(blacklisted={PUBLIC_IP})):
-            with self.subTest(manager=manager._wl or manager._bl):
-                result = self.run_session(self.pipeline(engine=self.engine(manager)))
-                self.assertIs(result["auto_blacklisted"], False)
-                self.assertEqual(manager.calls, [])
+    def test_already_blacklisted_is_left_alone(self):
+        manager = FakeManager(blacklisted={PUBLIC_IP})
+        result = self.run_session(self.pipeline(engine=self.engine(manager)))
+        self.assertIs(result["auto_blacklisted"], False)
+        self.assertEqual(manager.calls, [])
+
+    def test_a_whitelisted_address_is_diverted_on_a_strong_verdict(self):
+        """Changed 2026-11-04 with the whitelist-override fix.
+
+        This used to be bundled with the already-blacklisted case and asserted
+        that a whitelisted address is never touched. That was the PART 3 bypass:
+        an attacker who earned a whitelist became immune to detection. The
+        pipeline fixture's verdict is phase 3 at confidence 0.9, which clears the
+        override floors (phase 2 / 0.90), so DIVERT now applies. DENY still never
+        overrides a whitelist -- covered in test_mitigation_engine.py.
+        """
+        manager = FakeManager(whitelisted={PUBLIC_IP})
+        result = self.run_session(self.pipeline(engine=self.engine(manager)))
+        self.assertIs(result["auto_blacklisted"], True)
+        self.assertNotEqual(manager.calls, [])
+
+    def test_a_whitelisted_address_is_left_alone_on_a_weak_verdict(self):
+        manager = FakeManager(whitelisted={PUBLIC_IP})
+        # phase 1 clears divert_min_phase (1) but not the override floor (2)
+        result = self.run_session(self.pipeline(phase=1, confidence=0.99,
+                                                engine=self.engine(manager)))
+        self.assertIs(result["auto_blacklisted"], False)
+        self.assertEqual(manager.calls, [])
 
     def test_auto_blacklist_switched_off(self):
         engine = self.engine(divert_enabled=False)

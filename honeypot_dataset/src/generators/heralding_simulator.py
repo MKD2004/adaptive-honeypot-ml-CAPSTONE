@@ -59,6 +59,10 @@ _USERNAMES = [
     "alice", "bob", "carol", "dave", "erin", "frank", "grace",
 ]
 
+# Must stay >= heralding_parser._ENUM_MIN_USERS, or a "user_enum" session cannot
+# be labelled as enumeration. Asserted at import time below.
+_ENUM_MIN_DISTINCT = 3
+
 _WEAK_PASSWORDS = [
     "123456", "password", "admin", "12345678", "qwerty", "letmein", "welcome",
     "monkey", "dragon", "football", "iloveyou", "sunshine", "princess",
@@ -94,6 +98,20 @@ SCENARIOS: Dict[str, str] = {
 }
 
 
+def _assert_enum_floor_agrees() -> None:
+    """The generator's minimum distinct usernames must satisfy the labeller's."""
+    import sys
+    root = Path(__file__).resolve().parents[2]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from src.parsers.heralding_parser import _ENUM_MIN_USERS
+    if _ENUM_MIN_DISTINCT < _ENUM_MIN_USERS:
+        raise AssertionError(
+            f"_ENUM_MIN_DISTINCT={_ENUM_MIN_DISTINCT} is below the labeller's "
+            f"_ENUM_MIN_USERS={_ENUM_MIN_USERS}; user_enum sessions would not be "
+            f"labelled as enumeration")
+
+
 def _random_public_ip(rng: random.Random) -> str:
     """An address from the documentation/test ranges, never a routable one."""
     block = rng.choice([
@@ -113,9 +131,15 @@ def _attempts_for(scenario: str, rng: random.Random) -> List[Tuple[str, str]]:
         return []
 
     if scenario == "user_enum":
-        # usernames probed with no password at all
-        n = rng.randint(3, 12)
-        return [(rng.choice(_USERNAMES), "") for _ in range(n)]
+        # DISTINCT usernames probed with no password at all. Sampling with
+        # replacement was a latent bug: drawing the same name repeatedly leaves
+        # one distinct username, which the labeller correctly treats as a
+        # passwordless-default attempt rather than enumeration -- and if that
+        # name is in DEFAULT_CREDENTIALS (e.g. ("root", "")) it comes back
+        # ACCESS_DEFAULT_CRED. Enumeration probes different accounts, by
+        # definition, so sample without replacement.
+        n = rng.randint(_ENUM_MIN_DISTINCT, 12)
+        return [(u, "") for u in rng.sample(_USERNAMES, n)]
 
     if scenario == "cred_stuffing":
         # one (or very few) passwords sprayed across many distinct accounts
@@ -211,6 +235,7 @@ def generate_sessions(n_per_scenario: int = 2000, seed: int = 42,
     has drifted from the labeller would otherwise quietly produce mislabelled
     training rows, which is the worst possible failure here.
     """
+    _assert_enum_floor_agrees()
     rng = random.Random(seed)
     names = list(scenarios) if scenarios else list(SCENARIOS)
 

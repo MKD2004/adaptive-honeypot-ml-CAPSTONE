@@ -5,6 +5,71 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-04 — Heralding retrain: a SEPARATE model, fine-tuned with replay
+
+Two choices the retrain was blocked on.
+
+**1. Separate model, not a replacement.** Output goes to
+`ml_analytics/artifacts/mt3_multi/`; `artifacts/mt3_full_d256/best.pt` is never
+written. Replacing MT3 in place would mean the published comparison table
+
+```
+model          params      val macro-F1   test_real   test_real (clean)
+linear probe    5,805           0.9376       0.7681              0.7551
+CNN-LSTM      189,581           0.9621       0.8093              0.7976
+MT3         3,759,510           0.9599       0.8276              0.8187
+```
+
+no longer describes the deployed model, and strictly the two baselines would
+need re-running on the same augmented splits to stay comparable. A separate
+checkpoint keeps every published number true to the model it was measured on.
+The paper reports both and explains the split. The checkpoint carries a `note`
+field saying exactly this, so it cannot be mistaken for the frozen model later.
+
+**2. Fine-tune with replay, not oversampling or class weighting.**
+
+- 8,400 Heralding rows against 756,000 frozen rows is 1.1% -- naive
+  concatenation and they vanish into the gradient.
+- Oversampling them ~16x would overfit 8,284 distinct vectors. There is no more
+  information in a duplicated row.
+- Class weighting targets the wrong axis. The imbalance is by **source**, not
+  class: `ACCESS_BRUTE_SSH` and `RECON_IP_SCAN` already exist in the Cowrie and
+  netflow data with completely different feature shapes, so up-weighting those
+  classes also up-weights the old-shaped rows.
+- So: start from the trained checkpoint, train on Heralding rows mixed with a
+  **stratified replay sample** of the original data at a controlled ratio, low
+  learning rate, few epochs. Replay is what stops catastrophic forgetting, and
+  the epoch selection scores `min(heralding_val_F1, test_real_F1 / baseline)` so
+  a model that improves on Heralding by forgetting Cowrie cannot win.
+
+**The scaling trap, handled explicitly.** `data/final/*.npy` is ALREADY SCALED;
+`extract_features()` returns RAW. Mixing them untouched would train on two unit
+systems at once. `finetune_heralding._scale_raw()` applies the frozen scaler to
+the Heralding rows only, and never goes near the replay rows. (ERRORS.md top two
+entries; the scaler is a joblib dump and `pickle.load` raises on it.)
+
+**Four acceptance criteria, all required:**
+
+1. Heralding test macro-F1 >= 0.80 on a held-out split (1,800 rows).
+2. The six PART 7 scenarios pass (`acceptance_heralding.py`).
+3. **Original `test_real` macro-F1 must not drop more than 0.01.** This is the
+   forgetting guard and the reason replay exists at all.
+4. No confident nonsense on a bare connect -- inside (2), and the one that
+   actually protects users.
+
+Only if all four pass may `heralding` join `CONFIG.MT3_TRUSTED_SOURCES`, and the
+pipeline must then be pointed at `mt3_multi/best.pt`. Both, or neither.
+
+**Honest limitation, which no amount of training fixes.** The labels come from
+`heralding_parser.label_session()`, our own heuristic. A model trained on them
+learns to agree with our rules, not with ground truth. It is worth having -- it
+generalises to credential-burst variants the rules miss, and it is far faster
+than the rules at scale -- but it is **not independent evidence**, and the paper
+must say so. Real labelled Heralding captures would be the only fix, and that
+needs the VPS.
+
+---
+
 ## 2026-11-04 — IMPLEMENTED: the MT3 trust gate (gated on source, not protocol)
 
 Decisions 1 and 2 from the "Phase 2 STOP" entry below are now code.

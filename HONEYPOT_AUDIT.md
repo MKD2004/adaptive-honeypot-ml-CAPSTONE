@@ -1207,6 +1207,132 @@ needs entries before Heralding's other listeners are turned on.
 ---
 ---
 
+---
+---
+
+# PART 8 — Heralding fine-tune: safety fixed, generalisation not (2026-11-04)
+
+The retrain from PART 7. Three of four acceptance criteria pass, one fails, and
+**the gate stayed closed** -- `heralding` was NOT added to
+`CONFIG.MT3_TRUSTED_SOURCES`. The interesting part is *which* criterion failed.
+
+## Setup
+
+Separate model (`artifacts/mt3_multi/`), fine-tuned with replay. Reasoning in
+DECISIONS.md 2026-11-04; `artifacts/mt3_full_d256/best.pt` was never written, so
+every published number still describes the model it was measured on.
+
+| | |
+|---|---|
+| Training rows | 8,400 synthetic Heralding (70% of 12,000) |
+| Replay | 1,200 per class from the frozen `X_train`, stratified |
+| Heralding share of the mix | ~13% |
+| Hyperparameters | 4 epochs, lr 1e-4, batch 512, AdamW, grad-clip 1.0, seed 2026 |
+| Device | cpu |
+| Epoch selection | `min(heralding_val_F1, test_real_F1 / baseline)` -- a model that improves on Heralding by forgetting Cowrie cannot win |
+
+Scaling handled explicitly: `data/final/` is already scaled, `extract_features()`
+returns raw, so the frozen scaler was applied to the Heralding rows only
+(ERRORS.md top two entries).
+
+Held-out Heralding split: 1,800 rows. **40 of its 1,791 distinct rows are
+byte-identical to a training row (2.2%)** -- small, and measured rather than
+discovered later.
+
+## Results
+
+```
+                              before          after       verdict
+heralding test macro-F1            --         0.8924       PASS (floor 0.80)
+test_real macro-F1             0.8272         0.8284       PASS (-0.0012, i.e. improved)
+test_real macro-F1 (clean)     0.8187         0.8187       unchanged
+scenario agreement                0.00           0.50      FAIL (floor 0.80)
+no confident nonsense            FAIL           PASS
+phase sanity                     FAIL           PASS
+overall                          FAIL           FAIL
+```
+
+**The safety problem is genuinely fixed.** The case that forced the gate in the
+first place:
+
+```
+before:  bare connect -> DISC_NETSTAT_SCAN  p=1.000  phase 3   (would blacklist)
+after:   bare connect -> RECON_IP_SCAN      p=1.000  phase 0   (correct)
+```
+
+**Replay worked.** `test_real` went *up* by 0.0012 and the clean figure did not
+move at all, so nothing was forgotten.
+
+## The failure, and why it matters more than the pass
+
+Held-out Heralding macro-F1 is **0.8924**, but the six hand-built scenarios score
+**3 of 6**:
+
+```
+scenario            rule label            MT3                      conf  phase  ok
+bare connect        RECON_IP_SCAN         RECON_IP_SCAN           1.000      0  =
+user enum           RECON_USER_ENUM       RECON_USER_ENUM         1.000      0  =
+cred stuffing       ACCESS_CRED_STUFF     RECON_USER_ENUM         0.998      0  x
+factory defaults    ACCESS_DEFAULT_CRED   ACCESS_DEFAULT_CRED     0.993      1  =
+http brute force    ACCESS_BRUTE_HTTP     ACCESS_CRED_STUFF       0.974      1  x
+ftp brute force     ACCESS_BRUTE_HTTP     RECON_USER_ENUM         0.787      0  x
+```
+
+All three errors are confusions *within* the credential-pattern family, and all
+are confident.
+
+**Diagnosis: the model learned the generator's distribution, not the concept.**
+The acceptance scenarios use 2-4 authentication attempts; the generator emits
+3-40. So the scenarios sit at the thin edge of the training distribution. A 0.89
+macro-F1 on held-out data that shares the generator's quirks is not evidence of
+generalisation -- the hand-built cases are the honest test, and they say it has
+not generalised.
+
+Having the acceptance set come from somewhere other than the training
+distribution is what made this visible. Had the gate been scored on the held-out
+split alone it would have read PASS at 0.89.
+
+## What NOT to do about it
+
+Widening the generator to cover 1-3 attempt bursts would very likely move
+agreement past 0.80. **That is tuning the training set to the acceptance set**,
+and the resulting number would not be defensible. If it is ever done, the
+acceptance set must be replaced at the same time, and the paper must say which
+came first.
+
+## Standing position
+
+- The gate is CLOSED. `MT3_TRUSTED_SOURCES` is still `{"cowrie_real"}`.
+- Heralding is labelled by `heralding_parser.label_session()` -- the heuristic.
+- `mt3_multi/best.pt` exists and is usable for comparison work, but nothing in
+  the live pipeline points at it. Pointing the pipeline there and opening the
+  gate are a single decision; neither should happen alone.
+- The real fix is **independently labelled captures from the VPS**. Synthetic
+  rows labelled by our own rules can only ever teach the model to agree with
+  those rules (DECISIONS.md).
+
+## Reproduce
+
+```
+cd honeypot_dataset && venv/Scripts/python.exe -m src.generators.heralding_simulator
+# then extract + split (see PART 8 notes), then:
+python -m ml_analytics.mt3_pipeline.finetune_heralding --epochs 4 --replay-per-class 1200
+python -m ml_analytics.mt3_pipeline.acceptance_heralding --ckpt ml_analytics/artifacts/mt3_multi/best.pt
+```
+
+`finetune_heralding` exits non-zero when the gate fails. **Note:** when run
+through a shell pipeline the reported exit status is the last command's, not the
+script's -- this caught me out once; read the "overall:" line, or check
+`artifacts/mt3_multi/finetune_summary.json`.
+
+**Not captured:** the per-epoch loss/validation trace. Python buffers stdout when
+not attached to a terminal and only the tail flushed. Pass `-u` next time. The
+final metrics come from `finetune_summary.json`, which is written on disk and is
+the authoritative record.
+
+---
+---
+
 ## Colophon
 
 2026-11-02 · ASUS TUF laptop, Windows 11 · repo back on `main` @ `ae1761b`

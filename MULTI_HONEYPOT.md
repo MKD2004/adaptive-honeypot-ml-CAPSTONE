@@ -327,7 +327,8 @@ is real.
 ### Phase 2 — Heralding (auth portal) — ⚠️ PARSER DONE, DEPLOYMENT PAUSED
 
 **Status 2026-11-04.** The parser, labeller, `heralding_source()` factory and 36
-tests are done and committed. **Deployment is paused on a safety finding:** MT3
+tests are done and committed, and the MT3 trust gate is in place. **Deployment is
+still paused on a classification finding:** MT3
 agrees with the rule labeller on **0 of 6** Heralding scenarios and is
 *confidently* wrong — a bare connect with no auth attempt is predicted
 `DISC_NETSTAT_SCAN` at confidence **1.000**. Since `MT3_AUTO_BLACKLIST` fires at
@@ -340,10 +341,31 @@ space. The "98 of 128 features transfer cleanly" line in §2 was about the
 *schema* accommodating HTTP — it was never evidence that a Heralding-shaped
 vector is in-distribution.
 
-**Before deploying:** gate MT3 and `MT3_AUTO_BLACKLIST` by protocol, then either
-retrain MT3 on Heralding-shaped rows (M2 scale) or run Heralding for collection
-with rule labels only. Full numbers in `HONEYPOT_AUDIT.md` PART 7; decisions in
-`DECISIONS.md` 2026-11-04.
+**Both follow-ups are now done, and the gate is still closed:**
+
+- **The trust gate is implemented** (`62bb614`), keyed on session `source` rather
+  than protocol — a Cowrie telnet session is shell-shaped, a Heralding one is
+  credential-shaped. MT3's verdict is computed and logged for every source but may
+  only drive the blacklist and reconfiguration for `cowrie_real`. Phase 1b's Group
+  D zero-fill is wired at the same time. Verified: the bare-connect case no longer
+  blacklists anyone, and Cowrie is unaffected.
+- **A fine-tune was tried** (separate model, `artifacts/mt3_multi/`, replay against
+  forgetting). It **fixed the safety problem** — bare connect went from
+  `DISC_NETSTAT_SCAN` phase 3 at confidence 1.000 to `RECON_IP_SCAN` phase 0 — and
+  did not regress `test_real` (0.8272 → 0.8284). Held-out Heralding macro-F1 is
+  **0.8924**. But the six hand-built acceptance scenarios score only **3 of 6**,
+  so **the gate stayed closed**.
+
+  That gap is the finding: the acceptance scenarios use 2–4 auth attempts while
+  the generator emits 3–40, so the model learned the generator's distribution
+  rather than the concept. 0.89 on data sharing the generator's quirks is not
+  generalisation. Widening the generator to chase the acceptance set would be
+  tuning training data to the test and must not be done without replacing the
+  acceptance set too.
+
+**Current position:** Heralding is labelled by the rule labeller. MT3 stays
+SSH-only. The real fix is independently labelled captures from the VPS. Numbers in
+`HONEYPOT_AUDIT.md` PARTS 7–8; reasoning in `DECISIONS.md` 2026-11-04.
 
 Start here, not with web. Lowest risk, cleanest taxonomy fit, fastest proof the
 pipeline is genuinely multi-protocol.

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -45,11 +47,76 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_SOURCE_TAG = re.compile(r"[A-Za-z0-9_.-]{1,40}")
+
+
+def _source_tag() -> str:
+    """Where this data comes from: PIPELINE_SOURCE, e.g. internet | injected | lab | demo.
+
+    Written on every result so real internet sessions and injected or lab ones are never mixed
+    up in one statistic. A value with odd characters stops start-up instead of being stored.
+
+    Ported from Anushka's commit 4a6ed19 on feature/mitigation-layer. Only the pipeline half
+    came over: that commit's test file imports response_mitigation.{audit,config,engine}, which
+    do not exist on main, so it would fail at collection. Tests for this live in
+    tests/test_session_contract.py instead.
+    """
+    raw = os.environ.get("PIPELINE_SOURCE", "").strip() or "unspecified"
+    if not _SOURCE_TAG.fullmatch(raw):
+        raise ValueError("PIPELINE_SOURCE: use 1-40 letters, digits, dots, dashes or underscores")
+    return raw
+
+
 @dataclass
 class _TailState:
     """Byte offset plus the partial sessions still awaiting their close event."""
     offset: int = 0
     pending: Dict[str, List[dict]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class LogSource:
+    """One honeypot's log, and how to turn it into contract-conforming records.
+
+    Phase 1 of MULTI_HONEYPOT.md. The pipeline used to hardcode a single Cowrie
+    directory and a single `cowrie.session.closed` event name, so adding a second
+    honeypot meant editing the watcher loop. Now it is a list entry.
+
+    A new honeypot supplies:
+      name        a short tag, used in logs and as the `sensor` fallback
+      log_dir     directory to tail
+      glob        filename pattern within it
+      session_key the JSON field holding the session id
+      is_closed   predicate: has this event ended the session?
+      build       events -> flat record satisfying src.parsers.session_contract
+
+    `build` is where protocol/dst_port get set. cowrie_parser.build_record()
+    defaults to ssh/22 and those defaults must not change (see its docstring), so
+    a non-SSH source passes its own, e.g.
+
+        functools.partial(build_record, protocol="http", dst_port=8080)
+    """
+    name: str
+    log_dir: Path
+    glob: str
+    session_key: str
+    is_closed: Callable[[Dict[str, Any]], bool]
+    build: Callable[[List[dict]], Optional[Dict[str, Any]]]
+
+
+def cowrie_source(log_dir: Path = None) -> LogSource:  # type: ignore[assignment]
+    """The one source that exists today. Behaviour identical to pre-Phase-1."""
+    ensure_paths()
+    from src.parsers.cowrie_parser import SESSION_CLOSED_EVENT, build_record  # type: ignore
+
+    return LogSource(
+        name="cowrie",
+        log_dir=Path(DEFAULT_COWRIE_LOG_DIR if log_dir is None else log_dir),
+        glob=COWRIE_LOG_GLOB,
+        session_key="session",
+        is_closed=lambda ev: ev.get("eventid", "") == SESSION_CLOSED_EVENT,
+        build=build_record,
+    )
 
 
 class PostSessionPipeline:
@@ -64,8 +131,15 @@ class PostSessionPipeline:
         from_start: bool = False,
         max_backlog: int = 0,
         configurator: Optional[Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]] = None,
+        sources: Optional[List["LogSource"]] = None,
     ) -> None:
         self.cowrie_log_dir = Path(cowrie_log_dir)
+        # One source today. `sources=[...]` is how Phase 2+ adds Heralding etc.
+        # Left None, the Cowrie source is built from cowrie_log_dir exactly as
+        # before, so every existing caller keeps its behaviour.
+        self._sources: List[LogSource] = (
+            list(sources) if sources else [cowrie_source(self.cowrie_log_dir)]
+        )
         self.results_path = Path(results_path)
         self.poll_interval = float(poll_interval)
         self.from_start = from_start
@@ -75,6 +149,7 @@ class PostSessionPipeline:
         self.semantic = SemanticEncoder()
         self.mt3 = MT3Inference()
         self._configurator = configurator
+        self.source = _source_tag()    # provenance tag written on every result
 
         self._tails: Dict[str, _TailState] = {}
         self._seen: Set[str] = set()
@@ -105,6 +180,10 @@ class PostSessionPipeline:
             "mt3": self.mt3.meta,
             "cowrie_log_dir": str(self.cowrie_log_dir),
             "cowrie_logs_found": len(self._log_files()),
+            "sources": [{"name": src.name, "log_dir": str(src.log_dir),
+                         "glob": src.glob, "logs_found": len(self._log_files(src))}
+                        for src in self._sources],
+            "provenance": self.source,
             "results_path": str(self.results_path),
             "already_processed": len(self._seen),
             "configurator": self._configurator_name(),
@@ -146,18 +225,28 @@ class PostSessionPipeline:
                 except Exception:
                     continue
 
-    def _log_files(self) -> List[Path]:
-        if not self.cowrie_log_dir.is_dir():
+    def _log_files(self, source: Optional["LogSource"] = None) -> List[Path]:
+        """Log files for one source, or across every source when none is given."""
+        if source is None:
+            return [p for src in self._sources for p in self._log_files(src)]
+        if not source.log_dir.is_dir():
             return []
-        return sorted(self.cowrie_log_dir.glob(COWRIE_LOG_GLOB))
+        return sorted(source.log_dir.glob(source.glob))
+
+    @staticmethod
+    def _tail_key(source: "LogSource", path: Path) -> str:
+        """Two honeypots may write the same filename in different folders."""
+        return f"{source.name}:{path}"
 
     def _seek_to_end(self) -> None:
         """Start tailing at EOF so an existing 15k-session log isn't replayed."""
-        for path in self._log_files():
-            try:
-                self._tails[str(path)] = _TailState(offset=path.stat().st_size)
-            except OSError:
-                continue
+        for source in self._sources:
+            for path in self._log_files(source):
+                try:
+                    self._tails[self._tail_key(source, path)] = _TailState(
+                        offset=path.stat().st_size)
+                except OSError:
+                    continue
 
     # -- the chain ----------------------------------------------------------
     def process_session(self, record: Dict[str, Any], *,
@@ -256,6 +345,8 @@ class PostSessionPipeline:
         result = {
             "session_id": record.get("session_id", ""),
             "src_ip": record.get("src_ip", ""),
+            "sensor": str(record.get("sensor", "") or ""),
+            "source": self.source,
             "timestamp": (datetime.fromtimestamp(t_start, tz=timezone.utc).isoformat()
                           if t_start else _utcnow()),
             "processed_at": _utcnow(),
@@ -297,15 +388,21 @@ class PostSessionPipeline:
 
     # -- tailing ------------------------------------------------------------
     def scan_once(self) -> List[Dict[str, Any]]:
-        """Read whatever is new in the Cowrie logs; process closed sessions."""
+        """Read whatever is new in every source's logs; process closed sessions."""
         ensure_paths()
-        from src.parsers.cowrie_parser import (  # type: ignore
-            SESSION_CLOSED_EVENT, build_record,
-        )
-
         out: List[Dict[str, Any]] = []
-        for path in self._log_files():
-            key = str(path)
+        for source in self._sources:
+            out.extend(self._scan_source(source))
+            if self.max_backlog and len(out) >= self.max_backlog:
+                break
+        return out
+
+    def _scan_source(self, source: "LogSource") -> List[Dict[str, Any]]:
+        """Tail one honeypot's logs. Session grouping and the close signal come
+        from the source, so a honeypot that does not speak Cowrie still works."""
+        out: List[Dict[str, Any]] = []
+        for path in self._log_files(source):
+            key = self._tail_key(source, path)
             state = self._tails.setdefault(key, _TailState())
             try:
                 size = path.stat().st_size
@@ -332,18 +429,21 @@ class PostSessionPipeline:
                     ev = json.loads(line)
                 except Exception:
                     continue
-                sid = ev.get("session", "")
+                sid = ev.get(source.session_key, "")
                 if not sid or sid in self._seen:
                     continue
                 state.pending.setdefault(sid, []).append(ev)
-                if ev.get("eventid", "") == SESSION_CLOSED_EVENT:
+                if source.is_closed(ev):
                     closed_ids.append(sid)
 
             for sid in closed_ids:
                 events = state.pending.pop(sid, [])
-                record = build_record(events)
+                record = source.build(events)
                 if record is None:
                     continue
+                # which honeypot saw it: Cowrie writes `sensor` on every event (cowrie.cfg sensor_name)
+                record.setdefault("sensor", next(
+                    (str(e["sensor"]) for e in events if e.get("sensor")), source.name))
                 try:
                     out.append(self.process_session(record))
                 except Exception:
@@ -352,6 +452,7 @@ class PostSessionPipeline:
                     return out
         return out
 
+    # -- watching -----------------------------------------------------------
     def watch(self, on_result: Optional[Callable[[Dict[str, Any]], None]] = None) -> None:
         """Block, processing sessions as they close. Ctrl-C to stop.
 
@@ -391,7 +492,8 @@ class PostSessionPipeline:
             from watchdog.observers import Observer
         except Exception:
             return None
-        if not self.cowrie_log_dir.is_dir():
+        dirs = [src.log_dir for src in self._sources if src.log_dir.is_dir()]
+        if not dirs:
             return None
 
         class _Handler(FileSystemEventHandler):
@@ -400,7 +502,8 @@ class PostSessionPipeline:
                     wake.set()
 
         observer = Observer()
-        observer.schedule(_Handler(), str(self.cowrie_log_dir), recursive=False)
+        for d in dirs:
+            observer.schedule(_Handler(), str(d), recursive=False)
         observer.daemon = True
         observer.start()
         return observer
@@ -416,6 +519,7 @@ class PostSessionPipeline:
             "pending_sessions": sum(len(t.pending) for t in self._tails.values()),
             "cowrie_log_dir": str(self.cowrie_log_dir),
             "cowrie_logs_found": len(self._log_files()),
+            "sources": [src.name for src in self._sources],
             "ti_cache_age_sec": round(self.ti.age_sec, 1) if self.ti.age_sec != float("inf") else None,
             "results_path": str(self.results_path),
         }

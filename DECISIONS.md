@@ -5,6 +5,106 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-04 — Phase 1 multi-honeypot: parameterise protocol/dst_port, do NOT read them from the log
+
+**Context:** MULTI_HONEYPOT.md Phase 1. `cowrie_parser.build_record()` hardcoded
+`dst_port: 22` and `protocol: "ssh"` on every record, which made
+`feature_bridge.honeypot_target_for()` return `SSH_HONEYPOT` unconditionally —
+the whole `_PROTO_TO_HONEYPOT` / `_PORT_TO_HONEYPOT` table was dead code.
+
+**The obvious fix is wrong.** Reading the real values off the events would shift
+MT3's input distribution. Measured today on the training corpus:
+
+```
+raw cowrie.json dst_ports:  {2222: 39931, 22: 19, 3306: 21, 443: 17, 80: 13}
+what build_record emitted:  22, for every session, always
+```
+
+So every Cowrie session MT3 ever trained on carried
+`dst_port_norm = 22/65535 = 0.000336` (feature 39). Reading the real port makes
+live sessions report 2222 → 0.0339, a ~100x move against a feature the model has
+only seen as a constant. It would not raise. It would quietly mispredict. The
+parser's own docstring already warned about exactly this ("do not 'improve' it
+here, or live inference drifts away from what MT3 was trained on").
+
+**Decision:** `protocol` and `dst_port` are now keyword-only parameters whose
+**defaults reproduce the old behaviour byte-for-byte**. Notebook 01 calls
+`build_record(events)` with no keywords, so dataset parity holds and live Cowrie
+is unchanged. A non-SSH parser passes its own values, which is what finally makes
+`honeypot_target_for()` able to answer `WEB_HONEYPOT` / `DB_HONEYPOT`.
+
+Verified: 10/10 real Cowrie sessions still produce `dst_port=22 protocol=ssh`
+with the default call; overrides resolve http/8080 → WEB_HONEYPOT, mysql/3306 →
+DB_HONEYPOT, postgres/5432 → DB_HONEYPOT.
+
+**Do not "finish the job" by making the defaults read the log.** That is not an
+improvement left undone; it is the thing this decision exists to prevent. If the
+defaults ever need to change, the model has to be retrained first.
+
+---
+
+## 2026-11-04 — The session contract is executable code, not a document
+
+**Context:** the ~22-key dict every parser must emit was previously implicit in
+whatever `build_record()` happened to return. With one parser nothing could
+disagree with it. With a second, a missing or misspelled key does **not** raise:
+the extractors call `session.get(key, default)` everywhere, so the feature
+silently takes a default and one of the 128 features goes quietly wrong.
+
+**Decision:** `honeypot_dataset/src/parsers/session_contract.py` — 22 required
+fields and 19 optional ones, with types, a `validate()` that returns a list of
+problems, and `assert_valid()` that raises. Prose would have drifted; a test
+fails. Enforced by `traffic_gateway/tests/test_session_contract.py`, which
+includes negative controls because a check that cannot fail is not a check.
+
+The optional group is the useful half for Phase 2+: `ja3_hash`, `tls_version`,
+`sni_hostname`, `cipher_suites` etc. are read by the extractors but never set by
+the Cowrie parser, so Group F (features 120-127) is dead for SSH. A TLS-aware web
+honeypot can fill them and light those features up for the first time.
+
+---
+
+## 2026-11-04 — N log sources via LogSource, keeping one hardcoded Cowrie path as the default
+
+**Context:** `post_session_pipeline` globbed exactly one directory for
+`cowrie.json*` and detected end-of-session by the literal string
+`cowrie.session.closed`. Adding a honeypot meant editing the watcher loop.
+
+**Decision:** a frozen `LogSource` dataclass carries `name`, `log_dir`, `glob`,
+`session_key`, `is_closed` and `build`. `PostSessionPipeline(sources=[...])`
+takes a list; left unset it builds the single Cowrie source from
+`cowrie_log_dir`, so every existing caller — `run_pipeline.py`, `main()`, the
+demo — behaves exactly as before. Tail state is keyed `f"{source.name}:{path}"`
+because two honeypots may write the same filename in different folders.
+
+**Finding worth knowing before Phase 2:** `build_record` is Cowrie-event-specific
+well beyond protocol and port. Feeding it Heralding-shaped events
+(`auth.attempt`, `session.end`) yields `login_attempts: 0` and
+`micro_state: RECON_IP_SCAN`, because it counts only `cowrie.login.failed` /
+`cowrie.login.success` and labels from `COMMAND_PATTERNS`. So
+`functools.partial(build_record, protocol="http", ...)` is **not** a sufficient
+Heralding parser — Heralding needs its own `build` with its own event→micro-state
+mapping. The `LogSource.build` hook exists precisely so that is a new function
+rather than a change to the Cowrie path.
+
+---
+
+## 2026-11-04 — Ported PIPELINE_SOURCE from 4a6ed19 without its test file
+
+**Context:** commit `4a6ed19` (Anushka, `feature/mitigation-layer`) adds a
+`PIPELINE_SOURCE` provenance tag and a `sensor` field to every result line, so
+real internet captures, injected demo traffic and lab runs are never pooled into
+one statistic. Wanted on `main` for Phase 1.
+
+**Decision:** cherry-pick refused — that commit's
+`tests/test_pipeline_mitigation.py` imports `response_mitigation.audit`,
+`.config` and `.engine`, none of which exist on `main` (the module there is a
+0-byte `__init__.py` plus stale `.pyc` files). The cherry-pick would have added a
+test that fails at collection. Ported the `post_session_pipeline.py` half by hand
+and wrote the tests in `test_session_contract.py` instead. `sensor` falls back to
+the source's own name when the log carries none, and is registered as an optional
+contract field so a strict `validate()` accepts it.
+
 ## 2026-11-03 — EPSS CORRECTION: every EPSS score the project has produced is a random number
 
 **Finding:** `cve_intelligence/config.py` pointed at

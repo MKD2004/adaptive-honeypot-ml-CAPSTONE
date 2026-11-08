@@ -86,8 +86,28 @@ def parse_cowrie_file(fpath: Path) -> List[List[dict]]:
     return list(sessions.values())
 
 
-def build_record(events: List[dict]) -> Optional[dict]:
-    """Collapse one session's events into the flat dict the extractors expect."""
+def build_record(events: List[dict], *,
+                 protocol: str = "ssh",
+                 dst_port: int = 22) -> Optional[dict]:
+    """Collapse one session's events into the flat dict the extractors expect.
+
+    `protocol` / `dst_port` are parameters, not read from the events, and their
+    DEFAULTS MUST NOT CHANGE. Two reasons:
+
+    1. Parity. Notebook 01 calls this with no keywords, so the frozen dataset
+       build and live inference keep producing byte-identical records.
+    2. MT3's input distribution. The raw Cowrie corpus carries dst_port 2222 on
+       39,931 events, but this function has always flattened that to 22 -- so
+       every Cowrie session MT3 was trained on had dst_port_norm = 22/65535 =
+       0.000336. Reading the real port would make live sessions report 2222
+       (0.0339), a ~100x shift in feature 39 against a value the model has only
+       ever seen as a constant. It would not raise; it would just mispredict.
+
+    A non-SSH parser (Heralding, Dionaea, TANNER) passes its own protocol and
+    port, which is what makes feature_bridge.honeypot_target_for() able to return
+    anything other than SSH_HONEYPOT. Until one exists, these defaults are the
+    only correct values. See MULTI_HONEYPOT.md Phase 1 and DECISIONS.md.
+    """
     if not events:
         return None
     events.sort(key=lambda e: e.get("timestamp", ""))
@@ -131,8 +151,8 @@ def build_record(events: List[dict]) -> Optional[dict]:
         "session_id":           first.get("session", ""),
         "src_ip":               first.get("src_ip", ""),
         "src_port":             first.get("src_port", 0),
-        "dst_port":             22,
-        "protocol":             "ssh",
+        "dst_port":             int(dst_port),
+        "protocol":             str(protocol),
         "t_start":              t_start,
         "t_end":                t_end,
         "t_first_auth":         t_first_auth or t_start,

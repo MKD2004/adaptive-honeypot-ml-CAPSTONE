@@ -162,7 +162,14 @@ def handle_client(client: socket.socket, addr, host_key, access: AccessLog) -> N
             log.debug("  negotiation failed: %s", exc)
             return
 
-        chan = transport.accept(20)
+        # 120s, not 20s: this is how long the client has from the handshake to
+        # open a channel, i.e. to finish authenticating. attack_client.py does it
+        # in milliseconds, but a HUMAN typing at a real `ssh` prompt has to clear
+        # the host-key warning first and then type the password -- which blows
+        # through 20s easily. The server then hangs up and the client reports
+        # "Connection closed by <host> port 8080", which looks like a gateway or
+        # firewall fault and is not one.
+        chan = transport.accept(120)
         if chan is None:
             return
         server.event.wait(10)

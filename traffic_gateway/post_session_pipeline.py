@@ -28,6 +28,7 @@ from .feature_bridge import (
     SemanticEncoder,
     ThreatIntelCache,
     extract_features,
+    group_d_mode,
     honeypot_target_for,
     kcvr_valid,
 )
@@ -65,6 +66,24 @@ def _source_tag() -> str:
     if not _SOURCE_TAG.fullmatch(raw):
         raise ValueError("PIPELINE_SOURCE: use 1-40 letters, digits, dots, dashes or underscores")
     return raw
+
+
+def mt3_is_trusted_for(record: Dict[str, Any]) -> bool:
+    """May MT3's verdict DRIVE the blacklist and the honeypot reconfiguration?
+
+    Gated on the session's `source` (which honeypot produced it), because that
+    determines the feature shape MT3 sees. See CONFIG.MT3_TRUSTED_SOURCES for the
+    measurement that forced this.
+
+    The verdict is always computed and logged regardless -- this only governs
+    whether it is allowed to ACT.
+    """
+    src = str(record.get("source", "") or "").strip().lower()
+    if not src:
+        return bool(CONFIG.MT3_TRUST_UNKNOWN_SOURCE)
+    if src in CONFIG.MT3_TRUSTED_SOURCES:
+        return True
+    return bool(CONFIG.MT3_TRUST_UNKNOWN_SOURCE)
 
 
 @dataclass
@@ -327,11 +346,25 @@ class PostSessionPipeline:
         pred = self.mt3.predict(x_raw)
         pred["honeypot_target"] = honeypot_target_for(record)
 
+        # (d2) may this verdict act, or is it observation only?
+        mt3_trusted = mt3_is_trusted_for(record)
+        pred["mt3_trusted"] = mt3_trusted
+        if not mt3_trusted:
+            log.info("session %s from source=%r: MT3 says %s (p=%.3f) but the source is "
+                     "not in MT3_TRUSTED_SOURCES, so it drives nothing. Rule label: %s",
+                     record.get("session_id", ""), record.get("source", ""),
+                     pred["micro_state"], pred["confidence"],
+                     record.get("micro_state", "?"))
+
         # (e) adaptive honeypot configurator
         action: Dict[str, Any] = {"previous_config": None, "new_config": None,
                                   "changed": False, "reason": "configurator not available"}
+        if not mt3_trusted:
+            action = {"previous_config": None, "new_config": None, "changed": False,
+                      "reason": (f"skipped: MT3 not trusted for source "
+                                 f"{record.get('source', '')!r}")}
         fn = self._resolve_configurator()
-        if fn is not None:
+        if mt3_trusted and fn is not None:
             try:
                 action = fn(pred, record)
             except Exception as exc:
@@ -350,6 +383,7 @@ class PostSessionPipeline:
         # real client -- 127.0.0.1 in a single-laptop demo, the LAN IP with two.
         # Only skip the Docker bridge, which means attribution found no peer.
         if (CONFIG.MT3_AUTO_BLACKLIST
+                and mt3_trusted
                 and peer_ip
                 and pred["phase"] >= CONFIG.MT3_AUTO_BLACKLIST_MIN_PHASE
                 and float(pred["confidence"]) >= CONFIG.MT3_AUTO_BLACKLIST_CONF
@@ -389,6 +423,7 @@ class PostSessionPipeline:
             "gateway_score": round(float(gateway_score), 4),
             "gateway_verdict": (gw or {}).get("verdict"),
             "gateway_signals": (gw or {}).get("signals_fired", []),
+            "mt3_trusted": mt3_trusted,
             "mt3_prediction": {
                 "micro_state": pred["micro_state"],
                 "phase": pred["phase"],
@@ -403,6 +438,7 @@ class PostSessionPipeline:
             "observed_src_ip": record.get("observed_src_ip"),
             "auto_blacklisted": auto_blocked,
             "semantic_available": bool(self.semantic.available),
+            "group_d_mode": group_d_mode(record),
             "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
         }
 

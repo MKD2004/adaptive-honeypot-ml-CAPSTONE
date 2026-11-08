@@ -265,16 +265,48 @@ def honeypot_target_for(session: Dict[str, Any]) -> str:
     return _PORT_TO_HONEYPOT.get(port, "SSH_HONEYPOT")
 
 
+# Sources whose text Group D's PCA was actually fitted on. Anything else gets a
+# zero-filled semantic block -- Phase 1b's decision, see group_d_mode() below.
+_SEMANTIC_IN_DOMAIN_SOURCES = frozenset({"cowrie_real", "cowrie", "cowrie_synth"})
+
+
+def group_d_mode(session: Dict[str, Any]) -> str:
+    """"live" or "zero-filled" for this session's semantic block (features 76-105).
+
+    Phase 1b (DECISIONS.md 2026-11-04) decided to zero-fill Group D for every
+    non-SSH source rather than push its text through the shell-fitted PCA. The
+    measurements behind it:
+
+      - the 30 shell-fitted axes keep 90.8% of shell-command variance but only
+        73.6% of HTTP's, 64.1% of SQL's and 71.4% of credential text's;
+      - a zero-fill, AFTER the frozen scaler, lands at mean 0.368 sigma with no
+        dimension past 2 sigma -- nearer the centre of the training cloud than
+        94.65% of real rows. It is in-distribution; off-domain text is not.
+
+    Returning a mode rather than a bool so the result line can distinguish
+    "DistilBERT missing" from "deliberately off for this source", which
+    DECISIONS.md flagged as owed.
+    """
+    src = str(session.get("source", "") or "").strip().lower()
+    return "live" if src in _SEMANTIC_IN_DOMAIN_SOURCES else "zero-filled"
+
+
 def extract_features(session: Dict[str, Any], ti: ThreatIntelCache,
                      semantic: SemanticEncoder) -> np.ndarray:
-    """One parsed session dict -> RAW 128-d feature vector (unscaled)."""
+    """One parsed session dict -> RAW 128-d feature vector (unscaled).
+
+    Group D is zero-filled for out-of-domain sources; see group_d_mode().
+    """
     ensure_paths()
     from src.extractors.pipeline import extract_all  # type: ignore
 
     cve = str(session.get("associated_cve", "") or "")
     if cve:
         ti.prefetch([cve])
-    sem = semantic.encode(str(session.get("command_text", "") or ""))
+    if group_d_mode(session) == "live":
+        sem = semantic.encode(str(session.get("command_text", "") or ""))
+    else:
+        sem = np.zeros(30, dtype=np.float32)
     x = extract_all(session, ti.kev_set, ti.epss_data, sem)
     return np.clip(np.nan_to_num(x, nan=0.0, posinf=1e6, neginf=0.0), -100.0, 1e6)
 

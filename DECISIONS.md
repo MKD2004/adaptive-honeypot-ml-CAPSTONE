@@ -5,6 +5,61 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-04 — IMPLEMENTED: the MT3 trust gate (gated on source, not protocol)
+
+Decisions 1 and 2 from the "Phase 2 STOP" entry below are now code.
+
+**Gated on `source`, not `protocol`** -- the first cut of this used protocol and
+that was wrong. A Cowrie *telnet* session is shell-shaped (commands, byte counts,
+durations); a Heralding *telnet* session is credential-shaped. The protocol string
+does not determine the feature shape, the producing honeypot does.
+
+- `CONFIG.MT3_TRUSTED_SOURCES = {"cowrie_real"}`, with
+  `MT3_TRUST_UNKNOWN_SOURCE = False` so an unrecognised source fails closed.
+- `post_session_pipeline.mt3_is_trusted_for()` gates both the auto-blacklist and
+  the honeypot reconfiguration. The verdict is still computed and written to
+  every result line -- that is the comparison data a retrain needs, and §7.6's
+  labelling plan depends on it -- it simply may not ACT.
+- `mt3_trusted` is now a field on every result line.
+
+**Also wired Phase 1b's zero-fill, which had been decided but not implemented.**
+`feature_bridge.group_d_mode(session)` returns `"live"` or `"zero-filled"` per
+source, and `extract_features` honours it. It returns a *mode* rather than a bool
+precisely so the result line can tell "DistilBERT missing" from "deliberately off
+for this source" -- the gap the Phase 1b entry flagged as owed. `group_d_mode` is
+on every result line too.
+
+**Verified end to end** -- the dangerous case from HONEYPOT_AUDIT.md PART 7, and
+a Cowrie control, through the real pipeline:
+
+```
+Heralding bare connect (no auth attempt at all):
+  rule label        RECON_IP_SCAN
+  MT3 said          DISC_NETSTAT_SCAN (conf 0.9983, phase 3)
+  mt3_trusted       False
+  group_d_mode      zero-filled
+  auto_blacklisted  False
+  config changed    False  (skipped: MT3 not trusted for source 'heralding')
+  IP blacklisted    False
+
+Cowrie control (rm -rf /var/log/auth.log):
+  MT3 said          EVASION_LOG_WIPE (conf 0.9867, phase 6)
+  mt3_trusted       True
+  group_d_mode      live
+  auto_blacklisted  True
+  IP blacklisted    True
+```
+
+MT3 is still confidently wrong on the Heralding record (0.9983 for a bare
+connect). The gate does not fix that; it stops it mattering. Fixing it is the
+retrain.
+
+**Do not add a source to `MT3_TRUSTED_SOURCES` without re-running the PART 7
+acceptance scenarios against the retrained model.** A regression test asserts
+`heralding` is not in that set, for exactly this reason.
+
+---
+
 ## 2026-11-04 — Phase 2 STOP: MT3 cannot classify Heralding sessions, and auto-blacklist must be gated
 
 **Finding, and it blocks the rest of Phase 2.** The Heralding parser works and

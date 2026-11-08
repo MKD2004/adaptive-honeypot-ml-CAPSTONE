@@ -84,6 +84,33 @@ class GatewayConfig:
     MT3_AUTO_BLACKLIST_MIN_PHASE: int   = 1      # >= Initial Access
     MT3_AUTO_BLACKLIST_CONF:      float = 0.5    # min MT3 confidence
 
+    # ── Whose sessions MT3's verdict may ACT on ──────────────────────────────
+    # Gated on the SESSION SOURCE (the honeypot that produced it), not on the
+    # protocol. The protocol string does not determine the feature shape: a
+    # Cowrie telnet session is shell-shaped (commands, bytes, durations) while a
+    # Heralding telnet session is credential-shaped (no shell, no byte counts),
+    # and MT3 only ever trained on the former.
+    #
+    # Measured 2026-11-04 (HONEYPOT_AUDIT.md PART 7): on Heralding records MT3
+    # agrees with the rule labeller on 0 of 6 scenarios and is CONFIDENTLY
+    # wrong -- a bare connect with no auth attempt returns DISC_NETSTAT_SCAN at
+    # confidence 1.000, which is phase 3 and so clears MT3_AUTO_BLACKLIST_CONF
+    # and would blacklist a user for opening a TCP connection.
+    #
+    # The verdict is still COMPUTED and LOGGED for every source -- that is the
+    # comparison data a retrain needs, and the §7.6 labelling plan depends on it.
+    # It may only DRIVE the blacklist and the honeypot reconfiguration for
+    # sources listed here. A confidence threshold is not a substitute: the wrong
+    # answers are confident.
+    #
+    # Add a source only after re-running the PART 7 acceptance scenarios against
+    # the retrained model and seeing them pass.
+    MT3_TRUSTED_SOURCES: frozenset = frozenset({"cowrie_real"})
+
+    # Fail open or closed when a session's source is absent or unrecognised?
+    # False = untrusted: verdict logged, but no blacklist and no reconfiguration.
+    MT3_TRUST_UNKNOWN_SOURCE: bool = False
+
     # ── Risk-score thresholds ────────────────────────────────────────────────
     SCORE_SUSPICIOUS:       float = 0.45   # ≥ → SUSPICIOUS
     SCORE_BLACKLIST:        float = 0.70   # ≥ → BLACKLISTED

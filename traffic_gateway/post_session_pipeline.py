@@ -18,7 +18,10 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+
+from response_mitigation.engine import MitigationEngine, build_engine
+from response_mitigation.models import Action, Outcome, Verdict
 
 from .blacklist_manager import blacklist_manager
 from .config import CONFIG
@@ -57,10 +60,9 @@ def _source_tag() -> str:
     Written on every result so real internet sessions and injected or lab ones are never mixed
     up in one statistic. A value with odd characters stops start-up instead of being stored.
 
-    Ported from Anushka's commit 4a6ed19 on feature/mitigation-layer. Only the pipeline half
-    came over: that commit's test file imports response_mitigation.{audit,config,engine}, which
-    do not exist on main, so it would fail at collection. Tests for this live in
-    tests/test_session_contract.py instead.
+    Originally Anushka's (4a6ed19). Ported to main by hand ahead of the merge, and
+    reconciled here. Tests live in tests/test_session_contract.py and
+    tests/test_pipeline_mitigation.py.
     """
     raw = os.environ.get("PIPELINE_SOURCE", "").strip() or "unspecified"
     if not _SOURCE_TAG.fullmatch(raw):
@@ -184,6 +186,7 @@ class PostSessionPipeline:
         max_backlog: int = 0,
         configurator: Optional[Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]] = None,
         sources: Optional[List["LogSource"]] = None,
+        mitigation: Optional[MitigationEngine] = None,
     ) -> None:
         self.cowrie_log_dir = Path(cowrie_log_dir)
         # One source today. `sources=[...]` is how Phase 2+ adds Heralding etc.
@@ -201,6 +204,7 @@ class PostSessionPipeline:
         self.semantic = SemanticEncoder()
         self.mt3 = MT3Inference()
         self._configurator = configurator
+        self.mitigation = mitigation   # built on first use when not given
         self.source = _source_tag()    # provenance tag written on every result
 
         self._tails: Dict[str, _TailState] = {}
@@ -217,6 +221,8 @@ class PostSessionPipeline:
         if self.started:
             return self.startup_info
 
+        # First, so a bad MITIGATION_* setting stops start-up before the slow loads.
+        mitigation_cfg = self._get_mitigation().config
         self.results_path.parent.mkdir(parents=True, exist_ok=True)
         ti_info = self.ti.prefetch()
         sem_ok = self.semantic.load()
@@ -239,6 +245,9 @@ class PostSessionPipeline:
             "results_path": str(self.results_path),
             "already_processed": len(self._seen),
             "configurator": self._configurator_name(),
+            "mitigation": {"mode": mitigation_cfg.mode.value,
+                           "firewall": mitigation_cfg.firewall,
+                           "audit_path": str(mitigation_cfg.audit_path)},
         }
         self.started = True
         if not sem_ok:
@@ -262,6 +271,47 @@ class PostSessionPipeline:
         except Exception:
             self._configurator = None
         return self._configurator
+
+    def _get_mitigation(self) -> MitigationEngine:
+        """The mitigation engine, built on first use from the MITIGATION_* settings.
+
+        The what-counts-as-an-attack thresholds are the gateway's own
+        MT3_AUTO_BLACKLIST_* settings, so there is one source of truth.
+        """
+        if self.mitigation is None:
+            self.mitigation = build_engine(
+                blacklist_manager=blacklist_manager,
+                divert_enabled=CONFIG.MT3_AUTO_BLACKLIST,
+                divert_min_phase=CONFIG.MT3_AUTO_BLACKLIST_MIN_PHASE,
+                min_confidence=CONFIG.MT3_AUTO_BLACKLIST_CONF,
+            )
+        return self.mitigation
+
+    def _mitigate(self, pred: Dict[str, Any], record: Dict[str, Any]) -> Tuple[bool, List[Dict[str, str]]]:
+        """Hand MT3's verdict to the mitigation layer.
+
+        Returns (was the source added to the blacklist, a short summary of what
+        was decided for the results file). Never raises: a failure here must not
+        lose the session's result.
+        """
+        peer_ip = str(record.get("src_ip", "") or "")
+        try:
+            decisions = self._get_mitigation().handle(Verdict(
+                ip=peer_ip,
+                phase=int(pred["phase"]),
+                phase_name=str(pred["phase_name"]),
+                micro_state=str(pred["micro_state"]),
+                confidence=float(pred["confidence"]),
+                session_id=str(record.get("session_id", "") or ""),
+            ))
+        except Exception:
+            log.exception("mitigation failed for %s", peer_ip)
+            return False, []
+        blacklisted = any(d.planned.action is Action.DIVERT and d.outcome is Outcome.APPLIED
+                          for d in decisions)
+        summary = [{"action": d.planned.action.value, "rule": d.planned.rule,
+                    "outcome": d.outcome.value} for d in decisions]
+        return blacklisted, summary
 
     def _load_seen(self) -> None:
         """Re-read our own output so a restart never double-processes a session."""
@@ -372,38 +422,31 @@ class PostSessionPipeline:
                 action = {"previous_config": None, "new_config": None,
                           "changed": False, "reason": f"configurator error: {exc}"}
 
-        # (e2) response mitigation: MT3 classified this as an actual attack, so
-        # blacklist the source. Recon alone (phase 0) does not trigger it -- an
-        # attacker only earns a block once they attempt access or beyond. This
-        # is the detect -> classify -> respond loop; the block is what the demo
-        # shows as "IP blacklisted after MT3 identified the brute force".
-        peer_ip = str(record.get("src_ip", "") or "")
-        auto_blocked = False
-        # peer_ip has already been through attribution (step a), so it is the
-        # real client -- 127.0.0.1 in a single-laptop demo, the LAN IP with two.
-        # Only skip the Docker bridge, which means attribution found no peer.
-        if (CONFIG.MT3_AUTO_BLACKLIST
-                and mt3_trusted
-                and peer_ip
-                and pred["phase"] >= CONFIG.MT3_AUTO_BLACKLIST_MIN_PHASE
-                and float(pred["confidence"]) >= CONFIG.MT3_AUTO_BLACKLIST_CONF
-                and not peer_ip.startswith(("172.1", "172.2"))
-                and not blacklist_manager.is_whitelisted(peer_ip)
-                and not blacklist_manager.is_blacklisted(peer_ip)):
-            try:
-                blacklist_manager.blacklist(
-                    peer_ip,
-                    reason=(f"MT3: {pred['micro_state']} "
-                            f"(phase {pred['phase']} {pred['phase_name']}, "
-                            f"conf {pred['confidence']:.2f})"),
-                    source="mt3_pipeline",
-                    risk_score=float(pred["confidence"]),
-                )
-                auto_blocked = True
-                log.warning("auto-blacklisted %s: MT3 classified %s (p=%.2f)",
-                            peer_ip, pred["micro_state"], pred["confidence"])
-            except Exception:
-                log.exception("auto-blacklist failed for %s", peer_ip)
+        # (e2) response mitigation: MT3's verdict goes to the mitigation layer
+        # (response_mitigation/), which decides, checks it is safe, acts and
+        # writes the audit log. With default settings it does what this step
+        # always did: a source MT3 puts at phase >= 1 (confidence >= 0.5) is
+        # added to the blacklist, which sends it to the honeypot. Recon alone
+        # (phase 0) does not trigger it. peer_ip has already been through
+        # attribution (step a), so it is the real client -- 127.0.0.1 in a
+        # single-laptop demo, the LAN IP with two; the layer skips the Docker
+        # bridge, which means attribution found no peer.
+        #
+        # GATED BY mt3_trusted, and that gate belongs HERE rather than inside the
+        # engine. The engine's job is "given a verdict, decide and act safely";
+        # deciding whether the verdict is worth believing at all is upstream of
+        # it. Without this, merging the mitigation layer would undo the fix from
+        # HONEYPOT_AUDIT.md PART 7: a Heralding bare connect scores
+        # DISC_NETSTAT_SCAN at confidence 1.000 (phase 3), which clears every
+        # threshold the engine checks, so the engine would dutifully blacklist a
+        # user for opening a TCP connection.
+        if mt3_trusted:
+            auto_blocked, mitigation = self._mitigate(pred, record)
+        else:
+            auto_blocked = False
+            mitigation = [{"action": "skipped", "rule": "untrusted_source",
+                           "outcome": f"MT3 not trusted for source "
+                                      f"{str(record.get('source', '') or '')!r}"}]
 
         commands = [c for c in str(record.get("command_text", "") or "").split(" ; ")
                     if c and c != "[no commands]"]
@@ -437,6 +480,7 @@ class PostSessionPipeline:
             "rule_label": record.get("micro_state", ""),
             "observed_src_ip": record.get("observed_src_ip"),
             "auto_blacklisted": auto_blocked,
+            "mitigation": mitigation,
             "semantic_available": bool(self.semantic.available),
             "group_d_mode": group_d_mode(record),
             "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
@@ -511,6 +555,8 @@ class PostSessionPipeline:
                 if record is None:
                     continue
                 # which honeypot saw it: Cowrie writes `sensor` on every event (cowrie.cfg sensor_name)
+                # falls back to the source's own name, so a honeypot whose log
+                # carries no sensor field is still attributable
                 record.setdefault("sensor", next(
                     (str(e["sensor"]) for e in events if e.get("sensor")), source.name))
                 try:

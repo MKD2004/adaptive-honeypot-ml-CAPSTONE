@@ -1,0 +1,14 @@
+[Unit]
+Description=Stop the honeypot network from making outbound connections
+Documentation=file:///opt/honeypot/app/deploy/sandbox/README.md
+# Be in place before any container can start.
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /opt/honeypot-guard/egress.nft
+ExecStop=/usr/sbin/nft delete table inet honeypot_egress
+
+[Install]
+WantedBy=multi-user.target

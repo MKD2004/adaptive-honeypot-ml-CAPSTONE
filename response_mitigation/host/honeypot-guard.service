@@ -1,0 +1,26 @@
+[Unit]
+Description=Apply the honeypot block list to the nftables firewall
+Documentation=file:///opt/honeypot-guard/README.md
+
+[Service]
+Type=oneshot
+# Optional. Put the admin's own address here so it can never be blocked:
+#   HONEYPOT_GUARD_NEVER_BLOCK=203.0.113.9,198.51.100.0/24
+EnvironmentFile=-/etc/honeypot-guard/guard.env
+ExecStart=/usr/bin/python3 /opt/honeypot-guard/apply_blocklist.py \
+    --blocklist /var/lib/honeypot-guard/blocklist.json \
+    --kill-file /var/lib/honeypot-guard/MITIGATION_DISABLED
+
+# Runs as root, but with only what it needs: edit the firewall and read two files.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_READ_SEARCH
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_NETLINK AF_UNIX
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0077

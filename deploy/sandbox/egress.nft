@@ -1,0 +1,28 @@
+# Nothing inside the honeypot's network may start a connection to anywhere.
+#
+# Why: Cowrie's fake wget/curl/nc make REAL outbound connections to whatever address the
+# attacker types (Cowrie security advisory GHSA-83jg-m2pm-4jxj). Without this rule our
+# server's IP would be the source of an attacker's traffic against a third party.
+#
+#   forward  stops the honeypot reaching the internet or other machines.
+#   input    stops the honeypot reaching services on this host (for example sshd).
+#
+# Replies to connections that attackers open INTO the honeypot are not "new", so they pass.
+# The name br-honeypot is fixed in docker-compose.yml. Keep the two in step (a test checks).
+#
+# Load:   sudo nft -f /opt/honeypot-guard/egress.nft      (the systemd unit does this at boot)
+# Remove: sudo nft delete table inet honeypot_egress
+#
+# The first two lines make loading twice safe: create-if-missing, then delete, then define.
+table inet honeypot_egress
+delete table inet honeypot_egress
+table inet honeypot_egress {
+  chain forward_guard {
+    type filter hook forward priority -10; policy accept;
+    iifname "br-honeypot" ct state new counter drop
+  }
+  chain input_guard {
+    type filter hook input priority -10; policy accept;
+    iifname "br-honeypot" ct state new counter drop
+  }
+}

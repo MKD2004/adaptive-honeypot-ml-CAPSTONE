@@ -1,0 +1,4 @@
+# Runtime files written by the mitigation layer. Never commit these.
+data/
+logs/
+MITIGATION_DISABLED

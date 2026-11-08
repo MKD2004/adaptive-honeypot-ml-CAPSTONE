@@ -1,0 +1,50 @@
+[Unit]
+Description=Adaptive honeypot pipeline (Cowrie log -> MT3 -> mitigation)
+Documentation=file:///opt/honeypot/app/deploy/sandbox/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=honeypot
+Group=honeypot
+WorkingDirectory=/opt/honeypot/app
+EnvironmentFile=/etc/honeypot/pipeline.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+
+# --from-start: after a restart, read the log again from the top. Sessions already in the
+# results file are skipped, so nothing is lost while the service was down and nothing is
+# processed twice.
+ExecStart=/opt/honeypot/venv/bin/python -m traffic_gateway.post_session_pipeline \
+    --cowrie-log-dir /opt/honeypot/app/honeypot_dataset/cowrie/logs \
+    --results /var/lib/honeypot/pipeline/pipeline_results.jsonl \
+    --poll 30 --from-start
+
+Restart=on-failure
+RestartSec=15
+
+# It reads attacker-controlled text, so it runs with very little. Unprivileged user, no new
+# privileges, read-only filesystem except the folders below (found by recording every file
+# the pipeline writes while it processes sessions, see deploy/sandbox/README.md).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0022
+ReadWritePaths=/var/lib/honeypot /var/lib/honeypot-guard
+ReadWritePaths=/opt/honeypot/app/logs /opt/honeypot/app/adaptive_honeypot
+ReadWritePaths=/opt/honeypot/app/honeypot_dataset/cowrie/honeyfs /opt/honeypot/app/honeypot_dataset/data/processed
+# Uncomment to cap memory on a small machine (DistilBERT + MT3 on CPU need roughly 2 GB):
+#MemoryMax=3G
+
+[Install]
+WantedBy=multi-user.target

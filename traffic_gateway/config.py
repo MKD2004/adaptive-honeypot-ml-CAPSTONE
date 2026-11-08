@@ -14,6 +14,54 @@ from typing import List
 _MODULE_DIR   = Path(__file__).parent
 _PROJECT_ROOT = _MODULE_DIR.parent
 
+_TRUE_WORDS  = {"1", "true", "yes", "on"}
+_FALSE_WORDS = {"0", "false", "no", "off"}
+
+
+# ── Environment overrides ─────────────────────────────────────────────────────
+# Unset or empty -> the default. A value that is set but wrong raises, so a typo
+# in a security setting stops start-up instead of silently using the default.
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    if raw in _TRUE_WORDS:
+        return True
+    if raw in _FALSE_WORDS:
+        return False
+    raise ValueError(f"{name}={raw!r}: expected one of 1/0, true/false, yes/no, on/off")
+
+
+def _env_int(name: str, default: int, lo: int, hi: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(f"{name}={raw!r}: expected a whole number") from None
+    if not lo <= value <= hi:
+        raise ValueError(f"{name}={value}: must be between {lo} and {hi}")
+    return value
+
+
+def _env_float(name: str, default: float, lo: float, hi: float) -> float:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError(f"{name}={raw!r}: expected a number") from None
+    if not lo <= value <= hi:
+        raise ValueError(f"{name}={value}: must be between {lo} and {hi}")
+    return value
+
+
+def _env_path(name: str, default: Path) -> Path:
+    raw = os.getenv(name, "").strip()
+    return Path(raw) if raw else default
+
 
 # ── Target descriptor ─────────────────────────────────────────────────────────
 @dataclass(frozen=True)
@@ -80,9 +128,14 @@ class GatewayConfig:
     # attack, blacklist the source IP. Recon (phase 0) is exempt; the attacker
     # must reach Initial Access (phase 1) or beyond. This is what auto-blocks a
     # brute-force IP once MT3 has identified it.
-    MT3_AUTO_BLACKLIST:           bool  = True
-    MT3_AUTO_BLACKLIST_MIN_PHASE: int   = 1      # >= Initial Access
-    MT3_AUTO_BLACKLIST_CONF:      float = 0.5    # min MT3 confidence
+    # Env overrides (defaults shown): GATEWAY_MT3_AUTO_BLACKLIST=1,
+    # GATEWAY_MT3_AUTO_BLACKLIST_MIN_PHASE=1 (0-8), GATEWAY_MT3_AUTO_BLACKLIST_CONF=0.5.
+    MT3_AUTO_BLACKLIST: bool = field(
+        default_factory=lambda: _env_bool("GATEWAY_MT3_AUTO_BLACKLIST", True))
+    MT3_AUTO_BLACKLIST_MIN_PHASE: int = field(      # >= Initial Access
+        default_factory=lambda: _env_int("GATEWAY_MT3_AUTO_BLACKLIST_MIN_PHASE", 1, 0, 8))
+    MT3_AUTO_BLACKLIST_CONF: float = field(         # min MT3 confidence
+        default_factory=lambda: _env_float("GATEWAY_MT3_AUTO_BLACKLIST_CONF", 0.5, 0.0, 1.0))
 
     # ── Whose sessions MT3's verdict may ACT on ──────────────────────────────
     # Gated on the SESSION SOURCE (the honeypot that produced it), not on the
@@ -131,8 +184,12 @@ class GatewayConfig:
     MAX_CONCURRENT_CONNS:     int   = 500
 
     # ── Persistence ─────────────────────────────────────────────────────────
-    DATA_DIR: Path = field(default_factory=lambda: _MODULE_DIR / "data")
-    LOG_DIR:  Path = field(default_factory=lambda: _MODULE_DIR / "logs")
+    # Env overrides GATEWAY_DATA_DIR / GATEWAY_LOG_DIR let a container keep its
+    # blacklist and session log on a mounted volume instead of in the code tree.
+    DATA_DIR: Path = field(
+        default_factory=lambda: _env_path("GATEWAY_DATA_DIR", _MODULE_DIR / "data"))
+    LOG_DIR:  Path = field(
+        default_factory=lambda: _env_path("GATEWAY_LOG_DIR", _MODULE_DIR / "logs"))
 
     # filenames under DATA_DIR
     BLACKLIST_FILE:   str = "blacklist.json"

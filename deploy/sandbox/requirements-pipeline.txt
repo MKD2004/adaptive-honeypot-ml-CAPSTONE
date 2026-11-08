@@ -1,0 +1,28 @@
+# Python packages the pipeline needs on the server (Ubuntu, Python 3.12, no GPU).
+# The repo's top-level requirements.txt is shorter than this; it does not list what the
+# pipeline really imports. This list comes from running the pipeline and recording what it loads.
+#
+# Install torch FIRST, as the CPU-only build (the default build pulls about 2 GB of GPU libraries):
+#   /opt/honeypot/venv/bin/pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+# then:
+#   /opt/honeypot/venv/bin/pip install -r requirements-pipeline.txt
+#
+# Versions are the ones in the project's working venv (2026-11-01), which is Python 3.13 on
+# Windows. Not yet installed on Linux/3.12: if pip cannot find an exact version, use the nearest
+# one and write down which.
+
+numpy==2.5.2
+pandas==3.0.5
+requests==2.34.2
+watchdog==7.0.0
+joblib==1.5.3
+
+# MUST be the version that wrote feature_scaler.pkl and semantic_pca.pkl. Those are joblib files,
+# and a different scikit-learn can load them wrongly without any error. feature_scaler.pkl in
+# this repo was written by 1.9.0. Check semantic_pca.pkl the same way before the first run:
+#   python -c "import joblib; print(joblib.load('semantic_pca.pkl').__getstate__()['_sklearn_version'])"
+scikit-learn==1.9.0
+
+# DistilBERT for the text features (group D, 30 of the 128). NOT installed in the Windows venv,
+# so on that machine group D is silently all zeros. Any recent release should do.
+transformers>=4.44,<6

@@ -1,0 +1,2 @@
+# These files run on Linux. A CRLF line ending would break shell scripts, systemd and nft.
+* text eol=lf

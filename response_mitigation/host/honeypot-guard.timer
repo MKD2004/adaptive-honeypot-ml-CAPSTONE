@@ -1,0 +1,11 @@
+[Unit]
+Description=Re-apply the honeypot block list every 15 seconds
+
+[Timer]
+OnBootSec=20s
+# Counted from when the last run finished, so two runs can never overlap.
+OnUnitInactiveSec=15s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

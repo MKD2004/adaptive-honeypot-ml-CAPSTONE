@@ -5,6 +5,72 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-04 — Phase 1b: ZERO-FILL Group D for non-SSH sessions, do not feed it off-domain text
+
+**The question.** `semantic_pca.pkl` (Group D, features 76-105) was fitted on
+shell command text. A Heralding/TANNER/Dionaea parser has HTTP request lines, SQL
+and credential strings instead. Push them through the shell-fitted projection, or
+zero-fill the block? The Heralding parser cannot be written until this is settled,
+so it is a design decision, not a post-hoc check.
+
+**Measured, both options.**
+
+What the shell-fitted PCA(30) does to foreign text:
+
+```
+text domain                   n   recon err   var kept   z-dist
+shell commands (IN-DOMAIN)   60      0.2981     0.9080     0.00
+HTTP request lines           64      0.5129     0.7358     1.22
+SQL injection payloads       64      0.5946     0.6413     0.92
+credential pairs             64      0.5284     0.7135     0.74
+```
+
+Reconstruction error roughly doubles; the 30 axes capture 90.8% of in-domain
+variance but only 73.6% of HTTP's and 64.1% of SQL's, and the projection sits
+~1.2 sigma off the in-domain cloud per dimension.
+
+Where a zero-fill actually lands. This is the part that decided it — the pipeline
+zero-fills RAW and then applies the frozen scaler, so raw 0 becomes
+`(0 - mean)/scale`, NOT the origin:
+
+```
+zero-filled Group D, after the frozen scaler:
+  mean |z| over the 30 dims        0.368 sigma
+  max  |z|                         1.179 sigma
+  dims beyond 2 sigma              0 of 30
+  L2 norm of the point             2.400
+training Group D (n=20,433, already scaled):
+  mean L2 norm of a real row       4.857   (p1 2.201, p99 11.499)
+  real rows FARTHER out than it    94.65%
+  nearest real training row        1.249 away
+  median distance between two real rows  7.725
+```
+
+**Decision: zero-fill.** The zero-fill vector is comfortably *inside* the
+training distribution — closer to the centre than 94.65% of real rows, with a
+genuine training row 1.25 away where typical rows are 7.7 apart. It reads to the
+model as unremarkable command text. Off-domain text is the opposite: a shifted
+region with a third of its variance destroyed, where the model may latch onto
+spurious structure. A known, declared degradation beats a silent distortion, and
+the `semantic_available=False` zero-fill path already exists.
+
+**The honest cost.** Zero-filling makes Group D a *constant* for non-SSH
+sessions, so it carries no information — those protocols are effectively
+classified by 98 of 128 features. That is the price, and it is the right price
+until a per-protocol PCA is fitted and MT3 retrained (M2-scale work, not Phase 2).
+
+**Do not read this as "Group D works for HTTP."** It does not. It is switched
+off on purpose, and the paper must say so rather than implying 128 live features
+on every protocol.
+
+**Implementation note for Phase 2:** the existing flag is global
+(`SemanticEncoder.available`), so a protocol-conditional zero-fill needs a new
+per-session signal, and `semantic_available` in the result line must be able to
+distinguish "DistilBERT missing" from "deliberately off for this protocol".
+Reporting both as the same value would hide the decision.
+
+---
+
 ## 2026-11-04 — Phase 1 multi-honeypot: parameterise protocol/dst_port, do NOT read them from the log
 
 **Context:** MULTI_HONEYPOT.md Phase 1. `cowrie_parser.build_record()` hardcoded

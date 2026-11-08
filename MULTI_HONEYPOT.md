@@ -1,8 +1,9 @@
 # MULTI_HONEYPOT — adding auth-portal, web-app and database honeypots
 
-Last updated: 2026-11-03 (created; then execution-order review — added the
-scheduling tracks in §6, Phase 1b, the labelling plan in §7.6, and the measured
-Group D numbers in §7.2)
+Last updated: 2026-11-04 — **Phase 1 and Phase 1b are DONE** (`7cf0030`, `79186b0`).
+Blockers 3.1-3.3 resolved; the Group D question in §7.2 is decided (zero-fill).
+Next actionable work is Phase 2 (Heralding). Verification output lives in
+`HONEYPOT_AUDIT.md` PARTS 5-6; the reasoning in `DECISIONS.md` 2026-11-04.
 
 Shared reference — **committed**, identical on every machine (ASUS / Dell / DGX).
 Change it once and push; do not fork it locally.
@@ -82,7 +83,7 @@ Only Group D is a problem (§7.2).
 
 ## 3. The blockers
 
-### 3.1 `build_record()` hardcodes SSH
+### 3.1 `build_record()` hardcodes SSH — ✅ RESOLVED 2026-11-04
 
 `honeypot_dataset/src/parsers/cowrie_parser.py:134-135`:
 
@@ -92,21 +93,36 @@ Only Group D is a problem (§7.2).
 ```
 
 Every session the pipeline has ever seen claims to be SSH on port 22. So
-`honeypot_target_for()` returns `SSH_HONEYPOT` **unconditionally** — the entire
-`_PORT_TO_HONEYPOT` table in `feature_bridge.py` is dead code today. Fix this
-first; nothing else is testable until it is fixed.
+`honeypot_target_for()` returned `SSH_HONEYPOT` **unconditionally** — the entire
+`_PORT_TO_HONEYPOT` table in `feature_bridge.py` was dead code.
 
-### 3.2 The pipeline is single-source
+**Fixed, but not the obvious way.** The two literals became keyword parameters
+whose *defaults reproduce the old behaviour byte-for-byte*. Reading the real port
+off the events would have been wrong: the raw log carries `dst_port 2222` on
+39,931 events while `build_record` has always flattened it to 22, so every Cowrie
+session MT3 trained on had `dst_port_norm = 0.000336`. Reading it would move
+feature 39 ~100x against a constant, silently. A non-SSH parser passes its own
+values instead.
 
-`post_session_pipeline` globs one directory for `cowrie.json*`
-(`COWRIE_LOG_GLOB`) and only understands `cowrie.*` eventids. Three new honeypots
-mean three new log formats.
+### 3.2 The pipeline is single-source — ✅ RESOLVED 2026-11-04
 
-### 3.3 No session-dict contract is written down
+`post_session_pipeline` globbed one directory for `cowrie.json*` and detected
+end-of-session by the literal `cowrie.session.closed`.
 
-The contract is implicit in whatever `build_record()` happens to return (30 keys).
-Three new parsers must match it exactly, including keys the extractors silently
-default when missing. Write it down before writing a second parser.
+**Fixed:** a frozen `LogSource` dataclass carries `name` / `log_dir` / `glob` /
+`session_key` / `is_closed` / `build`, and `PostSessionPipeline(sources=[...])`
+takes a list. Left unset it builds the single Cowrie source from
+`cowrie_log_dir`, so every existing caller is unaffected. Tail state is keyed
+`"{source.name}:{path}"` so two honeypots can share a filename.
+
+### 3.3 No session-dict contract is written down — ✅ RESOLVED 2026-11-04
+
+The contract was implicit in whatever `build_record()` happened to return — **22
+keys, not 30**. New parsers must match it exactly, including keys the extractors
+silently default when missing.
+
+**Fixed:** `src/parsers/session_contract.py` — 22 required + 19 optional fields
+with types, `validate()` returning a problem list, `assert_valid()` raising.
 
 **A written contract is not enough.** Prose drifts, and the thing that actually
 prevents a second round of pipeline surgery is an **executable conformance test**
@@ -114,6 +130,9 @@ every parser must pass: required keys present, types right, `protocol` and
 `dst_port` actually set (not defaulted), no NaN or None reaching the extractors.
 Without it, parser #2 breaks the contract anyway and you have written a document
 about the problem instead of a guard against it.
+
+**Done:** `traffic_gateway/tests/test_session_contract.py`, 35 tests including 8
+negative controls, because a check that cannot fail is not a check.
 
 ### 3.4 No adaptive surface outside Cowrie
 
@@ -247,16 +266,18 @@ add three honeypots to an unproven deployment.** This phase is also `ROADMAP.md`
 Laptop work, **concurrent with Phase 0** (Track B). Nothing honeypot-specific; this
 is the socket everything else plugs into.
 
-- [ ] Fix `cowrie_parser.py:134-135` to carry the real `dst_port` / `protocol` (§3.1)
-- [ ] Write the flat session-dict contract down explicitly — all 30 keys, their
-      types, and which the extractors silently default (§3.3)
-- [ ] **Executable conformance test** every parser must pass (§3.3) — this, not the
-      written contract, is what stops the next integration needing pipeline surgery
-- [ ] Parser registry: `post_session_pipeline` takes N `(log_dir, parser, source_name)`
-      sources instead of one hardcoded `cowrie.json*` glob
-- [ ] Add `honeypot_source` to `pipeline_results.jsonl` — cherry-pick `4a6ed19`
-- [ ] Test: synthetic HTTP session in, assert `honeypot_target == WEB_HONEYPOT`
-      (this is the first test that can ever pass, given §3.1)
+- [x] **Done** (`7cf0030`) — but NOT by reading the log: made them keyword params whose
+      defaults reproduce the old behaviour byte-for-byte. Reading the real port would
+      shift feature 39 ~100x against a constant MT3 trained on. See DECISIONS.md.
+- [x] **Done** — `src/parsers/session_contract.py`, **22** required + 19 optional
+      fields (it was 22 keys, not 30)
+- [x] **Done** — `tests/test_session_contract.py`, 35 tests incl. 8 negative controls
+- [x] **Done** — `LogSource` dataclass + `PostSessionPipeline(sources=[...])`;
+      unset, it builds the single Cowrie source exactly as before
+- [x] **Done** — `PIPELINE_SOURCE` tag + `sensor` field, ported by hand (the
+      cherry-pick would have added a test importing unmerged `response_mitigation`)
+- [x] **Done and passing** — http/8080 → WEB, mysql/3306 → DB, postgres/5432 → DB,
+      plus two sources tailed together
 
 ### Phase 1b — baseline the feature pipeline BEFORE Heralding
 
@@ -268,16 +289,15 @@ Phase 2 should build — so it belongs here.
 `test_real`** — 121 rows. A measured per-class number for an HTTP class exists in the
 frozen eval today.
 
-- [ ] Pull per-class precision / recall / F1 for ids **7** (`ACCESS_BRUTE_HTTP`, 121
-      rows) and **4** (`RECON_VULN_SCAN`, 213 rows) out of the existing MT3 eval.
-      Quote the **clean** subset, as everywhere else (`CLAUDE.md`).
-- [ ] Report them with confidence intervals. **121 of 60,000 rows is a weak anchor,
-      not proof** — a per-class F1 on 121 rows has a wide interval and must not be
-      quoted as "MT3 handles HTTP".
-- [ ] Characterise Group D's domain gap offline: push synthetic HTTP request lines,
-      SQL, and credential strings through `semantic_pca.pkl` and compare their
-      projection distribution against the shell-command training distribution
-      (distance to training-embedding mean, or distance-to-nearest-neighbour).
+- [x] **Done.** Clean subset: class 7 **116/116 correct, F1 1.000**, recall CI
+      [0.968, 1.000]; class 4 128/128, F1 0.981. Clean macro-F1 0.8183.
+- [x] **Done, and the worry was misplaced.** Class 7 is **95.9% clean** (116/121), so
+      the result is not a leakage artifact. The real caveat is *representativeness*:
+      those rows are CIC-IDS2017 network flows, not honeypot captures. Still must not
+      be quoted as "MT3 handles HTTP".
+- [x] **Done.** Variance kept by the 30 shell-fitted axes: shell 90.8%, HTTP 73.6%,
+      SQL 64.1%, credentials 71.4%. Reconstruction error roughly doubles; HTTP sits
+      ~1.22σ off the in-domain cloud. Full table in HONEYPOT_AUDIT.md PART 6.
 
 **Measured already — Group D on the existing real HTTP rows is not what Heralding
 will produce:**
@@ -296,11 +316,12 @@ is real.
 
 **The decision this forces** (a Phase 2 *design* decision, not a post-hoc check):
 
-- [ ] Choose: does the Heralding parser feed real HTTP / credential text through the
-      shell-fitted PCA, or **deliberately zero-fill Group D for non-SSH sessions**?
-      Zero-filling is plausibly the more honest option, and the pipeline already has
-      the `semantic_available=False` path for it (§7.2). Decide before writing the
-      parser — it changes what the parser emits.
+- [x] **DECIDED: zero-fill.** The deciding measurement is where a zero-fill lands
+      *after* the frozen scaler — mean 0.368σ, 0 of 30 dims beyond 2σ, nearer the
+      centre than **94.65%** of real training rows, nearest real row 1.249 away where
+      typical rows sit 7.725 apart. In-distribution. Off-domain text is not.
+      Cost: Group D becomes constant per protocol, so non-SSH is classified by
+      **98 of 128 features**. See DECISIONS.md 2026-11-04.
 
 ### Phase 2 — Heralding (auth portal)
 Start here, not with web. Lowest risk, cleanest taxonomy fit, fastest proof the
@@ -383,7 +404,7 @@ Decide **before** Phase 3, not during it.
 Postgres listeners. Enabling them in Phase 2 hits this gap immediately — the thing
 that dropping Dionaea was supposed to defer. Keep them off (see Phase 2).
 
-### 7.2 Group D goes out-of-distribution
+### 7.2 Group D goes out-of-distribution — ✅ DECIDED 2026-11-04: zero-fill
 
 `semantic_pca.pkl` (30 of 128 features, global 76-105) was fitted on **shell
 command text**. HTTP request lines, SQL queries and credential strings pushed
@@ -404,10 +425,44 @@ HTTP class is **already** unlike what live HTTP request text will produce. Feedi
 Heralding's text through the shell-fitted PCA is therefore not "reusing a trained
 capability" — it is a third distribution the model has never seen.
 
-Hence the Phase 1b decision: **deliberately zero-filling Group D for non-SSH
-sessions may be more honest than feeding it off-domain text.** Zero-filling is a
-known, declared degradation with an existing code path; off-domain text is a silent
-one. Make the choice explicitly and record it in `DECISIONS.md`.
+**DECIDED: zero-fill.** Measured both options.
+
+How badly the shell-fitted PCA(30) handles foreign text — variance it manages to
+keep, with real Cowrie `command_text` as the in-domain control:
+
+| text domain | n | recon err | var kept | z-dist |
+|---|---|---|---|---|
+| shell commands (in-domain) | 60 | 0.2981 | **90.8%** | 0.00 |
+| HTTP request lines | 64 | 0.5129 | **73.6%** | 1.22 |
+| SQL injection payloads | 64 | 0.5946 | **64.1%** | 0.92 |
+| credential pairs | 64 | 0.5284 | **71.4%** | 0.74 |
+
+But the deciding measurement is where a **zero-fill** lands. The pipeline
+zero-fills *raw* and then applies the frozen scaler, so raw 0 becomes
+`(0 - mean)/scale`, not the origin:
+
+| | |
+|---|---|
+| mean \|z\| over the 30 dims | **0.368σ** |
+| dims beyond 2σ | **0 of 30** |
+| L2 norm of the point | 2.400 |
+| real training rows farther out | **94.65%** |
+| nearest real training row | 1.249 away (typical row-to-row: 7.725) |
+
+The zero-fill vector is **inside** the training cloud — nearer the centre than
+94.65% of genuine rows. It reads as unremarkable command text. Off-domain text is
+the opposite: a shifted region with a third of its variance destroyed, where the
+model can latch onto spurious structure. A declared degradation that lands
+in-distribution beats a silent distortion that does not.
+
+**The cost, which must appear in the paper:** zero-filling makes Group D a
+*constant* per protocol, so it carries no information — non-SSH protocols are
+classified by **98 of 128 features**. That stands until a per-protocol PCA is
+fitted and MT3 retrained (M2 scale, not Phase 2).
+
+**Still owed:** `semantic_available` cannot yet distinguish "DistilBERT missing"
+from "deliberately off for this protocol". Reporting both as one value would hide
+the decision. Phase 2 needs that split.
 
 ### 7.3 `egress.nft` will probably break TANNER
 

@@ -942,6 +942,135 @@ Deliberately out of scope, per MULTI_HONEYPOT.md:
 ---
 ---
 
+---
+---
+
+# PART 6 — Phase 1b: baselining the feature pipeline (2026-11-04)
+
+MULTI_HONEYPOT.md Phase 1b. Two questions, both answered by measurement on this
+laptop: how well does MT3 already do on the one real HTTP class it has, and what
+happens to Group D when it is fed text it was not fitted on.
+
+## Q1 — the existing HTTP result is real, not a leakage artifact
+
+`ACCESS_BRUTE_HTTP` (id 7) and `RECON_VULN_SCAN` (id 4) are the only
+web/auth-relevant classes with any real test data. The worry was that their
+numbers come from rows duplicated out of training (29.74% of `test_real` is).
+They do not:
+
+```
+class                  total   clean    dup   clean%
+RECON_VULN_SCAN  (4)     213     128     85    60.1%
+ACCESS_BRUTE_HTTP(7)     121     116      5    95.9%
+-- for contrast --
+EXEC_SHELL_OPEN  (12)   4883     259   4624     5.3%
+DISC_ENV_PROBE   (18)  22608   16903   5705    74.8%
+```
+
+Class 7 is **95.9% clean** -- the leakage is concentrated elsewhere, most
+severely in `EXEC_SHELL_OPEN` at 5.3%.
+
+Re-running MT3 (`best.pt`, cpu) over `test_real` and scoring only clean rows:
+
+```
+macro-F1 full  0.8272
+macro-F1 clean 0.8183
+
+cls name                  n    prec     rec      f1   recall 95% CI (Wilson)
+  4 RECON_VULN_SCAN     128   0.962   1.000   0.981   [0.971, 1.000]  128/128
+  7 ACCESS_BRUTE_HTTP   116   1.000   1.000   1.000   [0.968, 1.000]  116/116
+  6 ACCESS_BRUTE_SSH   1292   0.985   0.963   0.974   [0.951, 0.972]  1244/1292
+ 18 DISC_ENV_PROBE    16903   1.000   0.998   0.999   [0.997, 0.999]  16870/16903
+```
+
+**MT3 gets every clean HTTP-brute-force row right**, and the Wilson lower bound
+puts recall at >=96.8% even pessimistically. Stronger than expected.
+
+**The caveat is representativeness, not noise.** Those 116 rows are
+CIC-IDS2017-derived *network flows*, not honeypot captures. A perfect score on
+them is not evidence MT3 will classify live Heralding sessions correctly; it is
+evidence the network-flow features for that class are highly separable. Quote it
+as "the one real HTTP class in the test set is classified correctly on all 116
+clean rows", never as "MT3 handles HTTP".
+
+## Q2 — Group D is genuinely out-of-domain for non-SSH text
+
+`semantic_pca.pkl`: PCA 768 -> 30, fitted on shell command text, retaining
+98.41% of variance *on that domain* with 89.9% in the first two components alone.
+That concentration is the problem -- a narrow basis reconstructs foreign text
+badly. Measured with real Cowrie `command_text` as the in-domain control:
+
+```
+text domain                   n   recon err   var kept   z-dist
+shell commands (IN-DOMAIN)   60      0.2981     0.9080     0.00
+HTTP request lines           64      0.5129     0.7358     1.22
+SQL injection payloads       64      0.5946     0.6413     0.92
+credential pairs             64      0.5284     0.7135     0.74
+```
+
+`recon err` = relative L2 of what the 30 axes cannot represent; `var kept` = the
+fraction of that text's variance they do capture; `z-dist` = mean per-dimension
+|z| against the in-domain projection cloud.
+
+Reconstruction error roughly doubles. The axes keep 90.8% of shell variance but
+only 73.6% of HTTP's and **64.1% of SQL's**, and HTTP projections sit ~1.2 sigma
+off-centre.
+
+## Q3 — but where does a zero-fill land? (this decided it)
+
+The pipeline zero-fills **raw** features and then applies the frozen scaler, so
+raw 0 becomes `(0 - mean)/scale`, not the origin:
+
+```
+zero-filled Group D after the frozen scaler:
+  mean |z| over 30 dims              0.368 sigma
+  max  |z|                           1.179 sigma
+  dims beyond 1 sigma                1 of 30
+  dims beyond 2 sigma                0 of 30
+  L2 norm of the point               2.400
+
+training Group D block (n=20,433, already scaled):
+  mean L2 norm of a real row         4.857   (p1 2.201, p99 11.499)
+  real rows FARTHER out than it      94.65%
+  nearest real training row          1.249 away
+  median distance between two rows   7.725
+```
+
+The zero-fill point is **inside** the training cloud -- nearer the centre than
+94.65% of genuine rows, with a real row 1.25 away where typical rows sit 7.7
+apart. It reads as unremarkable command text, not an alien input.
+
+**Decision: zero-fill Group D for non-SSH sessions.** Full reasoning in
+DECISIONS.md (2026-11-04). A declared degradation that lands in-distribution
+beats a silent distortion that does not.
+
+## Cost, stated plainly
+
+Zero-filling makes Group D constant per protocol, so it carries no information:
+non-SSH protocols are classified by **98 of 128 features**. That is the price of
+not having a per-protocol PCA, and it must appear in the paper rather than
+implying 128 live features on every protocol.
+
+## Artifacts written
+
+- `ml_analytics/artifacts/mt3_full_d256/preds_test_real.npy` (480 KB) -- MT3
+  predictions over all 60,000 `test_real` rows, so the per-class and clean-subset
+  numbers above can be recomputed without re-running inference.
+  **Local only** -- `ml_analytics/.gitignore` excludes `artifacts/`, same as
+  `best.pt`. Another machine must regenerate it:
+  `predict(load_model('.../best.pt'), X_test_real)`, ~40 s on cpu.
+
+## Not done in Phase 1b
+
+- the protocol-conditional zero-fill is a *decision* here, not an
+  implementation; the live flag is still the global `SemanticEncoder.available`
+- no per-protocol PCA fitted (would require retraining MT3 -- M2 scale)
+- `semantic_available` in the result line still cannot distinguish "DistilBERT
+  missing" from "deliberately off for this protocol"; Phase 2 needs that split
+
+---
+---
+
 ## Colophon
 
 2026-11-02 · ASUS TUF laptop, Windows 11 · repo back on `main` @ `ae1761b`

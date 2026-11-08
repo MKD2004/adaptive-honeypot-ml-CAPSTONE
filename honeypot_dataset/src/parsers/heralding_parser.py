@@ -97,6 +97,9 @@ _BARE_CONNECT = "RECON_IP_SCAN"
 # credential over many accounts (stuffing) rather than guessing one account.
 _STUFFING_MIN_USERS = 3
 
+# Below this many distinct usernames, a passwordless burst is not enumeration.
+_ENUM_MIN_USERS = 2
+
 
 def _utc_ts(s: Any) -> float:
     """Heralding's naive-UTC timestamp -> unix epoch seconds. 0.0 if unparseable.
@@ -156,7 +159,8 @@ def label_session(record: Dict[str, Any]) -> str:
 
     Precedence is deliberate -- most specific evidence first:
       1. no auth at all            -> RECON_IP_SCAN     (connected and left)
-      2. usernames but no passwords -> RECON_USER_ENUM   (probing which accounts exist)
+      2. >=2 usernames, no passwords -> RECON_USER_ENUM  (probing which accounts exist)
+         (ONE username with no password is a passwordless default, not enum)
       3. many users, >=1 password each, few distinct passwords -> ACCESS_CRED_STUFF
       4. any factory-default pair   -> ACCESS_DEFAULT_CRED
       5. otherwise                  -> per-protocol brute force
@@ -170,7 +174,11 @@ def label_session(record: Dict[str, Any]) -> str:
     users = {u for u, _ in pairs if u}
     passwords = {p for _, p in pairs if p}
 
-    if users and not passwords:
+    # Enumeration means probing SEVERAL accounts to see which exist. A single
+    # username with an empty password is not enumeration -- it is someone trying
+    # a passwordless default (plenty of appliances ship root with no password),
+    # so it must fall through to the ACCESS_DEFAULT_CRED check below.
+    if len(users) >= _ENUM_MIN_USERS and not passwords:
         return "RECON_USER_ENUM"
 
     if len(users) >= _STUFFING_MIN_USERS and len(passwords) < len(users):

@@ -57,6 +57,20 @@ def copy_code(repo_root: Path, dest: Path) -> None:
     for rel in CODE_DIRS:
         shutil.copytree(repo_root / rel, dest / rel, ignore=ignore)
 
+    # Start the honeypot from its day-zero posture, not from whatever state this
+    # machine happens to be in. active_config.json lives inside adaptive_honeypot/
+    # and so gets copied with the code, which made this recording -- and the test
+    # built on it -- depend on live repo state: the configurator only writes its
+    # change log when something MATERIAL changes, so if the copied config already
+    # matched what the stub predicts, app/logs was never written and
+    # test_the_allowed_folders_are_used_not_just_listed failed. Seen for real: the
+    # repo sat at phase 6 "high" while the stub predicts phase 5, which maps to
+    # "high" as well, so nothing changed and the folder looked like a stale
+    # allowance. Removing it makes the run hermetic.
+    stale = dest / "adaptive_honeypot" / "active_config.json"
+    if stale.exists():
+        stale.unlink()
+
 
 def write_cowrie_log(path: Path) -> None:
     """Four sessions in Cowrie's JSON format: brute force, discovery, then a cron job."""

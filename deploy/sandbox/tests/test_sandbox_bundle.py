@@ -284,10 +284,20 @@ class TestRunbookAndUnitsAgree(unittest.TestCase):
         self.assertRegex(README, r"guard\.env\.example " + re.escape(target))
 
     def test_every_unit_and_file_in_the_folder_is_in_the_runbook(self):
+        # __pycache__ is skipped because running this very suite creates it, so the
+        # test failed on its own side effects the second time it was run. Bytecode
+        # is not part of the bundle and is gitignored.
         for path in SANDBOX.rglob("*"):
-            if path.is_file() and "tests" not in path.parts and path.name not in {".gitattributes", "README.md"}:
-                with self.subTest(file=path.name):
-                    self.assertIn(path.name, README)
+            if not path.is_file():
+                continue
+            if "tests" in path.parts or "__pycache__" in path.parts:
+                continue
+            if path.suffix in {".pyc", ".pyo"}:
+                continue
+            if path.name in {".gitattributes", "README.md"}:
+                continue
+            with self.subTest(file=path.name):
+                self.assertIn(path.name, README)
 
     def test_the_files_the_runbook_tells_you_to_edit_have_the_never_block_line(self):
         for name in ("pipeline.env", "guard.env"):

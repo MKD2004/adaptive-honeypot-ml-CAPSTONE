@@ -22,7 +22,7 @@ MT3 model, or the cloud. Treat part A as the first real test. See "Known limits"
 |---|---|
 | `docker-compose.yml`, `cowrie.cfg`, `cowrie.env.example` | Cowrie, on its own network, IPv4 only, with no spare powers |
 | `egress.nft`, `systemd/honeypot-egress.service` | Stops the honeypot starting any outbound connection |
-| `systemd/honeypot-pipeline.service`, `pipeline.env.example` | Runs the pipeline as an unprivileged user |
+| `systemd/honeypot-pipeline.service`, `pipeline.env.example` | Runs the pipeline as an unprivileged user. **Set `PIPELINE_SOURCE=internet`** -- unset, every real capture is filed as "unspecified" and can never be separated from demo data afterwards |
 | `guard.env.example` | Settings for the firewall script in `response_mitigation/host/` |
 | `requirements-pipeline.txt` | The Python packages the pipeline really needs |
 | `verify_sandbox.sh`, `check_cowrie_ips.py` | Checks after install. Change nothing |

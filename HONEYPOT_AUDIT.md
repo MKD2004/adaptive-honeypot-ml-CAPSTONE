@@ -16,9 +16,23 @@ exactly what the test runs changed
 
 | Question | Answer | Note |
 |---|---|---|
-| **How many honeypots?** | **One** | Not four. One Cowrie SSH container. The "four" is a commented-out list in the gateway config. |
+| **How many honeypots?** | **One** | Not four. One Cowrie SSH container. The "four" is a commented-out list in the gateway config. A second (Heralding) has a parser, labeller and tests as of 2026-11-04, but is **not deployed** — PART 7. |
 | **Are the attacks real?** | **All simulated** | Every log on this laptop was generated locally. Zero real attacker traffic, in any file. |
-| **Cloud deployment?** | **Not deployed** | No provider, no server, no public listener. Nothing to name. |
+| **Cloud deployment?** | **Not deployed** | No provider, no server, no public listener. The hardened kit is now on `main` and its own tests pass (PART 9), but nothing has been provisioned. |
+
+**This file is kept current.** PARTS 1-4 are the original audit (2026-11-02).
+PARTS 5-9 were added as the work happened:
+
+| Part | Subject | Headline |
+|---|---|---|
+| 5 | Phase 1 — session contract, multi-source pipeline | `build_record` flattened `dst_port` to 22 for every session; fixed without moving MT3's inputs |
+| 6 | Phase 1b — Group D baseline | `ACCESS_BRUTE_HTTP` is 95.9% clean and scores 116/116; zero-fill lands in-distribution, off-domain text does not |
+| 7 | Phase 2a — Heralding parser | Parser works; **MT3 scores 0/6 and is confidently wrong**, so deployment is paused and the trust gate was built |
+| 8 | Heralding fine-tune | Safety fixed (bare connect no longer blacklists), generalisation not (3/6). **Gate stays closed** |
+| 9 | Phase 0 readiness | Kit never set `PIPELINE_SOURCE`; two of its own tests were broken, one by live-state dependence |
+
+PART 3's three fixes: **#1 done** (API auth), **#2 done** (whitelist override),
+**#3 open** (the reputation scorer's lifetime average).
 
 ---
 ---
@@ -1394,6 +1408,135 @@ script's -- this caught me out once; read the "overall:" line, or check
 not attached to a terminal and only the tail flushed. Pass `-u` next time. The
 final metrics come from `finetune_summary.json`, which is written on disk and is
 the authoritative record.
+
+---
+---
+
+---
+---
+
+# PART 9 — Phase 0 readiness: auditing the deployment kit (2026-11-04)
+
+Phase 0 of MULTI_HONEYPOT.md is "prove the single-honeypot VPS deploy". The
+provisioning half needs a cloud account and a card, so it is not something this
+session can do. What it *can* do, and what was overdue, is audit the kit now that
+`deploy/sandbox/` is finally on `main` and ten commits of pipeline changes have
+landed since it was written.
+
+Three real problems found. All three are fixed.
+
+## 1. The kit never set the provenance tag — the worst of the three
+
+`PIPELINE_SOURCE` exists so real internet captures can never be pooled with demo
+or injected sessions in one statistic. It was added in `4a6ed19` and ported to
+`main` in Phase 1. **`deploy/sandbox/` never set it**, and unset it records
+`"unspecified"`:
+
+```
+grep -rn PIPELINE_SOURCE deploy/sandbox/   ->  (nothing)
+_source_tag() with the variable unset      ->  "unspecified"
+```
+
+So the one box whose whole purpose is producing the real data the paper rests on
+would have filed every session as `"unspecified"` — indistinguishable afterwards
+from the simulated sessions this laptop has generated for months. And it is
+**unrecoverable**: once a few thousand sessions are on disk mislabelled, nothing
+can tell them apart retrospectively.
+
+Fixed in three places, because a setting that only appears in one of them drifts:
+
+- `pipeline.env.example` now sets `PIPELINE_SOURCE=internet`, under a heading
+  that says SET THIS and explains why.
+- `verify_sandbox.sh` **warns** when it is missing, so the pre-flight check
+  catches it rather than the operator noticing weeks later.
+- `README.md`'s file table says it in the row for the pipeline service.
+
+## 2. The kit predates the API authentication, and says nothing about it
+
+The auth work in this session changed the API's default bind to `127.0.0.1` and
+made a reachable bind without `GATEWAY_API_TOKEN` a start-up refusal. Somebody
+following the runbook would have met that with no explanation.
+
+Worth stating plainly, because it is easy to assume otherwise:
+**`honeypot-pipeline.service` runs `python -m traffic_gateway.post_session_pipeline`,
+which has no HTTP server at all.** On a collection box there is nothing to serve
+and nothing to protect, so the kit needs no token. `pipeline.env.example` now says
+that, and documents the token settings as commented-out lines for the one case
+that changes it — deliberately swapping in `run_pipeline`, which does start the
+API.
+
+The same note records that MT3's trust gate needs no setting here: Cowrie
+sessions carry `source="cowrie_real"`, which is already the only trusted source,
+and adding another without passing `acceptance_heralding.py` is exactly the
+mistake the gate exists to prevent.
+
+## 3. Two of the kit's own tests were broken, one for an interesting reason
+
+`deploy/sandbox/tests/` had 3 failures. Neither was caused by this session's work
+— both reproduce at the branch tip, `origin/feature/mitigation-layer`, before any
+of it. They are now fixed, so the kit is green for the first time.
+
+**The bytecode one, twice over (trivial).**
+`test_every_unit_and_file_in_the_folder_is_in_the_runbook` walks every file in
+`deploy/sandbox/` and demands the runbook mention it. Running the suite creates
+`__pycache__/*.pyc` next to the tools, so **the test failed on its own side
+effects from the second run onward**. Now skips `__pycache__` and `.pyc`/`.pyo`,
+which are gitignored and not part of the bundle.
+
+**The `app/logs` one (a genuine defect, and the useful find).**
+`test_the_allowed_folders_are_used_not_just_listed` checks that every folder in
+the systemd unit's `ReadWritePaths` is actually written during a recorded run —
+the reasoning being that an allowance nothing uses is a hole for nothing. It
+failed on `app/logs`.
+
+The chain:
+
+- `app/logs` holds `honeypot_config_changes.jsonl`, written by
+  `HoneypotConfigurator._log_change()`.
+- That is called **only `if changed`** — i.e. only when something material about
+  the honeypot's posture actually differs.
+- `record_pipeline_writes.py` copies `adaptive_honeypot/` into its temporary
+  tree, and **`active_config.json` lives in there**, so the recording started
+  from whatever posture this machine was left in.
+- Measured: the repo sat at **phase 6, `high`** (left there by the demo). The
+  recorder's stub predicts **phase 5**, which maps to `high` as well. Same
+  interaction level, no material change, no log line, folder never written.
+
+So the test was not wrong about the folder — it was **dependent on live repo
+state**, and would pass or fail depending on what the last demo happened to
+leave behind. `copy_code()` now deletes the copied `active_config.json` so every
+recording starts from the day-zero default. `app/logs` appears in the written
+set, and the suite passes twice in a row.
+
+This is worth remembering beyond the kit: `active_config.json` is *live state*
+living inside a code directory, so anything that copies the code also copies the
+state.
+
+## Where Phase 0 actually stands
+
+| | |
+|---|---|
+| `deploy/sandbox/` on `main` | ✅ merged in `f7810ee` |
+| Kit's own tests | ✅ 72 passed, 9 skipped (was 3 failing) |
+| Provenance tagging | ✅ set, and checked by `verify_sandbox.sh` |
+| API exposure on a public box | ✅ refuses to bind unprotected (PART 3 fix #1) |
+| Whitelist bypass | ✅ closed for DIVERT (PART 3 fix #2) |
+| Docker | ✅ 29.7.2 running, `cowrie-honeypot` up |
+| **A VPS** | ⬜ **not provisioned — needs an account and a card** |
+| Cowrie reachable from the internet | ⬜ blocked on the above |
+| `check_cowrie_ips.py` confirming real source IPs | ⬜ blocked on the above |
+
+Everything that can be done without a cloud account is done. The remaining steps
+are the runbook's Part A (Cowrie on 2222, own IP only) and Part B (port 22 to the
+world), and they need a server.
+
+## Still open from PART 3
+
+Fix #3: the reputation scorer averages over up to 50 sessions
+(`session_tracker.MAX_HISTORY_PER_IP`), so one serious session is diluted by
+history. It should be a recent-window maximum. This is a weakened backstop rather
+than an open door — the whitelist override now covers the case it was guarding —
+so it does not block Phase 0.
 
 ---
 ---

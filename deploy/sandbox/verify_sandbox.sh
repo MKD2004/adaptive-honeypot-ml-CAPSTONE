@@ -119,6 +119,17 @@ fi
 echo "== Settings"
 mode="$(envval MITIGATION_MODE "$PIPELINE_ENV")"; fw="$(envval MITIGATION_FIREWALL "$PIPELINE_ENV")"
 info "MITIGATION_MODE=${mode:-observe}  MITIGATION_FIREWALL=${fw:-0}"
+
+# Provenance. Unset means every real capture is filed as "unspecified" and can never be told
+# apart from demo or injected sessions afterwards -- unrecoverable once the data is collected.
+src="$(envval PIPELINE_SOURCE "$PIPELINE_ENV")"
+if [ -z "$src" ]; then
+  warn "PIPELINE_SOURCE is not set in $PIPELINE_ENV. Real captures will be recorded as
+        'unspecified' and cannot later be separated from demo or injected data. Set
+        PIPELINE_SOURCE=internet before you open the port."
+else
+  pass "PIPELINE_SOURCE=$src"
+fi
 if [ "${mode:-observe}" = enforce ] && [ "${fw:-0}" = 1 ]; then warn "real blocking is ON. Stage 0 should be observe + firewall 0."; fi
 [ -n "$(envval MITIGATION_NEVER_BLOCK "$PIPELINE_ENV")" ] && pass "pipeline never-block list is set" || warn "MITIGATION_NEVER_BLOCK is empty in $PIPELINE_ENV (add your own IP)"
 [ -n "$(envval HONEYPOT_GUARD_NEVER_BLOCK "$GUARD_ENV")" ] && pass "firewall script never-block list is set" || warn "HONEYPOT_GUARD_NEVER_BLOCK is empty in $GUARD_ENV (add your own IP)"

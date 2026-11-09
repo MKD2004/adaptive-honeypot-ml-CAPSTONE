@@ -5,6 +5,62 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-04 — Phase 0 kit: set PIPELINE_SOURCE, and make the recorder hermetic
+
+Auditing `deploy/sandbox/` now that it is on `main` and ten commits of pipeline
+changes have landed since it was written. Three findings, all fixed.
+
+**1. The kit never set `PIPELINE_SOURCE`.** That tag exists so real internet
+captures can never be pooled with demo or injected sessions, and unset it records
+`"unspecified"`. The one box whose purpose is producing the real data the paper
+rests on would have filed every session indistinguishably from the simulated
+sessions this laptop has produced for months — and **unrecoverably**, since
+nothing can separate them after the fact.
+
+Set in three places on purpose: `pipeline.env.example` (the value),
+`verify_sandbox.sh` (a pre-flight warning when it is missing), and `README.md`'s
+file table. A setting that lives in only one of those drifts out of agreement
+with the other two.
+
+**2. The kit says nothing about the new API authentication**, because it predates
+it. Worth recording why it needs nothing: `honeypot-pipeline.service` runs
+`python -m traffic_gateway.post_session_pipeline`, which has **no HTTP server at
+all**. On a collection box there is nothing to serve, so there is nothing to
+protect. The token settings are documented as commented-out lines for the one
+case that changes it — deliberately swapping in `run_pipeline`, which does start
+the API. Same for the MT3 trust gate: Cowrie carries `source="cowrie_real"`,
+already the only trusted source, so the default is correct and needs no setting.
+
+**3. `active_config.json` is live state living inside a code directory.** This is
+the finding worth keeping.
+
+`deploy/sandbox/tools/record_pipeline_writes.py` copies the code into a temporary
+tree to record every file the pipeline writes, and the systemd unit's
+`ReadWritePaths` is checked against that recording. `app/logs` never appeared, so
+the test failed.
+
+Why: the change log is written **only `if changed`** in
+`HoneypotConfigurator.apply()`, and `active_config.json` sits inside
+`adaptive_honeypot/`, so copying the code copies the machine's current honeypot
+posture. Measured — the repo sat at **phase 6 `high`** (left there by the demo)
+while the recorder's stub predicts **phase 5**, which also maps to `high`. No
+material change, no log line, folder never written.
+
+So the test was state-dependent: it passed or failed depending on what the last
+demo left behind. `copy_code()` now deletes the copied `active_config.json`, so
+every recording starts from the day-zero default. Suite green twice in a row.
+
+**Not caused by this session's work, and checked rather than assumed** — both
+test failures reproduce at `origin/feature/mitigation-layer`, before any of it.
+Also checked and ruled out: the recorder was not leaking writes into the real
+repo (timestamps on `logs/` and `adaptive_honeypot/` were untouched by the run).
+
+**What Phase 0 still needs:** a VPS. Provisioning needs a cloud account and a
+card, so the runbook's Part A and Part B are not something this session can do.
+Everything that does not need a server is done.
+
+---
+
 ## 2026-11-04 — Whitelist bypass: DIVERT may override trust, DENY never may
 
 HONEYPOT_AUDIT.md PART 3 rated this the most serious finding in the project.

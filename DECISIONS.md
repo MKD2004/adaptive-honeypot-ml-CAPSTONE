@@ -5,6 +5,66 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-04 — Benign sessions: corroboration, because abstention does not work
+
+FINDINGS #1, the Critical one. MT3 is a closed-set classifier over 45 ATTACK
+labels -- benign rows were dropped in notebook 01 -- so its softmax must return
+some attack for any input and a benign session cannot come back "safe". Four real
+benign SSH sessions were all labelled attacks; one was auto-blacklisted.
+
+**Abstention was tried first and ruled out by measurement, not by argument.**
+Nothing available at inference separates the populations: confidence is
+0.301-0.995 for benign against 0.637-0.828 for real attacks (benign scores
+HIGHER), the top1-top2 margin overlaps, the Mahalanobis distance to the training
+set overlaps completely (425-553 vs 424-642), and the auxiliary phase head
+disagrees on benign sessions only twice out of four. No threshold exists.
+
+**Decision: require corroboration.** `MT3_RESPECT_GATEWAY_BENIGN` (default on) --
+MT3's verdict may not drive the blacklist or the reconfiguration while the
+gateway's connect-time classifier independently judged the source BENIGN. Two
+unrelated signals must agree before anyone is blocked. The gateway HAS a benign
+verdict; MT3 structurally cannot have one, so this borrows the capability rather
+than inventing it.
+
+**Independence is the whole mechanism, and I got it wrong once.** Two ways to
+lose it:
+
+  - a verdict carrying the `blacklist` signal is derived from an earlier block
+    (finding #1b), so it would let MT3's first false positive endorse its later
+    ones. Designed for.
+  - a RE-DERIVED verdict is not an observation. `process_session` recomputes one
+    from the parsed record when the caller gives none, which is the same evidence
+    MT3 just read. Measured: the cron-backdoor attack re-derives to
+    `BENIGN 0.14 []`, identical to a harmless admin session, while a benign
+    `systemctl reload nginx` re-derives to SUSPICIOUS. My first version
+    corroborated with that and **44 tests failed** -- the sandbox recorder went
+    from 4 processed sessions to 0, i.e. it suppressed real attacks while still
+    not protecting benign users. Only a verdict observed at connection time
+    counts now.
+
+**Deliberately NOT gating on the distance measure**, even though it is reported.
+Live sessions sit at 425-642 while the training p95 is 15.4, so a gate on it
+would suppress EVERY live verdict including genuine attacks. It is an honesty
+signal and `TrainingDistribution`'s docstring says so explicitly, so nobody
+later mistakes it for a usable filter.
+
+**Stated as mitigated, not closed, with three gaps named:** a benign user the
+gateway also finds suspicious is still blocked (there is a test asserting it, so
+it cannot be forgotten); the veto never fires in the bare collection topology the
+VPS will run, because nothing there supplies an observed verdict; and MT3 still
+cannot say "safe", which needs a benign class and a retrain. The benign rows to
+build that from still exist in CIC-IDS2017 and UNSW-NB15.
+
+**The bigger finding this produced.** Held-out `test_real` rows sit at p50 3.5
+against a training p95 of 15.4 -- inside, so the measure is calibrated -- while
+live Cowrie sessions sit at 425-642, roughly 75x further out. The published
+0.8187 macro-F1 therefore describes data that does not resemble what the live
+system feeds the model. One mechanism explains both finding #1 and the Heralding
+failure in PART 7, and it is a threat to validity the paper must state separately
+from the synthetic-provenance issue.
+
+---
+
 ## 2026-11-04 — Reputation scorer: average AND recent worst case, not either alone
 
 PART 3 fix #3, the last of the three. Every signal was an average over the last

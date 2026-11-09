@@ -31,6 +31,7 @@ PARTS 5-9 were added as the work happened:
 | 8 | Heralding fine-tune | Safety fixed (bare connect no longer blacklists), generalisation not (3/6). **Gate stays closed** |
 | 9 | Phase 0 readiness | Kit never set `PIPELINE_SOURCE`; two of its own tests were broken, one by live-state dependence |
 | 10 | Reputation scorer | One serious session was worth 5% of the score; now average **and** recent worst case, 0.166 -> 0.542, calibration untouched |
+| 11 | Benign sessions (FINDINGS #1) | No abstention signal separates benign from attack, so MT3's verdict now needs corroboration. **Mitigated, not closed.** Also: live sessions are ~75x further from the training data than `test_real` is |
 
 **PART 3's three fixes are all done:** #1 API authentication, #2 the whitelist
 override, #3 the reputation scorer's dilution.
@@ -1665,6 +1666,135 @@ measurement did exactly that and understated the improvement as +0.211 instead o
 
 626 passed, 25 skipped across `traffic_gateway`, `response_mitigation` and
 `deploy/sandbox`.
+
+---
+---
+
+---
+---
+
+# PART 11 — Benign sessions, and how far live data is from the training set (2026-11-04)
+
+`02-11-2026 FINDINGS.md` #1, the Critical one: MT3 is a closed-set classifier over
+45 **attack** labels. No benign class, because benign rows were dropped from the
+real datasets in notebook 01, so its softmax must return some attack for any
+input. Four genuinely benign SSH sessions were all labelled attacks and one was
+auto-blacklisted.
+
+**Status: mitigated, not closed.** Three things are still open — see the end.
+
+## Abstention was tried first, and ruled out by measurement
+
+The obvious fix is to let the model say "I don't recognise this". Nothing
+available at inference separates the two populations:
+
+```
+                   benign sessions     real attacks
+confidence           0.301 - 0.995     0.637 - 0.828
+top1-top2 margin     0.087 - 0.992     0.421 - 0.698
+mahalanobis dist     425   - 553       424   - 642
+phase-head agrees    F, T, F, T        T, T, T
+```
+
+Benign reaches **higher** confidence than any of the attacks (0.995 for
+`df -h ; free -m`), so no threshold can work, and the distance measure overlaps
+completely. This is the same lesson as PART 7's Heralding result: the wrong
+answers are confident, so confidence cannot be the guard.
+
+## So: corroboration
+
+`CONFIG.MT3_RESPECT_GATEWAY_BENIGN`, on by default. MT3's verdict may not drive
+the blacklist or the honeypot reconfiguration while the gateway's connect-time
+classifier **independently** judged the source BENIGN. Two unrelated signals have
+to agree before anybody is blocked.
+
+```
+session                        gateway          MT3                      blocked?
+whoami ; uptime ; ls ; exit    BENIGN 0.14      EXEC_SHELL_OPEN  0.301   no  (was yes)
+df -h ; free -m ; exit         BENIGN 0.14      DISC_PROC_ENUM   0.995   no  (was yes)
+rm -rf /var/log/auth.log ...   SUSPICIOUS 0.44  EXEC_SHELL_OPEN  0.637   yes - still works
+```
+
+## Independence is the mechanism, and the tests caught me losing it
+
+Two ways a corroborating verdict stops being independent. The first was designed
+for; the second I got wrong and **44 tests failed**:
+
+1. **A verdict carrying the `blacklist` signal** is derived from an earlier block
+   (finding #1b). Treating it as corroboration would let MT3's first false
+   positive endorse every later one.
+
+2. **A RE-DERIVED verdict is not an observation.** `process_session` recomputes
+   one from the parsed record when the caller supplies none — the same evidence
+   MT3 just read. Measured:
+
+   ```
+   benign admin   whoami ; uptime ; ls ; exit     BENIGN      0.14  []
+   ATTACK cron    ... | crontab -                 BENIGN      0.14  []
+   benign nginx   systemctl reload nginx          SUSPICIOUS  0.34
+   ```
+
+   A real cron-backdoor attack re-derives to **exactly** the same verdict as a
+   harmless admin session, and a harmless session re-derives to SUSPICIOUS. My
+   first version corroborated with that, which suppressed genuine attacks (the
+   sandbox recorder dropped from 4 processed sessions to 0) while still not
+   protecting benign users. Only a verdict **observed at connection time** counts
+   now.
+
+A third self-inflicted bug worth recording: the new `ood_distance` field called
+`self.mt3.scale()`, which a stubbed MT3 does not have — the sandbox write
+recorder uses one — so every session became a logged exception. The distance is
+reported, never relied on, so it is now computed defensively and a failure costs
+a log line rather than the session.
+
+## Still open, and not small
+
+1. **A benign user the gateway also finds suspicious is still blocked.** Measured:
+   `df -h ; free -m` with a SUSPICIOUS gateway verdict → `DISC_PROC_ENUM` 0.995 →
+   blocked. `test_the_residual_risk_is_real` asserts this on purpose, so the gap
+   cannot quietly disappear.
+2. **In the bare collection topology the veto never fires.** Only
+   `demo/simulate_attack.py` passes an observed verdict today; the log watcher the
+   VPS will run passes none. Finding #1 is therefore **unmitigated in the
+   deployment Phase 0 is about**. Extending it means reading the gateway's
+   recorded `CONN_ROUTED` verdict by connect time, the way `peer_attribution`
+   already recovers the peer IP.
+3. **MT3 still cannot say "safe".** A benign class plus a retrain is the only
+   real fix, and the benign rows still exist in CIC-IDS2017 and UNSW-NB15 to
+   build it from.
+
+## The bigger finding that came out of this
+
+Measuring the Mahalanobis distance for abstention produced something more
+important than the abstention attempt:
+
+```
+X_train rows            p50   5.5    p95  15.4
+held-out test_real      p50   3.5    p95   7.4     <- inside, so the measure is sound
+LIVE Cowrie sessions          425 - 642
+```
+
+A session produced by the running pipeline is roughly **75x further from the
+training distribution** than the held-out test data is. Both benign and hostile
+live sessions sit out there, which is why it cannot be used as a gate — but it
+says plainly that **the published 0.8187 macro-F1 describes data that does not
+resemble what the live system feeds the model.**
+
+That single mechanism explains finding #1 *and* PART 7's Heralding failure: a
+closed-set classifier being asked about inputs unlike anything it trained on. It
+is also a threat-to-validity the paper has to state, separately from the
+synthetic-data provenance issue already recorded in `DECISIONS.md`.
+
+Every result line now carries `ood_distance` and `ood_p95_train` so this is
+visible per session instead of implicit. **It is an honesty signal, not a gate** —
+`TrainingDistribution`'s docstring says so, because gating on it would suppress
+every live verdict including real attacks.
+
+## Tests
+
+`traffic_gateway/tests/test_benign_corroboration.py`, 17 tests, including the
+end-to-end cases against the real checkpoint (skipped when it is absent, since it
+is gitignored). 643 passed, 25 skipped across all three suites.
 
 ---
 ---

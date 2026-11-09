@@ -30,6 +30,7 @@ from .feature_bridge import (
     MT3Inference,
     SemanticEncoder,
     ThreatIntelCache,
+    TrainingDistribution,
     extract_features,
     group_d_mode,
     honeypot_target_for,
@@ -86,6 +87,61 @@ def mt3_is_trusted_for(record: Dict[str, Any]) -> bool:
     if src in CONFIG.MT3_TRUSTED_SOURCES:
         return True
     return bool(CONFIG.MT3_TRUST_UNKNOWN_SOURCE)
+
+
+def gateway_benign_veto(gateway_verdict: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Why MT3 must not act on this session, or None when it may.
+
+    02-11-2026 FINDINGS.md #1: MT3 has no benign class, so it answers every
+    session with an attack label and a benign one cannot come back "safe". The
+    gateway's connect-time classifier DOES have a benign verdict, so requiring
+    the two to agree before anyone is blocked bounds the damage.
+
+    INDEPENDENCE IS THE WHOLE POINT, and there are two ways to lose it.
+
+    1. Finding #1b. Once an IP is blacklisted the gateway's own classifier
+       returns `score=1.0, signals=['blacklist']` for every later session from
+       it. That is derived from the earlier block, so treating it as
+       corroboration would be circular -- MT3's first false positive would
+       endorse all its later ones. A verdict carrying the `blacklist` signal is
+       therefore not evidence either way.
+
+    2. A RE-DERIVED verdict is not an observation. `process_session` will
+       recompute a verdict from the parsed record when the caller supplies none,
+       and that is the same evidence MT3 just read, not an independent look at
+       how the source behaved on connection. Measured, which is why this is a
+       rule and not a preference:
+
+           benign admin   whoami ; uptime ; ls ; exit        BENIGN 0.14  []
+           ATTACK cron    ... | crontab -                    BENIGN 0.14  []
+           benign nginx   systemctl reload nginx             SUSPICIOUS 0.34
+
+       A real cron-backdoor attack re-derives to exactly the same verdict as a
+       harmless admin session, and a harmless session re-derives to SUSPICIOUS.
+       Corroborating with that would have suppressed genuine attacks while still
+       failing to protect benign users. So only a verdict OBSERVED at connection
+       time counts, i.e. one the caller passed in.
+
+    Consequence, stated plainly: in the bare collection topology (the log watcher
+    with no gateway in front, which is what the VPS runs) nothing supplies an
+    observed verdict, so this veto never fires there and finding #1 is unmitigated
+    in that deployment. Extending it would mean looking up the gateway's recorded
+    CONN_ROUTED verdict for the session by connect time, the way
+    `peer_attribution` already looks up the peer IP. Not done here.
+    """
+    if not CONFIG.MT3_RESPECT_GATEWAY_BENIGN or not gateway_verdict:
+        return None
+    verdict = str(gateway_verdict.get("verdict") or "").strip().upper()
+    if verdict != "BENIGN":
+        return None
+    signals = gateway_verdict.get("signals_fired") or []
+    if "blacklist" in signals:
+        return None          # circular: see above
+    score = gateway_verdict.get("score")
+    score_text = f"{float(score):.2f}" if isinstance(score, (int, float)) else "n/a"
+    return (f"gateway independently judged this source BENIGN "
+            f"(score {score_text}); MT3 has no benign class and may not "
+            f"overrule that alone (FINDINGS #1)")
 
 
 @dataclass
@@ -203,6 +259,7 @@ class PostSessionPipeline:
         self.ti = ThreatIntelCache()
         self.semantic = SemanticEncoder()
         self.mt3 = MT3Inference()
+        self.train_dist = TrainingDistribution()
         self._configurator = configurator
         self.mitigation = mitigation   # built on first use when not given
         self.source = _source_tag()    # provenance tag written on every result
@@ -397,8 +454,19 @@ class PostSessionPipeline:
         pred["honeypot_target"] = honeypot_target_for(record)
 
         # (d2) may this verdict act, or is it observation only?
-        mt3_trusted = mt3_is_trusted_for(record)
+        # Two independent reasons it may not: the source is one MT3 was never
+        # trained on (PART 7), or the gateway independently called this source
+        # benign and MT3 has no benign class to disagree with (FINDINGS #1).
+        # Only a verdict the caller OBSERVED at connection time can corroborate.
+        # `gw` may have been re-derived above from this very record, and a
+        # re-derivation is the same evidence twice -- see gateway_benign_veto.
+        veto = gateway_benign_veto(gw if gateway_verdict is not None else None)
+        mt3_trusted = mt3_is_trusted_for(record) and veto is None
         pred["mt3_trusted"] = mt3_trusted
+        if veto is not None:
+            log.info("session %s: MT3 says %s (p=%.3f) but %s",
+                     record.get("session_id", ""), pred["micro_state"],
+                     pred["confidence"], veto)
         if not mt3_trusted:
             log.info("session %s from source=%r: MT3 says %s (p=%.3f) but the source is "
                      "not in MT3_TRUSTED_SOURCES, so it drives nothing. Rule label: %s",
@@ -411,7 +479,8 @@ class PostSessionPipeline:
                                   "changed": False, "reason": "configurator not available"}
         if not mt3_trusted:
             action = {"previous_config": None, "new_config": None, "changed": False,
-                      "reason": (f"skipped: MT3 not trusted for source "
+                      "reason": ("skipped: " + veto) if veto is not None else
+                                (f"skipped: MT3 not trusted for source "
                                  f"{record.get('source', '')!r}")}
         fn = self._resolve_configurator()
         if mt3_trusted and fn is not None:
@@ -448,6 +517,19 @@ class PostSessionPipeline:
                            "outcome": f"MT3 not trusted for source "
                                       f"{str(record.get('source', '') or '')!r}"}]
 
+        # Reported, never relied on, so a failure here must not cost the session.
+        # It needs the frozen scaler and the training array, and neither is
+        # guaranteed: a stubbed MT3 has no `scale()` (the sandbox write recorder
+        # uses one), and a deployment that copies only the code has no
+        # X_train.npy. Both previously turned the whole session into a logged
+        # exception and 0 processed sessions.
+        try:
+            ood_distance = self.train_dist.distance(self.mt3.scale(x_raw))
+        except Exception as exc:
+            log.debug("ood_distance unavailable for %s: %s",
+                      record.get("session_id", ""), exc)
+            ood_distance = None
+
         commands = [c for c in str(record.get("command_text", "") or "").split(" ; ")
                     if c and c != "[no commands]"]
         t_start = float(record.get("t_start", 0.0) or 0.0)
@@ -467,6 +549,12 @@ class PostSessionPipeline:
             "gateway_verdict": (gw or {}).get("verdict"),
             "gateway_signals": (gw or {}).get("signals_fired", []),
             "mt3_trusted": mt3_trusted,
+            "mt3_veto": veto,
+            # How far this session sits from MT3's training data. An honesty
+            # signal, not a gate -- live sessions measure 425-642 against a
+            # training p95 of 15.4, so it cannot separate benign from hostile.
+            "ood_distance": ood_distance,
+            "ood_p95_train": self.train_dist.p95,
             "mt3_prediction": {
                 "micro_state": pred["micro_state"],
                 "phase": pred["phase"],

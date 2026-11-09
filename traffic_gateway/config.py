@@ -164,6 +164,29 @@ class GatewayConfig:
     # False = untrusted: verdict logged, but no blacklist and no reconfiguration.
     MT3_TRUST_UNKNOWN_SOURCE: bool = False
 
+    # ── MT3 may not overrule an independent BENIGN verdict on its own ────────
+    # 02-11-2026 FINDINGS.md #1: MT3 is a closed-set classifier over 45 ATTACK
+    # labels. There is no benign class -- benign rows were dropped from the real
+    # datasets in notebook 01 -- so its softmax must return some attack for any
+    # input, including a harmless session. Measured: four genuinely benign SSH
+    # sessions were all labelled attacks (one at confidence 0.995), and one was
+    # auto-blacklisted.
+    #
+    # It cannot be fixed with a confidence threshold, and that is measured too,
+    # not assumed: on those sessions confidence spans 0.301-0.995 for benign
+    # against 0.637-0.828 for real attacks, and the top1-top2 margin and the
+    # Mahalanobis distance to the training set overlap just as badly. No
+    # per-session signal available at inference separates them.
+    #
+    # So instead of asking MT3 to abstain, require CORROBORATION: MT3's verdict
+    # may not drive the blacklist or the honeypot reconfiguration while the
+    # gateway's own connect-time classifier independently judged the source
+    # BENIGN. Two different signals must agree before anyone is blocked.
+    #
+    # This is NOT a benign class, and it does NOT make MT3 able to say "safe".
+    # The real fix is a benign label plus a retrain; this bounds the harm.
+    MT3_RESPECT_GATEWAY_BENIGN: bool = True
+
     # ── Risk-score thresholds ────────────────────────────────────────────────
     SCORE_SUSPICIOUS:       float = 0.45   # ≥ → SUSPICIOUS
     SCORE_BLACKLIST:        float = 0.70   # ≥ → BLACKLISTED

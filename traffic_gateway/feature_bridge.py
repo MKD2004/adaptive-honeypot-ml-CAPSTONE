@@ -253,6 +253,74 @@ class MT3Inference:
         }
 
 
+class TrainingDistribution:
+    """How far a scaled feature vector sits from MT3's training data.
+
+    Mahalanobis distance against a stratified sample of `X_train`, reported on
+    every result so a verdict can be seen for what it is. It is an HONESTY
+    SIGNAL, deliberately NOT a gate -- see the numbers below for why.
+
+    Measured 2026-11-04, and the reason this exists:
+
+        X_train rows          p50   5.5   p95  15.4
+        held-out test_real    p50   3.5   p95   7.4   (inside -- the measure is sound)
+        LIVE Cowrie sessions        425 - 642
+
+    A live session produced by the running pipeline is roughly 75x further from
+    the training distribution than the held-out test data is. Both benign and
+    hostile live sessions sit out there, so this cannot separate them and must not
+    be used to decide anything -- gating on it would suppress every live verdict,
+    including real attacks. What it does say, truthfully, is that the published
+    macro-F1 describes data that does not look like what the live system feeds
+    the model. See 02-11-2026 FINDINGS.md #1 and HONEYPOT_AUDIT.md PART 11.
+    """
+
+    def __init__(self, stride: int = 60, ridge: float = 1e-4) -> None:
+        self.stride, self.ridge = stride, ridge
+        self._mu = self._inv = None
+        self._p95: Optional[float] = None
+        self._failed = False
+
+    def _load(self) -> bool:
+        if self._mu is not None:
+            return True
+        if self._failed:
+            return False
+        try:
+            path = DATA_FINAL / "X_train.npy"
+            X = np.load(path, mmap_mode="r")
+            sub = np.asarray(X[::self.stride], dtype=np.float64)
+            self._mu = sub.mean(axis=0)
+            cov = np.cov(sub, rowvar=False) + np.eye(sub.shape[1]) * self.ridge
+            self._inv = np.linalg.inv(cov)
+            d = sub[:3000] - self._mu
+            ref = np.sqrt(np.maximum(np.einsum("ij,jk,ik->i", d, self._inv, d), 0.0))
+            self._p95 = float(np.percentile(ref, 95))
+            log.info("training-distribution reference built from %s (p95 %.1f)",
+                     path.name, self._p95)
+        except Exception as exc:
+            log.warning("training-distribution reference unavailable (%s); "
+                        "ood_distance will be None", exc)
+            self._failed = True
+            return False
+        return True
+
+    def distance(self, x_scaled: np.ndarray) -> Optional[float]:
+        """Mahalanobis distance of one SCALED vector, or None if unavailable."""
+        if not self._load():
+            return None
+        try:
+            d = np.asarray(x_scaled, dtype=np.float64).reshape(-1) - self._mu
+            return round(float(np.sqrt(max(d @ self._inv @ d, 0.0))), 2)
+        except Exception:
+            return None
+
+    @property
+    def p95(self) -> Optional[float]:
+        self._load()
+        return self._p95
+
+
 def honeypot_target_for(session: Dict[str, Any]) -> str:
     """Which emulator this session belongs to, from its protocol/port."""
     proto = str(session.get("protocol", "") or "").lower()

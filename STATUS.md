@@ -6,6 +6,135 @@ snapshot, not a log (that's DECISIONS.md / ERRORS.md).
 
 ---
 
+## Last updated: 2026-11-04 (ASUS TUF)
+
+### Session summary (2026-11-04) — MULTI-HONEYPOT PHASE 1 + 1b DONE, PHASE 2 PAUSED, MITIGATION MERGED, ALL THREE AUDIT FIXES CLOSED
+
+13 commits, `156c82d` → `838fcc4`, all pushed. **626 tests pass** across
+`traffic_gateway`, `response_mitigation` and `deploy/sandbox`; the one failure is
+the pre-existing `test_honeypot_round_robin`, which asserts the router cycles
+several honeypots while `CONFIG.HONEYPOT_TARGETS` has one entry.
+
+Detail is in `DECISIONS.md` (11 entries today) and `HONEYPOT_AUDIT.md`
+(PARTS 5-10, each with the measurements). This is the snapshot.
+
+**MULTI_HONEYPOT.md Phase 1 — the pipeline can handle more than one honeypot.**
+`cowrie_parser.build_record()` stamped every record `dst_port=22 protocol="ssh"`,
+so `honeypot_target_for()` could only ever answer `SSH_HONEYPOT` and the whole
+port→honeypot table was dead code. **Not fixed by reading the log:** the raw
+corpus carries `dst_port 2222` on 39,931 events while `build_record` always
+flattened it to 22, so every Cowrie session MT3 trained on had
+`dst_port_norm = 0.000336`. Reading the real port would move feature 39 ~100x
+against a trained constant, silently. They became keyword parameters whose
+defaults reproduce the old behaviour byte-for-byte. Also added
+`session_contract.py` (22 required + 19 optional fields, enforced by tests, with
+negative controls) and `LogSource`, so the watcher takes N sources instead of one
+hardcoded glob.
+
+**Phase 1b — Group D settled by measurement.** The worry that
+`ACCESS_BRUTE_HTTP`'s perfect score was leakage was wrong: it is **95.9% clean**
+(116/121) and MT3 gets **116/116** right, clean macro-F1 0.8183. The real caveat
+is representativeness — those rows are CIC-IDS2017 network flows, not honeypot
+captures. **Decision: zero-fill Group D for non-SSH sources.** The deciding
+number is where a zero-fill lands *after* the frozen scaler: mean 0.368σ, 0 of 30
+dims past 2σ, nearer the centre than **94.65%** of real training rows. It is
+in-distribution; off-domain text is not (the shell-fitted PCA keeps 90.8% of
+shell variance but 73.6% of HTTP's and 64.1% of SQL's). Cost, which belongs in
+the paper: non-SSH protocols are classified by **98 of 128 features**.
+
+**Phase 2 — Heralding parser done, DEPLOYMENT PAUSED on a safety finding.** The
+parser, rule labeller, `heralding_source()` and 36 tests work. MT3 does not:
+**0 of 6** scenarios agree with the labeller and it is *confidently* wrong — a
+bare connect with no auth attempt returns `DISC_NETSTAT_SCAN` at confidence
+**1.000** (phase 3), which clears `MT3_AUTO_BLACKLIST_CONF`, so deploying as-is
+would blacklist users for opening a TCP connection. Cause: Heralding reports no
+bytes, packets, TCP flags, TLS or commands, so **only 55 of 128 feature columns
+are non-zero** and MT3 is extrapolating.
+→ Built the **MT3 trust gate**, keyed on session `source` not protocol (a Cowrie
+telnet session is shell-shaped, a Heralding one credential-shaped). The verdict is
+still computed and logged for every source, but may only *act* for
+`cowrie_real`.
+→ Tried a **fine-tune** (separate model, `artifacts/mt3_multi/`, replay against
+forgetting). It **fixed the safety problem** (bare connect → `RECON_IP_SCAN`
+phase 0) and did not regress `test_real` (0.8272 → 0.8284), Heralding held-out
+macro-F1 **0.8924** — but the six hand-built scenarios score only **3/6**, so the
+**gate stays closed**. The model learned the generator's distribution, not the
+concept. Widening the generator to chase the acceptance set would be tuning
+training data to the test and was deliberately not done.
+
+**`feature/mitigation-layer` merged** (`f7810ee`, 9 commits, +8553): the
+`response_mitigation` package and **`deploy/sandbox/`**, the hardened
+internet-facing kit. One conflict, 6 hunks, in `post_session_pipeline.py` — the
+branch called `_mitigate()` *unconditionally*, which merged naively would have
+silently undone the trust gate above. Resolved so the engine inherits it.
+
+**All three of HONEYPOT_AUDIT.md PART 3's fixes are now closed:**
+1. **API authentication** — bearer token on the four write endpoints, CORS
+   narrowed from every origin, and the part that matters: a **start-up refusal**
+   when a reachable address is bound with no token. `run_pipeline.py` called
+   `app.run()` directly and so bypassed the guard — it is what `live_demo.py`
+   runs, so the guard would have been absent from the only path anyone uses. API
+   host now defaults to `127.0.0.1`; nothing external ever needed port 5000.
+2. **Whitelist bypass** — `skip_reason()` never received the verdict, so
+   `is_whitelisted` short-circuited everything at any phase and any confidence.
+   A strong verdict (phase ≥ 2, conf ≥ 0.90) may now override a whitelist for
+   **DIVERT**, never for **DENY** — a firewall drop of a trusted address can lock
+   you out.
+3. **Reputation scorer dilution** — every signal was an average over 20 sessions,
+   so one serious session was worth 5%. Now the worse of the average and the
+   worst session in a 5-session window: the diluted case moves **0.166 → 0.542**
+   (crosses SUSPICIOUS, blocks auto-promotion) while the all-clean floor (0.179)
+   and sustained-attacker ceiling (0.654) are **unchanged to six decimals**. The
+   short window is deliberate — over the full history a spike would be
+   permanently sticky and `whitelist_promoter` could never rehabilitate anything.
+
+**Phase 0 readiness.** `deploy/sandbox/`'s own tests pass for the first time
+(72 passed, was 3 failing; neither failure was caused by this session's work —
+checked at the branch tip). Worst find: **the kit never set `PIPELINE_SOURCE`**,
+so every real VPS capture would have been filed `"unspecified"`, unrecoverably
+indistinguishable from months of simulated sessions. Now set in the env template,
+warned about by `verify_sandbox.sh`, and documented in the runbook. Also:
+`active_config.json` is live state living inside a code directory, so the write
+recorder copied this machine's honeypot posture and its test passed or failed
+depending on what the last demo left behind.
+
+**Demo fix:** `demo/real_server.py` gave a human 20 s from handshake to
+authenticating — enough for `attack_client.py` but not for a person clearing the
+host-key prompt and typing a password. Raised to 120 s. Hit live during the
+two-laptop demo.
+
+**Next:** Phase 0 needs a **VPS** — provisioning is the only thing left and it
+needs a cloud account. Then the runbook's Part A (Cowrie on 2222, own IP only) →
+Part B (port 22 to the world) → `check_cowrie_ips.py` to confirm real source IPs
+rather than `172.x`. After that: Heralding for *collection* with rule labels (the
+MT3 gate stays closed), and `ROADMAP.md` M3's A/B study, which needs none of this
+work and should not be confounded by multi-honeypot data.
+
+**Still open, deliberately:** MT3 is untrusted for every non-Cowrie source;
+`mt3_multi/best.pt` exists but nothing in the live pipeline points at it (opening
+the gate and repointing the pipeline are one decision); the frontend does not yet
+render the new `sources` / `mt3_trusted` / `group_d_mode` fields; and the
+scorer's 0.750 ceiling against a 0.70 blacklist threshold is a pre-existing
+calibration question I did not touch.
+
+---
+
+## STATUS.md gap: 2026-09-01 → 2026-11-04
+
+This file jumps from session 3 straight to today, but two sessions' work happened
+in between and is recorded elsewhere, not here:
+
+- **2026-09-29** — the live pipeline, gateway, adaptive reconfiguration, dashboard
+  and the two-laptop demo were built. See `CHANGES_AFTER_30_SEPT.md` and
+  `CLAUDE.md`'s "Live Pipeline / System" section.
+- **2026-11-02** — the honeypot reality check: how many honeypots actually exist
+  (one), whether any captured traffic is real (none is), and the mitigation-layer
+  review. See `HONEYPOT_AUDIT.md` PARTS 1-4.
+
+Recorded so the gap is visible rather than looking like nothing happened.
+
+---
+
 ## Last updated: 2026-09-01 (session 3, ASUS TUF)
 
 ### Session 3 summary (2026-08-28 → 2026-09-01) — DATASET FROZEN, BOTH MODELS TRAINED

@@ -5,6 +5,61 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-04 — Reputation scorer: average AND recent worst case, not either alone
+
+PART 3 fix #3, the last of the three. Every signal was an average over the last
+20 sessions, so one serious session was worth 5% of the score and vanished into
+history -- and the longer an attacker behaved, the safer they got.
+
+**Decision: each signal is the worse of the long-window average and the worst
+single session in a short recent window.** Not a replacement of the average with
+a maximum, which is how the finding was worded: keeping the average preserves the
+existing calibration for sustained behaviour, and the measurements confirm it --
+the all-clean floor (0.179) and the sustained-attacker ceiling (0.654) are
+unchanged to six decimal places, while the diluted case moves 0.166 -> 0.542.
+
+**Two things that were easy to get wrong.**
+
+`WORST_WINDOW = 5`, not the full history. Over all 50 sessions the worst case
+would be permanently sticky, and `whitelist_promoter` only demotes an IP when the
+score drops below `SCORE_PROMOTE` -- so one old spike would pin the score forever
+and nothing could ever be rehabilitated. The fix would have silently broken
+promotion. A test asserts a spike ages out, and another asserts the constant
+stays below both `AVG_WINDOW` and `MAX_HISTORY_PER_IP`.
+
+The worst case is the max of the signal **outputs**, not of their inputs. The
+signals disagree on direction -- high entropy is suspicious, low byte counts and
+short durations are -- so choosing an extreme input per signal means encoding
+min-or-max per signal and is easy to get backwards. Max-of-outputs is
+direction-agnostic.
+
+**Honeypot ratio and connection frequency deliberately stay on the average.** A
+per-session max of the honeypot signal would be 1.0 for any IP that ever reached
+the decoy, which is every blacklisted IP, and would pin the score; frequency is a
+property of the window, not of one session.
+
+**What this does not do, and why that is not a gap.** One serious session still
+does not re-blacklist a whitelisted IP: that needs 0.70 and the diluted case
+reaches 0.542 (the scorer's theoretical ceiling, probed per signal, is 0.750 --
+so 0.70 needs broad sustained evidence). For revoking an explicit human trust
+decision that is the right bar, and the single-strong-verdict case is already
+covered by fix #2, where MT3 at phase >= 2 / confidence >= 0.90 overrides the
+whitelist for DIVERT at once. The two fixes cover different evidence types on
+purpose.
+
+**I did not rescale the weights or move the thresholds.** The scorer topping out
+at 0.750 against a 0.70 blacklist threshold is a pre-existing calibration
+question, not part of this finding, and changing a security threshold is a
+decision for the team rather than a side effect of a dilution fix.
+
+**A test of mine was wrong and the code was right:** I asserted the score is
+identical regardless of clean-history length; it rises slightly at 40 clean
+sessions because the frequency signal counts total connections. That is the
+opposite of the harm, so the assertion became "a longer clean history must not
+LOWER the score".
+
+---
+
 ## 2026-11-04 — Phase 0 kit: set PIPELINE_SOURCE, and make the recorder hermetic
 
 Auditing `deploy/sandbox/` now that it is on `main` and ten commits of pipeline

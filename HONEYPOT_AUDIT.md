@@ -30,9 +30,10 @@ PARTS 5-9 were added as the work happened:
 | 7 | Phase 2a — Heralding parser | Parser works; **MT3 scores 0/6 and is confidently wrong**, so deployment is paused and the trust gate was built |
 | 8 | Heralding fine-tune | Safety fixed (bare connect no longer blacklists), generalisation not (3/6). **Gate stays closed** |
 | 9 | Phase 0 readiness | Kit never set `PIPELINE_SOURCE`; two of its own tests were broken, one by live-state dependence |
+| 10 | Reputation scorer | One serious session was worth 5% of the score; now average **and** recent worst case, 0.166 -> 0.542, calibration untouched |
 
-PART 3's three fixes: **#1 done** (API auth), **#2 done** (whitelist override),
-**#3 open** (the reputation scorer's lifetime average).
+**PART 3's three fixes are all done:** #1 API authentication, #2 the whitelist
+override, #3 the reputation scorer's dilution.
 
 ---
 ---
@@ -576,8 +577,13 @@ handshake so blind spoofing fails, but ARP-spoofing onto a whitelisted LAN addre
 2. ✅ **DONE.** MT3 can now override the whitelist — see the status note at the
    top of this finding.
 
-3. ⬜ **OPEN. Make the heuristic use a recent-window maximum, not a lifetime
-   average**, so one serious session cannot be diluted away by history.
+3. ✅ **DONE.** Each signal in `reputation_scorer` is now the worse of the
+   long-window average and the worst single session in a short recent window.
+   One serious session in 19 clean ones moves the score **0.166 -> 0.542**,
+   which crosses `SCORE_SUSPICIOUS` and blocks automatic promotion. The
+   all-clean floor (0.179) and the sustained-attacker ceiling (0.654) are
+   **unchanged to six decimal places**, so nothing was recalibrated. Details in
+   PART 10.
 
 **The original text of the three fixes follows.**
 
@@ -1537,6 +1543,128 @@ Fix #3: the reputation scorer averages over up to 50 sessions
 history. It should be a recent-window maximum. This is a weakened backstop rather
 than an open door — the whitelist override now covers the case it was guarding —
 so it does not block Phase 0.
+
+---
+---
+
+---
+---
+
+# PART 10 — The reputation scorer stops diluting one bad session (2026-11-04)
+
+PART 3 fix #3, the last of the three. `reputation_scorer.score_ip()` computed
+every signal from an average over the last 20 sessions, so one serious session
+was worth 5% of the score and vanished into history — and it had the property
+the finding named: **the longer an attacker behaved, the safer they got**,
+because a longer clean history buried the one session that mattered.
+
+## The change
+
+Each signal is now the **worse of two readings**:
+
+* the average over `AVG_WINDOW = 20` sessions — unchanged, still what detects
+  sustained bad behaviour;
+* the worst single session in the last `WORST_WINDOW = 5` — new, and what stops
+  one serious session being averaged into irrelevance.
+
+Two details that were easy to get wrong, and are the reason this is not a
+one-line change:
+
+**Why the worst case uses a SHORT window.** Over the full 50-session history it
+would be permanently sticky, and `whitelist_promoter` demotes a blacklisted IP
+only when the score falls below `SCORE_PROMOTE`. One old spike would pin the
+score forever and **nothing could ever be rehabilitated** — the fix would have
+silently broken promotion. With a 5-session window a spike dominates for a few
+sessions and then ages out.
+
+**Why the max is taken over the signal OUTPUTS, not the inputs.** The signals
+disagree on direction: high entropy is suspicious, but **low** byte counts and
+**short** durations are (both scanner-like). Picking an extreme input per signal
+means encoding min-or-max per signal and is easy to get backwards. Running each
+signal over every session in the window and taking the highest result is
+direction-agnostic and cannot be got backwards.
+
+Two signals are deliberately left on the average: honeypot ratio is already a
+ratio, so its "recent worst" is the same ratio over the short window (a
+per-session max would be 1.0 for any IP that ever touched the decoy, which is
+every blacklisted IP, and would pin the score); and connection frequency is a
+property of the window, not of one session.
+
+## Measured
+
+```
+scenario                                   old      new
+19 clean + 1 serious  (the diluted case)   0.166    0.542   (+0.376)
+20 clean              (floor)              0.179    0.179   (unchanged)
+20 serious            (ceiling)            0.654    0.654   (unchanged)
+
+spike 0.542  ->  6 clean sessions later 0.188   (ages out, promotable again)
+SCORE_PROMOTE 0.25   SCORE_SUSPICIOUS 0.45   SCORE_BLACKLIST 0.70
+```
+
+The floor and the ceiling are identical to six decimal places, so **nothing was
+recalibrated and no new false positives were introduced** — the change only adds
+sensitivity to the spike case that was previously invisible.
+
+What the new score does to the diluted case:
+
+| threshold | before | after |
+|---|---|---|
+| flagged SUSPICIOUS (0.45) | no | **yes** |
+| blocked from automatic promotion (0.25) | **no — it was promotable** | **yes** |
+| re-blacklisted by continuous monitoring (0.70) | no | no |
+
+The audit log now names which signals the recent worst case raised, so an
+operator can tell a sustained offender from one bad session in an otherwise clean
+history — the score alone cannot distinguish them:
+
+```
+entropy=0.85 volume=0.75 honeypot=0.04 duration=0.70 freq=0.16
+  -> weighted=0.542 (avg over 20 sessions, worst of last 5)
+  [recent worst case raised: entropy, volume, duration]
+```
+
+## What this fix does NOT do, stated plainly
+
+**One serious session still does not re-blacklist a whitelisted IP.** That needs
+`SCORE_BLACKLIST = 0.70`, and the diluted case reaches 0.542. Probing every
+signal's ceiling gives a theoretical maximum of **0.750**, so 0.70 is reachable —
+but only with near-worst readings across all five signals at once, i.e. broad
+sustained evidence. For revoking an explicit human trust decision that is the
+right bar, and it is **not** a gap left open: fix #2 covers the
+single-strong-verdict case, where MT3 at phase >= 2 and confidence >= 0.90
+overrides the whitelist for DIVERT immediately.
+
+So the two fixes cover different kinds of evidence, deliberately:
+
+* **fix #2** — one high-confidence MT3 verdict, acted on at once (DIVERT only).
+* **fix #3** — behavioural signals that no longer dilute, flagging the IP and
+  blocking its automatic promotion.
+
+## Tests
+
+`traffic_gateway/tests/test_reputation_worst_case.py`, 17 tests. Three of them
+guard the properties that are easy to lose: the floor and ceiling must not move,
+the spike must age out, and `WORST_WINDOW` must stay shorter than both
+`AVG_WINDOW` and `MAX_HISTORY_PER_IP` — that constant is the subtle way to break
+promotion.
+
+**A test of mine was wrong and the code was right.** I first asserted the score
+is *identical* regardless of clean-history length. Measured
+`[0.542, 0.542, 0.5672]` for 5 / 19 / 40 clean sessions: the slight rise at 40 is
+the connection-frequency signal, which counts total connections and legitimately
+grows with history. That is the opposite of the harm, so the assertion was
+changed to "a longer clean history must not LOWER the score", which is the
+property that actually matters.
+
+Also worth recording: `Session.close()` recomputes entropy from `payload_snip`
+and duration from the clock, so a test that sets those fields *before*
+`close_session()` has them silently discarded. An earlier run of this
+measurement did exactly that and understated the improvement as +0.211 instead of
++0.376.
+
+626 passed, 25 skipped across `traffic_gateway`, `response_mitigation` and
+`deploy/sandbox`.
 
 ---
 ---

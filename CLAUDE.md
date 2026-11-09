@@ -130,7 +130,7 @@ in the paper.
 
 **Run it:** `python -m traffic_gateway.run_pipeline` (scripted), or
 `python demo/live_demo.py` (full two-laptop stack; auto-starts Cowrie in Docker,
-falls back to the python prop if Docker is down). See `DEMORUN.md` (local,
+falls back to the python prop if Docker is down). See `docs/DEMORUN.md` (local,
 gitignored) for the recording script. Uses `honeypot_dataset/venv` + Flask /
 flask-cors / watchdog / paramiko.
 
@@ -141,8 +141,17 @@ blacklists a source once MT3 classifies it as phase >= 1.
 
 ## Reference Docs
 
-Reference material at repo root. As of 2026-08-27 these ARE committed (they sync
-project state/rules across machines):
+**All documentation lives in `docs/` as of 2026-11-04** — there were 22 markdown
+files at the repo root, which made it unreadable. Only `README.md` and this file
+stay at the top level (this one because it is loaded from the repo root).
+
+`docs/README.md` is the index: what to read first, what each file is for, and
+which ones are machine-specific. Docstrings throughout the code cite these by
+bare filename ("see `DECISIONS.md`"), which still resolves by search -- the names
+are unique, so keep them that way.
+
+Paths below are relative to `docs/`. As of 2026-08-27 these ARE committed (they
+sync project state/rules across machines):
 
 **Shared / identical on every machine** (never fork locally; change once + push):
 - `SCHEMA.md` — full 45 micro-state / 128-feature reference for writing prompts fast

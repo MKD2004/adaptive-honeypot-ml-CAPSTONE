@@ -421,14 +421,21 @@ python dashboard/backend.py --demo --port 5001
 
 # 📖 Reference Docs
 
+**Everything is in [`docs/`](docs/) as of 2026-11-04** — see
+[`docs/README.md`](docs/README.md) for the full index. Only `README.md` and
+`CLAUDE.md` remain at the repo root.
+
 | File | Contents |
 |---|---|
-| `CLAUDE.md` | Repo layout, schema summary, conventions, current status |
-| `SCHEMA.md` | Full 45 micro-state / 128-feature reference |
-| `DECISIONS.md` | Why things were built a certain way — **read before rewriting anything** |
-| `ERRORS.md` | Bugs already hit and fixed — check before re-debugging |
-| `STATUS.md` | Live pipeline stage, machine-tagged |
-| `TEAMMATES.md` | Hard rules for collaborators (do not run the notebooks) |
+| `CLAUDE.md` | Repo layout, schema summary, conventions, current status (repo root) |
+| [`docs/STATUS.md`](docs/STATUS.md) | Where the project is right now — **start here** |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Capstone → paper plan, milestones M1-M5 |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Why things were built a certain way — **read before rewriting anything** |
+| [`docs/ERRORS.md`](docs/ERRORS.md) | Bugs already hit and fixed — check before re-debugging |
+| [`docs/SCHEMA.md`](docs/SCHEMA.md) | Full 45 micro-state / 128-feature reference |
+| [`docs/MULTI_HONEYPOT.md`](docs/MULTI_HONEYPOT.md) | Plan for growing past one honeypot |
+| [`docs/HONEYPOT_AUDIT.md`](docs/HONEYPOT_AUDIT.md) | What is actually running, and every verification run (11 parts) |
+| [`docs/TEAMMATES.md`](docs/TEAMMATES.md) | Hard rules for collaborators (do not run the notebooks) |
 
 ---
 

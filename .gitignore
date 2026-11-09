@@ -39,3 +39,9 @@ SESSION_CONTEXT.md
 
 # Local screen-recording script (personal, not shared)
 DEMORUN.md
+
+# Not part of this project. Left on disk on purpose rather than deleted -- these
+# are personal/other-project files and deleting them is not reversible.
+Resume_*.pdf
+pulse-engineering-metrics-and-incident-response-console/
+pulse-engineering-metrics-and-incident-response-console.zip

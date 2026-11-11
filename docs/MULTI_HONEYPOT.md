@@ -3,8 +3,18 @@
 Last updated: 2026-11-04 — **Phase 1 and 1b DONE; Phase 2 parser done, deployment
 PAUSED on a safety finding** (see Phase 2 below and `HONEYPOT_AUDIT.md` PART 7).
 Blockers 3.1-3.3 resolved; the Group D question in §7.2 is decided (zero-fill).
-Next actionable work is Phase 2 (Heralding). Verification output lives in
-`HONEYPOT_AUDIT.md` PARTS 5-6; the reasoning in `DECISIONS.md` 2026-11-04.
+**Next actionable work is NO LONGER Phase 2.** Updated 2026-11-11: real Cowrie
+data arrived (`REAL_DATA_2026-11-09.md`) and exposed a dataset-wide integrity
+problem — 45 of 128 features constant, 47% of TabSyn rows arithmetically
+impossible (`DATA_INTEGRITY.md`). The rebuild outranks a second honeypot, because
+adding protocols multiplies an unsolved single-protocol problem. **Collection can
+and should continue in parallel** — it is wall-clock bound, see the Track A /
+Track B split in section 6. Heralding is still the right next honeypot when the
+model work lands: it is the only one with a finished parser and a taxonomy that
+fits.
+
+Verification output lives in `HONEYPOT_AUDIT.md` PARTS 5-6; the reasoning in
+`DECISIONS.md` 2026-11-04.
 
 Shared reference — **committed**, identical on every machine (ASUS / Dell / DGX).
 Change it once and push; do not fork it locally.

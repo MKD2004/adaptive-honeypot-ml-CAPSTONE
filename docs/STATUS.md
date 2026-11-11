@@ -6,6 +6,58 @@ snapshot, not a log (that's DECISIONS.md / ERRORS.md).
 
 ---
 
+## Last updated: 2026-11-11 (ASUS TUF)
+
+### Session summary (2026-11-09 → 11) — FIRST REAL DATA, AND A DATASET INTEGRITY PROBLEM
+
+**Read `DATA_INTEGRITY.md` before touching the dataset or quoting any number
+below.** That is the handoff document for the rebuild.
+
+**Real honeypot data exists for the first time.** A teammate ran Cowrie in Docker
+on an Oracle Cloud VM and collected 8 days of internet traffic: **45,648 complete
+sessions, 641 unique source IPs, 329,138 events, 0 unparseable lines**, plus 491
+file uploads and 31 downloads. All of it parses cleanly and every row satisfies
+the session contract. Details in `REAL_DATA_2026-11-09.md`. The capture is
+gitignored and **irreplaceable** — back it up.
+
+**The model does not fit it.** 23.3% agreement with the rule labeller on 300
+sampled sessions, and 226x outside its own training distribution (real p50 3,491
+Mahalanobis against a training p95 of 15.4; held-out `test_real` sits *inside* at
+p50 3.5, so the measure is sound).
+
+**Root cause, and it is bigger than the model.** 45 of 128 features are constant
+across `X_train` — including **all 14 of `E_threat_intel`** (synthetic sessions
+carry no CVE, so every threat-intel lookup returns defaults) and **all 8 of
+`F_tls_host`** (Cowrie is SSH; there is no TLS to fingerprint). MT3 reads ~83
+informative features, not 128, and two of six architecture branches consume
+constants. Separately, **47% of TabSyn rows are arithmetically impossible** in
+their temporal block — `iat_mean` greater than `iat_max`, `iat_cv = 0` while
+`iat_min != iat_max`. Nothing ever checked, so nothing ever caught it.
+
+**Fixed: the generator's timing model** (`f9fa918`). It emitted no per-event
+timestamps at all, so `extract_temporal` took a fallback that fabricated a single
+inter-arrival time, collapsing seven features. Now generates per-event timestamps
+from a three-component lognormal mixture fitted to 283,432 real gaps, with
+duration preserved exactly and duration/event baselines recalibrated per phase
+(phase 0 at 2.0 s/5 events vs real shallow 1.9 s/5; phase 8 at 69 s/39 vs real
+deep 63.6 s/41). 13 tests including a regression guard.
+
+**Also this session:** finding #1 mitigated by corroboration rather than
+abstention (`828ec08`); repo cleaned from 23.8 GB to 9.0 GB; all 22 root markdown
+files moved into `docs/`.
+
+**NOT done, deliberately:** the dataset is **not rebuilt**. `data/final/` is
+untouched — `X_train.npy` still carries its August timestamp — so every published
+number still describes the data it was measured on.
+
+**Next:** the rebuild, in `DATA_INTEGRITY.md`'s order — loud failures, then the
+validator (run it on the current data first for the full damage report), then
+event-stream generation, then the TabSyn primitive/derived split, then rebuild and
+retrain. A second honeypot is explicitly NOT next; collection can continue in
+parallel since it is wall-clock bound.
+
+---
+
 ## Last updated: 2026-11-04 (ASUS TUF)
 
 ### Session summary (2026-11-04) — MULTI-HONEYPOT PHASE 1 + 1b DONE, PHASE 2 PAUSED, MITIGATION MERGED, ALL THREE AUDIT FIXES CLOSED

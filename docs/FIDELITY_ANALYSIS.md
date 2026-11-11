@@ -1,5 +1,10 @@
 # FIDELITY ANALYSIS — HoneySynth (real + TabSyn)
 
+> ## ⚠️ SUPERSEDED IN PART — read `DATA_INTEGRITY.md` first (2026-11-11)
+>
+> This file concludes that the ~0.998 adversarial AUC is a generator fingerprint that **does not hurt downstream utility**. That conclusion is no longer safe. Measured 2026-11-11: **47% of TabSyn rows are arithmetically impossible** in their temporal block (`iat_mean` exceeding `iat_max`, `iat_cv = 0` while `iat_min != iat_max`), and **45 of 128 features are constant** across the dataset — including all 14 of `E_threat_intel` and all 8 of `F_tls_host`. Part of what the adversarial classifier was separating is incoherent rows, not a benign stylistic fingerprint. The AUC measurement itself still stands; its interpretation does not.
+
+
 Shared reference for the write-up. Records why the synthetic data's adversarial
 AUC is ~0.998, where the fingerprint comes from, and why it does not hurt
 downstream utility. Dated 2026-08-28 (ASUS). Related: `DECISIONS.md` (2026-08-28

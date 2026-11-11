@@ -26,7 +26,12 @@ those say *how we got here*.
   offline demo. Not honeypots. Never describe them as such in the paper.
 
 **The honest weaknesses (a reviewer finds these on page 1):**
-1. **No real honeypot data.** Genuinely real data is CIC-IDS2017 + UNSW-NB15 only,
+1. **No real honeypot data.** ~~Genuinely real data is CIC-IDS2017 + UNSW-NB15 only,~~
+   **OUT OF DATE as of 2026-11-09: there are now 45,648 real internet-captured
+   Cowrie sessions** from an Oracle Cloud VM (`REAL_DATA_2026-11-09.md`). They are
+   NOT yet in the dataset, and the model does not fit them (23.3% agreement, 226x
+   outside the training distribution). M1 below is therefore part-done. Original
+   text follows: genuinely real data is CIC-IDS2017 + UNSW-NB15 only,
    anchoring **13 of 45** classes (all network-flow). The 15k "Cowrie" sessions in
    the training set are synthetic. We have never deployed a honeypot to the open
    internet. (See `DECISIONS.md`, 2026-08-28.)

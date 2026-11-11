@@ -210,6 +210,16 @@ these exact rows.
 are ALREADY SCALED (never call `scaler.transform` on them) and `feature_scaler.pkl` is a
 joblib dump (`pickle.load` raises). Both corrupt silently.
 
+**THIRD, AND LARGER (2026-11-11): the dataset has a known integrity problem.**
+45 of 128 features are constant across `X_train` — including ALL 14 of
+`E_threat_intel` and ALL 8 of `F_tls_host` — and 47% of TabSyn rows are
+arithmetically impossible in their temporal block (`iat_mean` > `iat_max`,
+`iat_cv = 0` while `iat_min != iat_max`). MT3 reads ~83 informative features, not
+128, and two of the six architecture branches consume constants. Every number in
+this file was measured on that data. **Read `DATA_INTEGRITY.md` before quoting
+any of it or starting a retrain.** The generator's timing half is fixed
+(`f9fa918`); the dataset is not rebuilt.
+
 **Models trained and compared** (same splits, same scaler, macro-F1 over the 21 classes
 present in `test_real`):
 

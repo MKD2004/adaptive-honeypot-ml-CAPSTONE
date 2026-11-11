@@ -7,6 +7,33 @@ something from scratch. Newest first.
 
 ---
 
+## A feature that cannot be computed must be MISSING, not zero (2026-11-11)
+
+The costliest bug in the project so far, and the cheapest to have prevented.
+
+`extractors/temporal.py` fabricates a single inter-arrival time when
+`event_timestamps` has fewer than two entries:
+
+    iat = np.array([duration / max(n_events - 1, 1)])
+
+The generator never emitted per-event timestamps, so this fired for the whole
+dataset. One value has no spread, shape or runs, so seven temporal features
+became constants — `burst_count` took exactly two distinct values across 18,900
+rows. The zeros were indistinguishable from measured zeros, so nothing looked
+wrong for three months, and MT3 trained on them.
+
+Checking the whole matrix then found **45 of 128 features constant**, including
+all of `E_threat_intel` and all of `F_tls_host`.
+
+**Rule: never substitute a fabricated value for missing input.** Return NaN,
+or raise. A loud failure costs an afternoon; a silent one cost a dataset and
+every number measured on it. See `DATA_INTEGRITY.md`.
+
+**Also check:** a generative model will not respect arithmetic identities between
+columns unless you stop asking it to generate both sides. 47% of TabSyn rows have
+`iat_mean` > `iat_max`.
+
+
 ## `data/final/` splits are ALREADY scaled — re-applying `feature_scaler.pkl` silently corrupts the input
 
 **Symptom:** No crash. A model trained on `data/final/` that calls

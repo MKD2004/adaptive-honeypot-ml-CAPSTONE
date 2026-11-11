@@ -1,5 +1,13 @@
 # TEAMMATES.md — hard rules for collaborators
 
+> **Exception, authorised 2026-11-11 by the project owner (MKD2004).** The
+> dataset-rebuild work described in `DATA_INTEGRITY.md` *requires* editing
+> `honeypot_dataset/src/generators/`, `src/extractors/`, `src/validators/`,
+> `configs/schema.py` and the notebooks. The "do not touch the dataset pipeline"
+> rule below still holds for everyone else and for every other purpose; it exists
+> to prevent accidental drift, not to block a deliberate, owner-approved rebuild.
+> `data/final/` itself stays frozen until a new build passes validation.
+
 **Read this before touching anything in this repo — and this applies equally to
 any AI coding assistant (Claude Code, etc.) running on your machine.** If you are
 using Claude Code, point it at this file and tell it these rules are binding.

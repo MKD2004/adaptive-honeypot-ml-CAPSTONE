@@ -11,7 +11,7 @@ import random
 import logging
 import numpy as np
 import pandas as pd
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import sys
 from pathlib import Path
@@ -362,6 +362,82 @@ def generate_event_timestamps(t_start: float,
     return out
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Session identity and milestones
+# ──────────────────────────────────────────────────────────────────────────────
+# Four features were dead because the generator never emitted the keys their
+# extractors read. Measured in the real capture, every one of 11,328 parsed
+# sessions carries all of them:
+#
+#   src_port        -> src_is_ephemeral       (generator emitted nothing -> 0.0)
+#   src_ip (reused) -> attacker_repeat_visitor (generator used a fresh random
+#                                               10.x per session, so no IP was
+#                                               ever seen twice)
+#   t_first_auth    -> time_to_first_auth_s   (absent -> clamped to 0.0)
+#   t_first_cmd     -> time_to_first_cmd_s    (absent -> clamped to 0.0)
+
+# Real source ports, 11,328 sessions: median 46,542, 98.0% at or above 32768,
+# 41.1% above 49151. Drawing uniformly from the Linux default ephemeral range
+# reproduces that last figure almost exactly -- (60999-49152)/(60999-32768) =
+# 0.42 against a measured 0.411 -- so no extra shaping is needed.
+_EPHEMERAL_LO, _EPHEMERAL_HI = 32768, 60999
+_NON_EPHEMERAL_P = 0.02          # the measured 2% that sit below the range
+
+# Documentation ranges only (RFC 5737), never routable addresses. Same choice as
+# heralding_simulator._random_public_ip, for the same reason: a synthetic corpus
+# must not name real hosts. The previous 10.x addresses were RFC 1918 private
+# space, which no internet attacker can come from.
+_DOC_BLOCKS = ((192, 0, 2), (198, 51, 100), (203, 0, 113))
+
+# Real capture: 641 distinct sources across 45,648 sessions, about 71 sessions
+# per address; 108 sources and 105 sessions each within a single day. A bounded
+# pool reproduces that, and it is the only way `seen_before` is ever true.
+_IP_POOL_SESSIONS_PER_ADDR = 71
+
+
+def _ip_pool(n_sessions: int, rng: random.Random) -> List[str]:
+    """Addresses to draw from, sized so reuse matches the real capture."""
+    size = max(8, min(3 * 254, n_sessions // _IP_POOL_SESSIONS_PER_ADDR))
+    pool, seen = [], set()
+    while len(pool) < size:
+        b = rng.choice(_DOC_BLOCKS)
+        ip = f"{b[0]}.{b[1]}.{b[2]}.{rng.randint(1, 254)}"
+        if ip not in seen:
+            seen.add(ip)
+            pool.append(ip)
+    return pool
+
+
+def _src_port(rng: random.Random) -> int:
+    if rng.random() < _NON_EPHEMERAL_P:
+        return rng.randint(1024, _EPHEMERAL_LO - 1)
+    return rng.randint(_EPHEMERAL_LO, _EPHEMERAL_HI)
+
+
+def _milestones(event_ts: List[float], n_login: int, n_cmds: int
+                ) -> Tuple[float, float]:
+    """(t_first_auth, t_first_cmd), taken FROM the event series.
+
+    Picked as members of `event_ts` rather than computed as independent offsets,
+    so they cannot contradict the timestamps -- the same reason the derived
+    features are computed rather than generated. `cowrie_parser` does exactly
+    this for real sessions: the milestone IS one of the session's events.
+
+    A session with no logins or no commands reports its start, which is what the
+    real parser yields and what the extractor clamps to zero.
+    """
+    t0 = event_ts[0]
+    n = len(event_ts)
+    if n < 2:
+        return t0, t0
+    # Authentication follows the transport handshake: connect, version, kex.
+    # Real median time-to-first-auth is 0.903 s in sessions whose median total
+    # duration is 2.13 s, i.e. roughly the first third of the event series.
+    auth_i = min(max(1, int(n * 0.30)), n - 1) if n_login > 0 else 0
+    cmd_i = min(auth_i + 1, n - 1) if n_cmds > 0 else 0
+    return event_ts[auth_i], event_ts[cmd_i]
+
+
 def generate_balanced_sessions(n_total: int,
                                 seed: int = 42) -> pd.DataFrame:
     """
@@ -381,6 +457,8 @@ def generate_balanced_sessions(n_total: int,
 
     records = []
     sid     = 0
+    ip_pool = _ip_pool(max(n_total, MIN_SAMPLES_PER_CLASS * N_CLASSES), rng)
+    ips_seen: set = set()
 
     for label in labels:
         label_idx = LABEL_TO_IDX[label]
@@ -415,15 +493,28 @@ def generate_balanced_sessions(n_total: int,
             n_ev = int(np.clip(np.random.lognormal(mean=1.61 + phase*0.26, sigma=0.7),
                                2, EVENTS_CEILING))
 
-            # Brute-force sessions have many login attempts
-            n_login = 0
+            # Every Cowrie session involves at least one authentication attempt
+            # -- that is how a session begins. The previous `n_login = 0` for
+            # non-brute-force labels left time_to_first_auth_s at zero for 89%
+            # of generated sessions, while all 11,328 real sessions carry a
+            # t_first_auth with a median 0.903 s after connect. Brute-force and
+            # credential-stuffing labels keep their heavy tail on top.
+            n_login = 1
             if "BRUTE" in label or "CRED" in label:
                 n_login = max(1, int(np.random.lognormal(mean=3.5, sigma=1.0)))
+            # n_login cannot exceed the events available to carry it, or
+            # n_commands below goes negative.
+            n_login = max(1, min(n_login, max(1, n_ev - 1)))
 
             t_start = float(np.random.uniform(1_680_000_000, 1_712_400_000))
             # Per-event timestamps, so the burst / inter-arrival features are not
             # dead constants. See generate_event_timestamps for the calibration.
             ev_ts = generate_event_timestamps(t_start, n_ev, dur, rng)
+            n_cmds = max(0, n_ev - n_login - 1)
+            t_auth, t_cmd = _milestones(ev_ts, n_login, n_cmds)
+            src_ip = rng.choice(ip_pool)
+            seen_before = src_ip in ips_seen
+            ips_seen.add(src_ip)
 
             records.append({
                 "session_id":            f"sim_{sid:08d}",
@@ -436,13 +527,20 @@ def generate_balanced_sessions(n_total: int,
                 "session_duration_s":    dur,
                 "n_events":              n_ev,
                 "event_timestamps":      ev_ts,
-                "n_commands":            max(0, n_ev - n_login - 1),
+                "t_first_auth":          t_auth,
+                "t_first_cmd":           t_cmd,
+                "src_port":              _src_port(rng),
+                # True when this address already appeared earlier in the corpus.
+                # Reads straight into tls_host's `seen_before`, which drives
+                # attacker_repeat_visitor.
+                "seen_before":           seen_before,
+                "n_commands":            n_cmds,
                 "login_attempts":        n_login,
                 "bytes_in":              int(np.random.lognormal(6.0 + phase*0.5, 1.5)),
                 "bytes_out":             int(np.random.lognormal(5.5 + phase*0.3, 1.5)),
                 "dst_port":              22,
                 "protocol":              "ssh",
-                "src_ip":                f"10.{rng.randint(0,255)}.{rng.randint(0,255)}.{rng.randint(1,254)}",
+                "src_ip":                src_ip,
                 "source":                "simulated",
                 "associated_cve":        "",
             })

@@ -173,3 +173,74 @@ class TestTheRegressionGuard(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestTheKeysTheExtractorsAskFor(unittest.TestCase):
+    """2026-11-11: four features were dead purely because the generator never
+    emitted the session keys their extractors read. Every one of 11,328 real
+    parsed sessions carries all of them."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.records = generate_balanced_sessions(900, seed=5).to_dict("records")
+
+    def test_src_port_is_emitted_and_mostly_ephemeral(self):
+        """Real: median 46,542, 98.0% >= 32768, 41.1% > 49151."""
+        ports = [r["src_port"] for r in self.records]
+        self.assertTrue(all(1024 <= p <= 65535 for p in ports))
+        frac = sum(p >= 32768 for p in ports) / len(ports)
+        self.assertGreater(frac, 0.90, "most source ports should be ephemeral")
+        iana = sum(p > 49151 for p in ports) / len(ports)
+        self.assertLess(abs(iana - 0.411), 0.10,
+                        "share above the IANA dynamic floor should track the "
+                        "real capture, since src_is_ephemeral keys on it")
+
+    def test_source_addresses_repeat(self):
+        """attacker_repeat_visitor can only ever be true if addresses recur. The
+        generator used a fresh random 10.x per session, so none ever did."""
+        ips = {r["src_ip"] for r in self.records}
+        self.assertLess(len(ips), len(self.records),
+                        "a bounded pool must produce reuse")
+        self.assertTrue(any(r["seen_before"] for r in self.records))
+
+    def test_addresses_are_documentation_ranges_only(self):
+        """Never a routable address in a synthetic corpus. The previous 10.x
+        values were RFC 1918 private space, which no internet attacker uses."""
+        for r in self.records:
+            self.assertTrue(
+                r["src_ip"].startswith(("192.0.2.", "198.51.100.", "203.0.113.")),
+                f"{r['src_ip']} is outside RFC 5737")
+
+    def test_milestones_are_members_of_the_event_series(self):
+        """t_first_auth and t_first_cmd are taken FROM the timestamps rather
+        than computed as independent offsets, so they cannot contradict them."""
+        for r in self.records[:300]:
+            ts = r["event_timestamps"]
+            self.assertIn(r["t_first_auth"], ts)
+            self.assertIn(r["t_first_cmd"], ts)
+
+    def test_milestones_are_ordered_within_the_session(self):
+        for r in self.records[:300]:
+            ts = r["event_timestamps"]
+            self.assertGreaterEqual(r["t_first_auth"], ts[0])
+            self.assertLessEqual(r["t_first_auth"], ts[-1])
+            self.assertGreaterEqual(r["t_first_cmd"], ts[0])
+            self.assertLessEqual(r["t_first_cmd"], ts[-1])
+
+    def test_every_session_authenticates(self):
+        """All 11,328 real sessions carry a t_first_auth; `n_login = 0` for
+        non-brute-force labels left time_to_first_auth_s dead in 89% of rows."""
+        self.assertTrue(all(r["login_attempts"] >= 1 for r in self.records))
+
+    def test_login_attempts_cannot_exceed_the_events_to_carry_them(self):
+        for r in self.records:
+            self.assertGreaterEqual(r["n_commands"], 0,
+                                    "n_commands = n_events - n_login - 1 must "
+                                    "not go negative")
+
+    def test_time_to_first_auth_is_alive(self):
+        from src.extractors.temporal import extract_temporal, TEMPORAL_FEATURE_NAMES
+        i = TEMPORAL_FEATURE_NAMES.index("time_to_first_auth_s")
+        col = np.array([extract_temporal(r)[i] for r in self.records])
+        self.assertGreater(float(np.mean(col > 0)), 0.5,
+                           "was 0.0 in 89% of rows before the fix")

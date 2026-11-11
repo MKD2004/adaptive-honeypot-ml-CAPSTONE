@@ -330,11 +330,26 @@ TRIAGE: Dict[str, Tuple[str, str]] = {
     "src_is_ephemeral":     ("FIX", "the generator emits no src_port, so this "
                                     "defaults to 0; real records all have one"),
 
-    # ── FIX: computable from src_ip, which every real record has ─────────────
-    "geo_risk_score":       ("FIX", "GeoIP on src_ip; the capture has 641 real "
-                                    "source addresses with genuine spread"),
-    "attacker_repeat_visitor": ("FIX", "count prior sessions per src_ip; the "
-                                       "top talker alone made 3,527 connections"),
+    # ── DROP: attempted as FIX on 2026-11-11, and both failed on measurement ─
+    # Keyed on src_ip, which every real record has, so these looked fixable.
+    # They are not, for two different reasons, and both are worth recording
+    # because the obvious next person will try the same thing.
+    "geo_risk_score":       ("DROP", "needs a country code. There is no GeoIP "
+                                     "database or library anywhere in the "
+                                     "project (geoip2, maxminddb, pygeoip all "
+                                     "absent), so the extractor falls through "
+                                     "to its 0.35 default for every row. Add a "
+                                     "GeoLite2 dependency and this becomes a "
+                                     "FIX; until then it measures nothing."),
+    "attacker_repeat_visitor": ("DROP", "near-constant in REALITY, not just in "
+                                        "the generator: 98.6% of the 45,648 "
+                                        "real sessions come from an "
+                                        "already-seen address, because a "
+                                        "handful of bots dominate. Fixing the "
+                                        "generator took it to 99.2%, which is "
+                                        "faithful and still useless. A repeat "
+                                        "COUNT or a recency would vary, but "
+                                        "that is a schema change, not a fix."),
 
     # ── FIX: the extractor formula is wrong ─────────────────────────────────
     "rle_compression_ratio": ("FIX", "min(1.0, n_runs*2/len) saturates at 1.0 "

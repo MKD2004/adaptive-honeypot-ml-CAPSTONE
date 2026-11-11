@@ -4,7 +4,7 @@ Group C — 24 Payload Statistical Features (fed to CNN branch)
 Detects obfuscation, encoding, and encryption in command payloads.
 """
 from __future__ import annotations
-import math, re
+import math, re, zlib
 from collections import Counter
 import numpy as np
 
@@ -46,9 +46,52 @@ def _ngram_entropy(data: bytes, n: int) -> float:
 
 
 def _rle_ratio(data: bytes) -> float:
-    if len(data) < 2: return 1.0
-    n_runs = 1 + sum(1 for i in range(1, len(data)) if data[i] != data[i-1])
-    return min(1.0, (n_runs * 2) / len(data))
+    """How compressible is the payload? Lower means more redundant.
+
+    FIXED 2026-11-11. The previous implementation counted runs of IDENTICAL
+    adjacent bytes:
+
+        n_runs = 1 + sum(data[i] != data[i-1] ...)
+        return min(1.0, (n_runs * 2) / len(data))
+
+    In ordinary text almost every adjacent byte differs, so `n_runs` is close to
+    `len(data)`, the ratio is close to 2, and the clamp made it **exactly 1.0 for
+    every text payload in the dataset** -- 100.0% of 18,900 sampled rows, and
+    measured 1.0000 on every real attacker command. Only a pathological input
+    such as the 260-character `AAAA...` password probe scored anything else.
+    Dropping the factor of 2 does not help: `n_runs / len` still lands between
+    0.94 and 1.00 for all of them.
+
+    Actual compression measures what the feature is named for. Raw deflate
+    (`wbits=-15`) rather than `zlib.compress` because zlib's 6-byte header and
+    checksum dominate short payloads -- `ls` scored 4.0 with the header and
+    behaves sensibly without it. Values above 1.0 are real and meaningful: a very
+    short high-entropy payload genuinely does not compress.
+
+    Measured on real commands after the fix (these are the actual outputs, not
+    estimates -- a first draft of this docstring quoted numbers that had never
+    been run):
+        uname -s -v -n -r -m         1.1000
+        echo xsec                    1.2222
+        chmod +x /root/.16           1.1111
+        260 x A                      0.0192
+        ls                           2.0000   (clamped; 2 bytes cannot compress)
+
+    Short payloads legitimately exceed 1.0 -- deflate cannot shrink a handful of
+    bytes -- so the value is clamped at 2.0 rather than at 1.0, which would
+    throw away the distinction between "short" and "incompressible".
+    """
+    n = len(data)
+    if n < 2:
+        return 1.0
+    # NOT wrapped in a bare `except Exception`. An earlier version of this fix
+    # was, and when the zlib import turned out to be missing the handler
+    # swallowed the NameError and returned 1.0 for every payload -- reproducing
+    # the exact defect being repaired, invisibly. zlib is in the standard
+    # library; if it raises, that is a real problem and it should be heard.
+    c = zlib.compressobj(6, zlib.DEFLATED, -15)
+    packed = c.compress(data) + c.flush()
+    return float(min(max(len(packed) / n, 0.0), 2.0))
 
 
 def _max_run(data: bytes) -> int:

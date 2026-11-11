@@ -170,6 +170,198 @@ def filter_invalid_sequences(df: pd.DataFrame,
     return df[mask].reset_index(drop=True)
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Event timing
+# ──────────────────────────────────────────────────────────────────────────────
+# WHY THIS EXISTS. Until 2026-11-09 this generator emitted `t_start`, `t_end` and
+# `n_events` but NO per-event timestamps. `extractors/temporal.py` falls back to a
+# single synthetic inter-arrival time when `event_timestamps` has fewer than two
+# entries -- `iat = [duration / (n_events - 1)]` -- and one value has no spread,
+# no shape and no runs. Seven of the 24 temporal features therefore collapsed to
+# constants across the whole frozen training set:
+#
+#     feature                 % rows == 0   distinct values (18,900 rows sampled)
+#     burst_count                   99.6%         2
+#     burst_mean_size               99.6%         2
+#     frac_sub100ms                 99.6%         2
+#     iat_cv                        98.2%       338
+#     iat_skew                      98.3%       321
+#     iat_kurt                      98.4%       297
+#     inter_burst_gap_std           98.2%       338
+#
+# The LSTM branch learned nothing from them, and on the first real capture they
+# were all non-zero -- which is most of why real sessions sit 226x outside the
+# training distribution (REAL_DATA_2026-11-09.md section 4).
+#
+# CALIBRATION. The constants below are fitted to 283,432 inter-arrival times from
+# 45,648 real internet-captured Cowrie sessions, not chosen by eye. Real gaps are
+# bimodal: a sub-millisecond cluster of back-to-back protocol events, a
+# network/human-paced middle, and a rare long idle pause.
+#
+#     pooled real IAT    p10 0.0004  p25 0.0007  p50 0.176  p75 0.723
+#                        p90 1.618   p99 14.74
+#     frac < 100ms 0.436    frac < 1s 0.827    frac > 30s 0.004
+#
+# A two-component mixture reproduces p50-p90 almost exactly but gives p99 ~5.6s
+# against a real 14.7s, so a third rare idle component carries the tail.
+# 0.30, not the 0.436 measured directly, and the difference is a correction not a
+# fudge: short sessions compress their slow gaps when those are rescaled to fit
+# the duration, and a compressed slow gap can land under 100 ms and read as a
+# burst. Drawing 0.436 explicitly produced an EFFECTIVE sub-100ms share of 0.568
+# against a real 0.411. 0.30 lands it on target.
+IAT_FAST_P = 0.30                       # share of gaps drawn at machine speed
+IAT_FAST_MU, IAT_FAST_SIGMA = -7.376, 0.604      # lognormal, median 0.63 ms
+IAT_SLOW_MU, IAT_SLOW_SIGMA = -0.474, 1.047      # lognormal, median 0.62 s
+# Long pauses are NOT a fixed per-gap probability, and that is measured. A fixed
+# one cannot fit both ends of the real data at once:
+#
+#   real sessions, fraction with ANY inter-arrival gap over 30 s
+#     0 commands  (shallow, ~1.9 s)   n=15,912     3.6%
+#     1-2 commands         (~2.2 s)   n=29,221     0.3%
+#     10+ commands        (~63.6 s)   n=   507    78.1%
+#
+# A busy session almost always contains a long pause -- the attacker is reading
+# output, fetching a payload, or thinking -- while a drive-by scan never does.
+# (Note the pooled figure across all real sessions is 2.3%, which is pure
+# shallow-majority artefact: 97% of real sessions issue 0-2 commands. Calibrating
+# to that number would have been wrong, and nearly was.)
+#
+# So the per-gap idle probability rises with the number of gaps. Fitted to the
+# two anchors above via 1-(1-p)^n: p(4 gaps) = 0.0095 -> 3.7%, and
+# p(38 gaps) = 0.039 -> 78%.
+IAT_IDLE_P_BASE  = 0.006
+IAT_IDLE_P_SLOPE = 0.00087
+IAT_IDLE_P_MAX   = 0.15
+
+
+def _idle_probability(n_gaps: int) -> float:
+    """Per-gap chance of a long pause, as a function of how busy the session is."""
+    return float(min(IAT_IDLE_P_BASE + IAT_IDLE_P_SLOPE * max(0, n_gaps),
+                     IAT_IDLE_P_MAX))
+IAT_IDLE_MU, IAT_IDLE_SIGMA = 2.60, 0.90         # lognormal, median ~13 s
+
+_FAST_CEILING = 0.0999   # a "fast" gap must stay under the extractor's 100 ms
+                         # burst threshold, or burst detection sees nothing
+
+# Busiest real session in the 45,648-session capture had 41 events. 64 leaves
+# headroom for deep synthetic phases without inventing 1,000-event sessions.
+EVENTS_CEILING = 64
+
+# Long pauses may consume at most this share of a session, so the slow filler
+# gaps always have room left and the timestamp walk stays strictly increasing.
+IDLE_BUDGET = 0.80
+
+
+def generate_event_timestamps(t_start: float,
+                              n_events: int,
+                              duration_s: float,
+                              rng: random.Random) -> List[float]:
+    """Per-event timestamps with realistic burst structure.
+
+    Returns `n_events` ascending epoch values beginning at `t_start` and ending
+    at `t_start + duration_s`.
+
+    A session with a single event is a single timestamp: there are no gaps, so
+    no duration can be represented in the series. That is correct rather than a
+    rounding failure, and it is why a `t_end - t_start == duration_s` check must
+    skip `n_events == 1`.
+
+    `duration_s` IS PRESERVED EXACTLY for every multi-event session, which is the
+    point of the design. The
+    session duration distribution is already used by `session_duration_s`,
+    `log_session_duration`, `events_per_sec` and `commands_per_min`, so letting
+    duration emerge from a sum of sampled gaps would quietly move four features
+    that were never broken. Instead the fast gaps are drawn in ABSOLUTE terms and
+    kept under 100 ms, and only the slow gaps are rescaled to absorb whatever
+    time is left. Burst structure becomes real; nothing else moves.
+
+    Fast and slow gaps are interleaved by shuffling rather than grouped, because
+    the real data says so: `burst_count` has a median of 3 while
+    `burst_mean_size` has a median of 1, i.e. a typical session holds three
+    separate single-gap bursts, not one long run.
+    """
+    n_events = max(1, int(n_events))
+    if n_events == 1:
+        return [float(t_start)]
+
+    n_gaps = n_events - 1
+    duration_s = max(float(duration_s), 1e-6)
+
+    # 1. class each gap
+    p_idle = _idle_probability(n_gaps)
+    kinds = []
+    for _ in range(n_gaps):
+        r = rng.random()
+        if r < IAT_FAST_P:
+            kinds.append("fast")
+        elif r < IAT_FAST_P + p_idle:
+            kinds.append("idle")
+        else:
+            kinds.append("slow")
+
+    # At least one gap must be able to stretch, or the fast gaps alone would have
+    # to account for the whole duration and none of them could stay under 100 ms.
+    if not any(k == "slow" for k in kinds):
+        kinds[rng.randrange(n_gaps)] = "slow"
+
+    # 2. draw them
+    gaps = []
+    for k in kinds:
+        if k == "fast":
+            g = min(rng.lognormvariate(IAT_FAST_MU, IAT_FAST_SIGMA), _FAST_CEILING)
+        elif k == "idle":
+            g = rng.lognormvariate(IAT_IDLE_MU, IAT_IDLE_SIGMA)
+        else:
+            g = rng.lognormvariate(IAT_SLOW_MU, IAT_SLOW_SIGMA)
+        gaps.append(g)
+
+    # 3. Rescale ONLY the slow gaps. Fast gaps and long pauses are both drawn in
+    # ABSOLUTE terms, and keeping the pauses absolute is what makes a deep session
+    # look real. An earlier version rescaled pauses along with the slow filler,
+    # which compressed them: a 69 s session with 38 gaps left each slow gap about
+    # 1.8 s, so a 13 s pause was squeezed to nothing and only 43% of deep
+    # sessions ended up with a gap over 30 s against a real 78%. Raising the idle
+    # probability did not help (43.0% -> 43.3%) precisely because the rescaling,
+    # not the draw, was the binding constraint.
+    #
+    # Pauses are collectively capped at IDLE_BUDGET of the session so the slow
+    # gaps always keep some room and the walk stays strictly increasing.
+    idle_idx = [i for i, k in enumerate(kinds) if k == "idle"]
+    idle_total = sum(gaps[i] for i in idle_idx)
+    budget = IDLE_BUDGET * duration_s
+    if idle_total > budget and idle_total > 0.0:
+        shrink = budget / idle_total
+        for i in idle_idx:
+            gaps[i] *= shrink
+        idle_total = budget
+
+    fast_total = sum(g for g, k in zip(gaps, kinds) if k == "fast")
+    slow_total = sum(g for g, k in zip(gaps, kinds) if k == "slow")
+    slack = duration_s - fast_total - idle_total
+
+    if slack <= 0.0:
+        # Duration is shorter than the fast gaps alone. Rare, but a short session
+        # with many events hits it. Scale everything down; the gaps stay ordered
+        # and sub-100 ms, so burst detection still sees a single long burst --
+        # which is the truthful description of a session that fast.
+        factor = duration_s / max(fast_total + idle_total + slow_total, 1e-12)
+        gaps = [g * factor for g in gaps]
+    else:
+        factor = slack / max(slow_total, 1e-12)
+        gaps = [g * factor if k == "slow" else g for g, k in zip(gaps, kinds)]
+
+    # 4. interleave, then walk the gaps into timestamps
+    rng.shuffle(gaps)
+    out = [float(t_start)]
+    acc = 0.0
+    for g in gaps:
+        acc += g
+        out.append(float(t_start) + acc)
+    # kill floating-point drift so t_end matches to the bit
+    out[-1] = float(t_start) + duration_s
+    return out
+
+
 def generate_balanced_sessions(n_total: int,
                                 seed: int = 42) -> pd.DataFrame:
     """
@@ -196,8 +388,32 @@ def generate_balanced_sessions(n_total: int,
 
         for _ in range(per_cls):
             seq  = generate_session_sequence(rng, force_start=label, min_len=1, max_len=8)
-            dur  = float(np.random.lognormal(mean=3.5 + phase*0.4, sigma=1.2))
-            n_ev = max(1, int(np.random.lognormal(mean=2.5 + phase*0.3, sigma=1.0)))
+            # Duration and event count, recalibrated 2026-11-09 against the real
+            # capture. The old baselines (phase 0: median 33 s / 12 events;
+            # phase 8: 812 s / 134 events) were wrong at both ends -- real
+            # shallow sessions are far shorter and real sessions never got
+            # anywhere near 134 events:
+            #
+            #   real n_commands   sessions   dur median   events median
+            #   0                   15,912        1.91 s          5
+            #   1-2                 29,221        2.25 s          8
+            #   10-29                  507       63.56 s         41
+            #
+            # The phase ramp is KEPT -- a deeper attack genuinely does run longer
+            # and noisier, and the real figures above confirm it. Only the
+            # endpoints move: phase 0 now lands near real shallow traffic and
+            # phase 8 near the busiest real sessions instead of 6x past them.
+            #
+            # This also moves session_duration_s, log_session_duration,
+            # events_per_sec, commands_per_min and n_commands. That is deliberate
+            # and takes effect only on a regenerate -- see DECISIONS.md.
+            dur  = float(np.random.lognormal(mean=0.69 + phase*0.445, sigma=1.2))
+            # Floor 2, not 1: a single-event session has no inter-arrival gap at
+            # all, so it contributes nothing to any of the seven features this
+            # change exists to revive. Ceiling 64: the lognormal tail reached
+            # 1,139 events, while the busiest session in 45,648 real ones had 41.
+            n_ev = int(np.clip(np.random.lognormal(mean=1.61 + phase*0.26, sigma=0.7),
+                               2, EVENTS_CEILING))
 
             # Brute-force sessions have many login attempts
             n_login = 0
@@ -205,6 +421,9 @@ def generate_balanced_sessions(n_total: int,
                 n_login = max(1, int(np.random.lognormal(mean=3.5, sigma=1.0)))
 
             t_start = float(np.random.uniform(1_680_000_000, 1_712_400_000))
+            # Per-event timestamps, so the burst / inter-arrival features are not
+            # dead constants. See generate_event_timestamps for the calibration.
+            ev_ts = generate_event_timestamps(t_start, n_ev, dur, rng)
 
             records.append({
                 "session_id":            f"sim_{sid:08d}",
@@ -216,6 +435,7 @@ def generate_balanced_sessions(n_total: int,
                 "t_end":                 t_start + dur,
                 "session_duration_s":    dur,
                 "n_events":              n_ev,
+                "event_timestamps":      ev_ts,
                 "n_commands":            max(0, n_ev - n_login - 1),
                 "login_attempts":        n_login,
                 "bytes_in":              int(np.random.lognormal(6.0 + phase*0.5, 1.5)),

@@ -5,6 +5,75 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-09 — Generator timing: calibrated to the real capture, not to intuition
+
+The first real capture showed real sessions sitting 226x outside MT3's training
+distribution, concentrated in A_temporal. Root cause: the generator emitted
+`t_start`/`t_end`/`n_events` but NO per-event timestamps, so `extract_temporal`
+took its fallback branch (`iat = [duration/(n_events-1)]`) and one value has no
+spread, shape or runs. Seven of 24 temporal features were constants in the frozen
+training set -- `burst_count` had TWO distinct values across 18,900 rows.
+
+**Decision: generate per-event timestamps, calibrated against 283,432 real
+inter-arrival times rather than chosen by eye.** Real gaps are bimodal: a
+sub-millisecond cluster of back-to-back protocol events, a network-paced middle,
+and a rare long pause. Fitted as a three-component lognormal mixture.
+
+**`session_duration_s` is preserved exactly.** Fast gaps are drawn in absolute
+terms and kept under the extractor's 100 ms burst threshold; only the slow gaps
+are rescaled to absorb the remaining time. Letting duration emerge from a sum of
+sampled gaps would have moved `session_duration_s`, `log_session_duration`,
+`events_per_sec` and `commands_per_min` as a side effect.
+
+**Gaps are interleaved, not grouped**, because the real data says so:
+`burst_count` median 3 with `burst_mean_size` median 1 means three separate
+single-gap bursts per session, not one long run.
+
+**Duration and event count were recalibrated too**, which is beyond "timing"
+strictly but is where the dominant error was. The old baselines were wrong at
+both ends -- phase 0 at 33 s/12 events against real shallow 1.9 s/5 events, and
+phase 8 at 812 s/134 events when the busiest of 45,648 real sessions had 41. The
+phase ramp is KEPT (real deep sessions genuinely run 63.6 s/41 events); only the
+endpoints moved. Floor 2 events (a 1-event session has no gap and so contributes
+nothing to the features this fixes), ceiling 64.
+
+### Three things I got wrong on the way, all caught by measuring
+
+1. **Calibrating the long-pause rate to the pooled real figure (2.3%) would have
+   been wrong.** Split by session depth: 0-command sessions pause 3.6% of the
+   time, 10+-command sessions **78.1%**. The pooled number is pure
+   shallow-majority artefact -- 97% of real sessions issue 0-2 commands. A fixed
+   per-gap probability cannot fit both ends, so it scales with the gap count.
+2. **Raising the idle probability did not work (43.0% -> 43.3%)** because the
+   binding constraint was my own rescaling, which compressed long pauses to
+   nothing. Pauses are now absolute, capped at 80% of the session.
+3. **`IAT_FAST_P` is set to 0.30, not the 0.436 measured.** Short sessions
+   compress their slow gaps, and a compressed slow gap lands under 100 ms and
+   reads as a burst, so drawing 0.436 produced an effective 0.568 against a real
+   0.411. The constant is a correction for that, and says so.
+
+### Where I stopped, and why
+
+Pushing the pause magnitude up to hit the deep-session rate (44% vs a real 78%)
+broke the pooled inter-arrival fit -- p99 went to 39 s against a real 14.7 s. That
+is trading one metric for another, so I reverted. The pooled distribution rests on
+283,432 measurements; the deep-pause rate on 507 sessions from one VM over 8 days.
+Breaking the better-evidenced fit to chase the weaker one is over-fitting.
+
+**Residual, stated rather than hidden:** synthetic deep sessions pause less often
+than real ones (44% vs 78%), and pooled percentile comparisons remain confounded
+because the synthetic set is deliberately balanced across 45 classes while real
+traffic is 97% shallow scans. Like-for-like (synthetic phase 0 vs real 0-2
+command sessions) matches well: `frac<1s` 0.826 vs 0.824, p25 exact, p90 1.92 vs
+1.62.
+
+**Nothing was regenerated.** `data/final/` is untouched -- `X_train.npy` still
+carries its August timestamp -- so every published number still describes the
+dataset it was measured on. This changes what the NEXT build produces, and that
+rebuild plus retrain is a separate decision.
+
+---
+
 ## 2026-11-04 — Benign sessions: corroboration, because abstention does not work
 
 FINDINGS #1, the Critical one. MT3 is a closed-set classifier over 45 ATTACK

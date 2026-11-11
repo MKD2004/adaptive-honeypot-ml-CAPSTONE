@@ -117,6 +117,86 @@ recoverable, and the diagnosis is specific enough to fix.
 
 ---
 
+## 3b. The validator has been written and run — full damage report
+
+`src/validators/feature_integrity.py` (Part 3 below) exists as of 2026-11-11,
+with 25 tests. Run against every frozen split. **It found a defect class the
+hand analysis missed.**
+
+```
+split          impossible-row checks failed   constant columns
+X_train                  13 of 97                  50 / 128
+X_val                    16 of 97                  50 / 128
+X_test_real               0 of 97                  52 / 128
+X_test_synth             14 of 97                  50 / 128
+```
+
+**`X_test_real` passes every arithmetic check; `X_test_synth` fails 14.** That
+is the cleanest confirmation available that the defect is TabSyn's and not the
+extractors': real-derived rows are internally coherent, generated ones are not.
+Nothing in the validator was built to make that distinction.
+
+### The new finding: every log1p pair is broken
+
+I had only found the inter-arrival incoherence by hand. The validator shows the
+same failure in a second, larger class — **every `log1p` derived feature is
+generated independently of the primitive it is supposed to be a function of**:
+
+```
+broken log1p pairs, share of TabSyn rows
+  log_session_duration == log1p(session_duration_s)    42.7%
+  log_bytes_in         == log1p(bytes_in)              30.7%
+  log_bytes_out        == log1p(bytes_out)             28.0%
+  log_pkts_in          == log1p(packets_in)            22.9%
+  log_pkts_out         == log1p(packets_out)            9.8%
+
+incoherent inter-arrival summary
+  spread implies cv > 0                                48.2%
+  iat_mean <= iat_max                                  23.3%
+  iat_min  <= iat_median                               22.9%
+  iat_median <= iat_max                                16.2%
+  iat_min  <= iat_mean                                 12.5%
+  iat_cv   == iat_std / iat_mean                        1.5%
+
+other
+  mean_pkt_size_in <= max_pkt_size_in                   6.0%
+```
+
+Five of the 128 features are *pure functions of another feature in the same
+row*, and TabSyn was asked to generate both sides. It is the clearest possible
+case for Part 2's primitive/derived split: those five should never have been
+generated at all, only computed.
+
+### A false-positive bug in the validator, and the lesson
+
+The first run reported `commands_per_min >= 0` failing on **99.3%** of
+`X_test_real`, plus negative `bytes_in`. Both were wrong. `data/final/*.npy` is
+stored as **float32** and un-scaled by a `StandardScaler`, so a value that was
+exactly 0.0 returns as `±eps32 × scale_`; for `commands_per_min`, `scale_` is
+157.8, giving a residue near 1.9e-5 — a hundred times the 1e-6 epsilon I used.
+Every one of those 59,558 "negative rates" was a true zero.
+
+Tolerances are now per-column, derived from the scaler and the storage dtype
+(`tolerance_from_scaler`). **A validator that cries wolf is worse than none**,
+because a false positive is indistinguishable from a finding until someone
+checks. Any new invariant must be tested against a float32 round-trip of
+coherent data — `test_a_float32_round_trip_does_not_look_like_breakage` does
+exactly that.
+
+### What is still unmeasured
+
+- **`D_semantic` (30 PCA dims) has no invariants**, because a PCA projection has
+  none to state. It is also the one group with no constant columns, so it is
+  probably the healthiest part of the matrix.
+- **The remaining constant columns need triage**, not just counting: 50 of 128 is
+  the headline, but some are legitimately constant for an SSH-only corpus
+  (`tcp_*` flags without packet captures, every `F_tls_host` feature). The
+  allow-list in `EXPECTED_CONSTANT` currently holds exactly one entry. Working
+  through the other 49 and deciding *drop / fix / allow* for each is the next
+  concrete task, and it decides the real feature count for the paper.
+
+---
+
 ## 4. The fix — three parts, in dependency order
 
 ### Part 0 (first, ~1 hour) — make the silent failure loud

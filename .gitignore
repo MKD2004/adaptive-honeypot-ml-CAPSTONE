@@ -45,3 +45,7 @@ DEMORUN.md
 Resume_*.pdf
 pulse-engineering-metrics-and-incident-response-console/
 pulse-engineering-metrics-and-incident-response-console.zip
+
+# Real honeypot captures: 180 MB+ of raw logs. Irreplaceable, but raw data
+# does not belong in git -- back it up outside the repo.
+cowrie_logs_*/

@@ -41,6 +41,7 @@ point at them rather than repeating the numbers.
 |---|---|
 | `HONEYPOT_AUDIT.md` | The big one, 11 parts. PARTS 1-4 are the 2026-11-02 reality check (how many honeypots exist, whether any captured traffic is real, the mitigation-layer review). PARTS 5-11 are the 2026-11-04 work, each with its measurements. |
 | `02-11-2026 FINDINGS.md` | Six questions asked while reviewing the live pipeline. Finding #1 — MT3 has no benign class — is still the most important open item. |
+| `REAL_DATA_2026-11-09.md` | **The first real honeypot data.** 45,648 internet-captured Cowrie sessions from an Oracle Cloud VM. Also the measurement that matters: real data sits 226x outside MT3's training distribution, because 7 of 24 temporal features were dead in the frozen training set. |
 | `WORKLOG_2026-11-03_04.md` | The 3-4 November sessions in one self-contained file, including a section on mistakes made and corrected. |
 | `CHANGES_AFTER_30_SEPT.md` | Every commit after 30 September, in plain English. Section 9 carries a collision warning about a held-back dashboard branch. |
 | `FIDELITY_ANALYSIS.md` | How closely the synthetic data matches the real data. |

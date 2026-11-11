@@ -197,6 +197,96 @@ exactly that.
 
 ---
 
+## 3c. Triage of the constant columns — done, 0 untriaged
+
+Every constant column now carries a decision, encoded in
+`feature_integrity.TRIAGE` so the validator reports progress instead of someone
+re-deriving it. `triage_summary()` returns an `UNTRIAGED` bucket and a test
+asserts it is empty, so a newly-dead column fails the build until decided.
+
+**The count moved first.** The dead-column check also failed any column with
+fewer than four distinct values, which flagged every legitimately **binary**
+flag — `is_ssh_port` at a healthy 54/46 split was reported dead three times.
+The rule is now modal share alone (>98%). **46 columns, not 51.**
+
+```
+UNTRIAGED    0
+FIX         14      the input exists; something upstream is not using it
+DROP        26      cannot exist here, or would cause a train/serve mismatch
+ALLOW        6      constant for one SSH honeypot; informative with a second
+```
+
+**The decision rule was availability in the real capture, measured:**
+
+```
+key in a real parsed record    rows with a value      feeds
+t_first_auth / t_first_cmd     11,328 / 11,328        time_to_first_*
+src_ip                         11,328 / 11,328        geo_risk_score, repeat_visitor
+src_port                       11,328 / 11,328        src_is_ephemeral
+associated_cve                      0 / 11,328        all 14 E_threat_intel
+pkt_sizes_in, tcp_flags             absent            std_pkt_size_in, tcp_*
+ja3                                 absent            F_tls_host
+```
+
+### FIX — 14
+
+| feature(s) | why it is dead |
+|---|---|
+| `iat_std`, `iat_cv`, `iat_skew`, `iat_kurt`, `frac_sub100ms`, `frac_over30s`, `burst_count`, `burst_mean_size`, `inter_burst_gap_std` | the single-IAT fallback. **Already repaired in `f9fa918`**; populates on rebuild |
+| `time_to_first_auth_s`, `time_to_first_cmd_s` | real records carry `t_first_auth`/`t_first_cmd` in every row; **the generator never emits them** |
+| `src_is_ephemeral` | **the generator emits no `src_port` at all**, so the flag defaults to 0. Secondary question for the rebuild: the extractor tests `src_port > 49151` (IANA dynamic floor) while 98.3% of real ports are ephemeral by the Linux definition (>= 32768), so real samples like 34958 read as non-ephemeral |
+| `geo_risk_score`, `attacker_repeat_visitor` | both computable from `src_ip`, which every real record has — 641 real source addresses, top talker 3,527 connections |
+| `rle_compression_ratio` | **an extractor bug.** `min(1.0, n_runs*2/len)` saturates at 1.0 for *any* text — measured 1.0000 on every real command, 0.1 only on the 260-char `AAAA` probe. Drop the factor of 2 |
+| `is_business_hours` | derived from a **fabricated shared timestamp**: `session_hour` is 98.1% at hour 22 and `session_day_of_week` 98.3% at day 1 across 60,000 real-derived rows, because the netflow rows were all given one `t_start`. The honeypot capture has genuine timestamps over 8 days |
+
+### DROP — 26
+
+**All 14 of `E_threat_intel`.** `associated_cve` is empty in **100% of real
+sessions**. Populating it only in synthetic data would train the model to lean
+on a block that is all-zero at inference — a train/serve mismatch, which is
+*worse* than a dead feature. Revive only if a CVE can be inferred from observed
+behaviour for both real and synthetic sessions.
+
+**Six of `F_tls_host`** (`ja3_hash_bucket`, `ja3_is_known_malicious`,
+`tls_version_num`, `cipher_suite_count`, `cipher_suite_entropy`,
+`sni_domain_entropy`). SSH has no TLS handshake to fingerprint. Structurally
+unavailable until a TLS-speaking honeypot exists. *(The other two —
+`geo_risk_score`, `attacker_repeat_visitor` — are FIX, since they key on
+`src_ip`, not TLS.)*
+
+**Six packet-level features** (`std_pkt_size_in`, `pkt_size_entropy_in`,
+`tcp_syn`, `tcp_ack`, `tcp_fin`, `tcp_rst`). Cowrie is application-layer and
+emits no packet sizes or TCP flags. The CIC/UNSW flow rows *do* carry them, so
+populating these would make them alive for 13 netflow classes and dead for the
+other 32 — the same mismatch as the threat-intel block, reached by a different
+route.
+
+### ALLOW — 6
+
+Constant today, genuinely informative once a second protocol lands. Keep in the
+schema, **exclude from training until they vary**:
+`is_wellknown_port` (always 1 on port 22), `is_db_port` (no database honeypot),
+`unique_dst_ports` (single-port honeypot), `frac_url_encoded` (no web honeypot).
+
+Plus two that are constant because that is simply true of shell text:
+`frac_printable` (commands are printable), `frac_null_bytes` (no null bytes).
+
+### What this adds up to
+
+```
+informative features today            82 of 128
+after the 14 FIXes                    96
+schema size if the 26 DROPs go       102
+```
+
+**So the honest architecture claim after the rebuild is ~96 informative features
+of a 102-feature schema, not 128 of 128** — and `E_threat_intel` and most of
+`F_tls_host` disappear as branches. Two of the six feature groups do not survive
+contact with an SSH-only corpus. That is a paper-level change to the
+contribution, and better to state it than to have a reviewer find it.
+
+---
+
 ## 4. The fix — three parts, in dependency order
 
 ### Part 0 (first, ~1 hour) — make the silent failure loud

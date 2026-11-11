@@ -179,13 +179,28 @@ class TestDeadColumnDetection(unittest.TestCase):
         self.assertIn("iat_cv", dead)
 
     def test_the_burst_count_signature_is_caught(self):
-        """Exactly how it looked in the frozen set: two values, {0, 1}."""
-        X = coherent()
+        """Exactly how it looked in the frozen set: two values, {0, 1}, with
+        99.7% of rows at zero.
+
+        An earlier version of this fixture used a 60/40 split, which the
+        modal-share rule correctly does NOT consider dead -- a flag that splits
+        the data informs a classifier. The real defect was the 99.7%, not the
+        two values, and the fixture now says so.
+        """
+        X = coherent(1000)
         X[:, I["burst_count"]] = 0.0
-        X[:300, I["burst_count"]] = 0.0
-        X[300:, I["burst_count"]] = 1.0
-        viol, dead = check_dead_columns(X, min_distinct=4)
+        X[:3, I["burst_count"]] = 1.0            # 99.7% zero, as measured
+        viol, dead = check_dead_columns(X)
         self.assertIn("burst_count", dead)
+
+    def test_a_balanced_binary_flag_is_NOT_dead(self):
+        """is_ssh_port sits at 54/46 in the frozen data and was reported dead
+        three times by the distinct-count rule. A split flag is informative."""
+        X = coherent(1000)
+        X[:, I["is_ssh_port"]] = 0.0
+        X[:540, I["is_ssh_port"]] = 1.0
+        viol, dead = check_dead_columns(X)
+        self.assertNotIn("is_ssh_port", dead)
 
     def test_a_varied_column_is_not_reported(self):
         X = coherent()
@@ -194,14 +209,24 @@ class TestDeadColumnDetection(unittest.TestCase):
         self.assertNotIn("bytes_in", dead)
 
     def test_the_allow_list_suppresses_a_known_constant(self):
-        """std_pkt_size_in is 0.0 by construction without packet captures. It
-        is listed, so it must not be reported as a defect -- while still being
-        counted as dead."""
+        """frac_printable is 1.0 for shell text by nature -- an ALLOW decision.
+        It must still be COUNTED as dead but not REPORTED as a defect.
+
+        This test previously used std_pkt_size_in, which the 2026-11-11 triage
+        reclassified from ALLOW to DROP (populating it from netflow only would
+        make it alive for 13 classes and dead for 32). DROP entries are still
+        reported, so the old assertion became wrong -- correctly."""
+        X = coherent()
+        viol, dead = check_dead_columns(X)
+        self.assertIn("frac_printable", dead)
+        self.assertNotIn("frac_printable", " ".join(v.detail for v in viol))
+
+    def test_a_dropped_column_is_still_reported(self):
         X = coherent()
         viol, dead = check_dead_columns(X)
         self.assertIn("std_pkt_size_in", dead)
-        self.assertNotIn("std_pkt_size_in",
-                         " ".join(v.detail for v in viol))
+        self.assertIn("std_pkt_size_in", " ".join(v.detail for v in viol),
+                      "a DROP is pending work, so it must keep being reported")
 
 
 class TestToleranceIsScaleAware(unittest.TestCase):
@@ -283,3 +308,44 @@ class TestReporting(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestTriage(unittest.TestCase):
+    """Every constant column must carry a decision. The point of the triage is
+    that `UNTRIAGED` can be asserted to be empty."""
+
+    def test_every_triage_name_is_a_real_feature(self):
+        from src.validators.feature_integrity import TRIAGE
+        for name in TRIAGE:
+            self.assertIn(name, FEATURE_INDEX, f"{name} is not in the schema")
+
+    def test_decisions_are_one_of_the_three(self):
+        from src.validators.feature_integrity import TRIAGE
+        for name, (decision, reason) in TRIAGE.items():
+            with self.subTest(feature=name):
+                self.assertIn(decision, ("FIX", "DROP", "ALLOW"))
+                self.assertTrue(reason.strip(), f"{name} has no reason given")
+
+    def test_only_allow_suppresses_the_defect_report(self):
+        """FIX and DROP describe work that has not happened, so they must keep
+        being reported. Only a deliberate ALLOW goes quiet."""
+        from src.validators.feature_integrity import EXPECTED_CONSTANT, TRIAGE
+        self.assertEqual(set(EXPECTED_CONSTANT),
+                         {n for n, (d, _) in TRIAGE.items() if d == "ALLOW"})
+        self.assertNotIn("burst_count", EXPECTED_CONSTANT)   # a FIX
+        self.assertNotIn("epss_score", EXPECTED_CONSTANT)    # a DROP
+
+    def test_the_frozen_dataset_has_nothing_untriaged(self):
+        """Guards the result, not the method: if a future change makes a new
+        column constant, this fails until somebody decides about it."""
+        import joblib
+        from src.validators.feature_integrity import triage_summary, validate
+        final = REPO_ROOT / "honeypot_dataset" / "data" / "final"
+        if not (final / "X_train.npy").exists():
+            self.skipTest("frozen dataset not present")
+        sc = joblib.load(final / "feature_scaler.pkl")
+        X = np.load(final / "X_train.npy", mmap_mode="r")
+        raw = sc.inverse_transform(np.asarray(X[::50], dtype=np.float64))
+        groups = triage_summary(validate(raw, scaler=sc).dead_columns)
+        self.assertEqual(groups["UNTRIAGED"], [],
+                         "new constant columns need a drop/fix/allow decision")

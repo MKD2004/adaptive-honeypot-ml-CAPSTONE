@@ -42,7 +42,8 @@ import numpy as np
 __all__ = [
     "IntegrityError", "Violation", "Report",
     "validate", "assert_valid", "format_report", "tolerance_from_scaler",
-    "FEATURE_INDEX", "INVARIANTS", "EXPECTED_CONSTANT",
+    "FEATURE_INDEX", "INVARIANTS", "EXPECTED_CONSTANT", "TRIAGE",
+    "triage_summary",
 ]
 
 
@@ -277,14 +278,145 @@ INVARIANTS: List[Invariant] = [
 ]
 
 
-# Features that are legitimately constant for an SSH-only corpus. Listing them
-# explicitly is the point: an allow-list is a decision on the record, whereas a
-# silently-constant column is the bug this module exists to catch. Anything NOT
-# in here that comes back constant is reported.
-EXPECTED_CONSTANT: Dict[str, str] = {
-    "std_pkt_size_in": "the extractor sets it to 0.0 whenever pkt_sizes_in is "
-                       "absent, which is every session without packet captures",
+# ── Triage of the constant columns (2026-11-11) ─────────────────────────────
+# 46 of 128 columns are constant in X_train (modal share > 98%). Each one has a
+# decision here, so "how many are left" is a number the validator can report
+# rather than a thing someone has to re-derive. DATA_INTEGRITY.md section 3c
+# carries the reasoning; this is the machine-readable form.
+#
+# The decision rule is availability in the REAL capture, measured rather than
+# assumed, because that is what separates a fixable gap from a structural one:
+#
+#   key in a real parsed record   rows with a value   feeds
+#   t_first_auth / t_first_cmd    11,328 / 11,328     time_to_first_*
+#   src_ip                        11,328 / 11,328     geo_risk_score, repeat_visitor
+#   associated_cve                     0 / 11,328     all 14 E_threat_intel
+#   pkt_sizes_in / tcp_flags           absent         std_pkt_size_in, tcp_*
+#   ja3                                absent         F_tls_host
+#
+# FIX   the input exists and something upstream is not using it.
+# DROP  the input cannot exist for this project, OR populating it would create a
+#       train/serve mismatch -- which is WORSE than a dead feature, because the
+#       model would lean on a signal that is always absent at inference.
+# ALLOW constant for an SSH-only corpus today, genuinely informative once a
+#       second protocol lands. Keep in the schema, exclude from training until
+#       it varies.
+TRIAGE: Dict[str, Tuple[str, str]] = {
+    # ── FIX: already repaired in the generator (f9fa918), pending a rebuild ──
+    "iat_std":              ("FIX", "single-IAT fallback; timestamps now generated"),
+    "iat_cv":               ("FIX", "single-IAT fallback; timestamps now generated"),
+    "iat_skew":             ("FIX", "single-IAT fallback; timestamps now generated"),
+    "iat_kurt":             ("FIX", "single-IAT fallback; timestamps now generated"),
+    "frac_sub100ms":        ("FIX", "single-IAT fallback; timestamps now generated"),
+    "frac_over30s":         ("FIX", "single-IAT fallback; timestamps now generated"),
+    "burst_count":          ("FIX", "single-IAT fallback; timestamps now generated"),
+    "burst_mean_size":      ("FIX", "single-IAT fallback; timestamps now generated"),
+    "inter_burst_gap_std":  ("FIX", "single-IAT fallback; timestamps now generated"),
+
+    # ── FIX: the real capture supplies the input, the GENERATOR does not ─────
+    "time_to_first_auth_s": ("FIX", "real records carry t_first_auth for every "
+                                    "row; the generator never emits it"),
+    "time_to_first_cmd_s":  ("FIX", "real records carry t_first_cmd for every "
+                                    "row; the generator never emits it"),
+
+    # ── FIX: the generator never emits src_port, so the flag defaults to 0 ──
+    # Real records carry src_port in every row and 98.3% of them are ephemeral
+    # by the Linux definition (>= 32768). Note the extractor tests
+    # `src_port > 49151`, the IANA dynamic/private floor, so real samples like
+    # 34958 and 45312 read as NON-ephemeral. Which threshold is right is a
+    # judgement call for the rebuild -- 32768 matches Linux-originated traffic,
+    # 49151 is the IANA standard -- but either way the generator must emit the
+    # port first, because the feature is currently measuring nothing.
+    "src_is_ephemeral":     ("FIX", "the generator emits no src_port, so this "
+                                    "defaults to 0; real records all have one"),
+
+    # ── FIX: computable from src_ip, which every real record has ─────────────
+    "geo_risk_score":       ("FIX", "GeoIP on src_ip; the capture has 641 real "
+                                    "source addresses with genuine spread"),
+    "attacker_repeat_visitor": ("FIX", "count prior sessions per src_ip; the "
+                                       "top talker alone made 3,527 connections"),
+
+    # ── FIX: the extractor formula is wrong ─────────────────────────────────
+    "rle_compression_ratio": ("FIX", "min(1.0, n_runs*2/len) saturates at 1.0 "
+                                     "for ANY text -- measured 1.0000 on every "
+                                     "real command. Drop the factor of 2."),
+
+    # ── FIX: the calendar block rests on a fabricated timestamp ─────────────
+    # Not strictly constant but effectively so: session_hour is 98.1% at hour 22
+    # and session_day_of_week 98.3% at day 1 across 60,000 real-derived rows,
+    # because the netflow rows were all given one t_start. The honeypot capture
+    # has genuine timestamps spread over 8 days.
+    "is_business_hours":    ("FIX", "derived from a shared fabricated t_start; "
+                                    "real Cowrie timestamps span 8 days"),
+
+    # ── DROP: populating it only in synthetic data is worse than leaving it ──
+    # associated_cve is empty in 100% of real sessions. A model trained with
+    # live threat-intel features would lean on a block that is all-zero at
+    # inference. Revive this only if a CVE can be inferred from observed
+    # behaviour for BOTH real and synthetic sessions.
+    **{n: ("DROP", "associated_cve is empty in 100% of real sessions; "
+                   "populating it only in synthetic data creates a train/serve "
+                   "mismatch")
+       for n in ("cvss_v3_base", "cvss_v3_norm", "cvss_exploitability",
+                 "cvss_impact", "epss_score", "epss_percentile",
+                 "epss_7d_delta", "is_cisa_kev", "kev_days_since_added",
+                 "cve_age_days", "exploit_db_count", "has_metasploit",
+                 "has_nuclei", "cve_refs_count")},
+
+    # ── DROP: no TLS handshake exists in an SSH session ─────────────────────
+    **{n: ("DROP", "SSH has no TLS handshake to fingerprint; structurally "
+                   "unavailable until a TLS-speaking honeypot exists")
+       for n in ("ja3_hash_bucket", "ja3_is_known_malicious", "tls_version_num",
+                 "cipher_suite_count", "cipher_suite_entropy",
+                 "sni_domain_entropy")},
+
+    # ── DROP: needs packet capture, which no source provides uniformly ──────
+    # Cowrie is application-layer and emits no packet sizes or TCP flags. The
+    # CIC/UNSW flow rows DO carry them, so populating these would make them
+    # alive for 13 netflow classes and dead for the other 32 -- the same
+    # train/serve mismatch as the threat-intel block, by a different route.
+    **{n: ("DROP", "Cowrie emits no packet-level data; populating from netflow "
+                   "only would make it alive for 13 classes and dead for 32")
+       for n in ("std_pkt_size_in", "pkt_size_entropy_in",
+                 "tcp_syn", "tcp_ack", "tcp_fin", "tcp_rst")},
+
+    # ── ALLOW: constant for one SSH honeypot, informative with a second ─────
+    "is_wellknown_port":    ("ALLOW", "always 1 while the only honeypot is on "
+                                      "port 22; varies as soon as Heralding or "
+                                      "SNARE listens on a high port"),
+    "is_db_port":           ("ALLOW", "no database honeypot deployed yet"),
+    "unique_dst_ports":     ("ALLOW", "a single-port honeypot sees one port; "
+                                      "varies with the multi-honeypot deploy"),
+    "frac_url_encoded":     ("ALLOW", "no URL encoding in shell commands; "
+                                      "informative for a web honeypot"),
+
+    # ── ALLOW: genuinely constant for shell text, and that is the truth ─────
+    "frac_printable":       ("ALLOW", "shell commands are printable by nature; "
+                                      "would vary only for binary payloads"),
+    "frac_null_bytes":      ("ALLOW", "shell commands contain no null bytes"),
 }
+
+# Constant columns that must NOT be reported as defects: an ALLOW decision is a
+# decision on the record. FIX and DROP entries are still reported, because both
+# describe work that has not happened yet.
+EXPECTED_CONSTANT: Dict[str, str] = {
+    name: reason for name, (decision, reason) in TRIAGE.items()
+    if decision == "ALLOW"
+}
+
+
+def triage_summary(dead: Sequence[str]) -> Dict[str, List[str]]:
+    """Group a list of dead column names by their triage decision.
+
+    `UNTRIAGED` is the one that matters: a constant column nobody has decided
+    about is exactly the state this module exists to make visible.
+    """
+    out: Dict[str, List[str]] = {"FIX": [], "DROP": [], "ALLOW": [],
+                                 "UNTRIAGED": []}
+    for n in dead:
+        decision = TRIAGE.get(n, ("UNTRIAGED", ""))[0]
+        out[decision].append(n)
+    return out
 
 
 # ── Report ──────────────────────────────────────────────────────────────────
@@ -348,7 +480,7 @@ def check_arithmetic(X: np.ndarray,
     return out
 
 
-def check_dead_columns(X: np.ndarray, *, min_distinct: int = 4,
+def check_dead_columns(X: np.ndarray, *, min_distinct: int = 2,
                        max_identical: float = 0.98,
                        names: Optional[Sequence[str]] = None
                        ) -> Tuple[List[Violation], List[str]]:
@@ -370,7 +502,15 @@ def check_dead_columns(X: np.ndarray, *, min_distinct: int = 4,
         vals, counts = np.unique(np.round(finite, 6), return_counts=True)
         modal = counts.max() / len(finite)
         name = by_index.get(i, f"D_semantic[{i - 76}]" if 76 <= i < 106 else f"feat_{i}")
-        if distinct < min_distinct or modal > max_identical:
+        # MODAL SHARE is the test, not the distinct count. An earlier version
+        # also failed any column with fewer than `min_distinct` values, which
+        # flagged every legitimately binary flag -- `is_ssh_port` at a healthy
+        # 54/46 split was reported as dead three times. A flag that splits the
+        # data informs a classifier; one stuck at a single value does not.
+        # `min_distinct` now only catches a genuinely single-valued column,
+        # which the modal test already covers, and is kept for callers that
+        # want to be stricter about continuous features.
+        if modal > max_identical or distinct < min_distinct:
             dead.append(name)
             if name in EXPECTED_CONSTANT:
                 continue                      # a decision on the record
@@ -415,7 +555,7 @@ def tolerance_from_scaler(scaler, n_cols: int = 128,
     return safety * eps * np.maximum(scale, 1.0)
 
 
-def validate(X: np.ndarray, *, min_distinct: int = 4,
+def validate(X: np.ndarray, *, min_distinct: int = 2,
              max_identical: float = 0.98,
              scaler=None, atol: Optional[np.ndarray] = None) -> Report:
     """Full integrity report for a RAW (un-scaled) feature matrix.
@@ -471,6 +611,15 @@ def format_report(rep: Report) -> str:
                              f"({100 * v.frac:5.1f}%)")
             else:
                 lines.append(f"    {v.detail}")
+        lines.append("")
+    if rep.dead_columns:
+        groups = triage_summary(rep.dead_columns)
+        lines.append(f"  CONSTANT-COLUMN TRIAGE  ({len(rep.dead_columns)} dead)")
+        for k in ("UNTRIAGED", "FIX", "DROP", "ALLOW"):
+            if groups[k]:
+                lines.append(f"    {k:<10} {len(groups[k]):>3}"
+                             + ("   <-- nobody has decided about these"
+                                if k == "UNTRIAGED" else ""))
         lines.append("")
     lines.append(f"  FAIL -- {len(rep.violations)} checks failed; "
                  f"worst single check affects {rep.rows_affected:,} rows")

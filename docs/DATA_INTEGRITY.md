@@ -4,9 +4,13 @@ Written 2026-11-11 (ASUS). **This is the handoff document for the rebuild work.*
 It is self-contained: the measurements are repeated here rather than
 cross-referenced, so a session starting cold can act on it.
 
-The short version: **35% of the 128-feature input carries no information, and 47%
-of the TabSyn rows are arithmetically impossible.** Neither was ever detected,
-because nothing checked. Every published number was measured on this data.
+The short version: **35% of the 128-feature input carries no information, 47% of
+the TabSyn rows are arithmetically impossible, and the 45-class taxonomy is
+exercised by 8 classes in real traffic.** None of it was ever detected, because
+nothing checked. Every published number was measured on this data.
+
+Three findings, in sections 1, 2 and 3d. The first two are data defects and are
+fixable. The third is a scope problem and needs a decision, not a repair.
 
 ---
 
@@ -287,6 +291,109 @@ contribution, and better to state it than to have a reviewer find it.
 
 ---
 
+## 3d. Finding three — the 45-class taxonomy is far wider than anything observable
+
+Asked 2026-11-11: *can a real attack sequence exist that is not one of the 45
+classes, and what happens to it?* Yes, in three distinct ways. Measured on all
+45,648 real sessions.
+
+### What real traffic actually uses
+
+```
+25,256  55.3%  DISC_ENV_PROBE      genuine pattern match (uname / whoami / id)
+12,995  28.5%  ACCESS_BRUTE_SSH
+ 4,354   9.5%  EXEC_SHELL_OPEN     <- THE CATCH-ALL, i.e. matched no rule
+ 2,914   6.4%  RECON_IP_SCAN
+   100   0.2%  EXEC_WGET_EXEC
+    23   0.1%  EXFIL_SCP_DATA
+     5   0.0%  EVASION_HIST_ERASE
+     1   0.0%  DISC_PROC_ENUM
+
+8 of 45 labels ever used.  The top 4 cover 99.7% of all real traffic.
+```
+
+A trap worth naming, because it nearly went in this document the wrong way round:
+`DISC_ENV_PROBE` at 55.3% is a **real match** on `\b(uname|hostname|id|whoami|cat
+/proc)\b`, not a default. The catch-all is `EXEC_SHELL_OPEN`. Check which label a
+labeller falls through to before reading anything into its distribution.
+
+### Three ways an attack escapes the taxonomy
+
+**1. The taxonomy has no slot at all.** Of the 45 labels exactly one mentions
+web or HTTP (`ACCESS_BRUTE_HTTP`). There is no SQL-injection class, no
+database-auth class, no SMB class. A SQLi attack against SNARE has nowhere to go.
+This is `MULTI_HONEYPOT.md` section 7.1, and it is why Dionaea and SNARE traffic
+can be *collected* but not honestly *labelled* today.
+
+**2. Unrecognised behaviour inside SSH — and this one has a number.** 4,354
+sessions, **9.5% of the real capture**, matched none of the 15 command rules and
+fell into the catch-all. That is the measured "does not fit" rate.
+
+**3. It is not an attack at all.** The benign problem, `02-11-2026 FINDINGS.md`
+finding #1.
+
+### What the model does with them today
+
+MT3's softmax over 45 classes sums to 1. There is no "none of the above" output,
+so **every input is forced into one of the 45 and the model cannot signal that it
+does not recognise the input.** Measured:
+
+```
+bare TCP connect, no login attempt   -> DISC_NETSTAT_SCAN   confidence 1.000
+benign `df -h ; free -m`             -> DISC_PROC_ENUM      confidence 0.995
+real `uname` fingerprinting          -> EVASION_HIST_ERASE
+```
+
+**A confidence threshold cannot catch this, and that is measured, not assumed:**
+benign sessions span 0.301-0.995 while real attacks span 0.637-0.828. The wrong
+answers are the confident ones. This is the same wall as the Heralding gate
+(`HONEYPOT_AUDIT.md` PART 7) and the benign corroboration work -- three separate
+problems, one root cause.
+
+### What to do about it, cheapest first
+
+1. **Predict the phase before the micro-state.** MT3 already has an auxiliary
+   phase head. Nine phases is a coarser and far more robust target, and a novel
+   attack often still has a recognisable phase even when the micro-state is
+   wrong. No new data, machinery already present.
+2. **Bootstrap an UNKNOWN class from the capture.** The 4,354 catch-all sessions
+   are candidate examples. That builds the class from observed traffic rather
+   than inventing it, and it only became possible once real data existed.
+3. **Distance-based rejection -- but only after the rebuild.** The Mahalanobis
+   measurement in this document is computed in INPUT space, which is the weak
+   form; the standard approach uses the model's penultimate representation. It
+   is unusable today regardless, because training data sits 226x from live data
+   so everything looks novel. It becomes meaningful once that gap closes.
+4. **Use the disagreement already available.** MT3 against the rule labeller
+   disagreeing is a free novelty signal, computable today, and the pipeline
+   already logs both.
+
+### The part that matters more than the open-set question
+
+Two numbers a reviewer will go straight for:
+
+- **The rule labeller can only ever emit 16 of the 45 labels.** 29 classes are
+  unreachable by construction -- they have never been assigned to a real session
+  even in principle, and exist only in data we generated ourselves.
+- **Real traffic puts 99.7% of its mass in 4 classes.**
+
+So the sharper problem is not "some attacks fall outside the 45". It is that the
+taxonomy is far richer than anything we can currently observe or label, and 37 of
+its classes rest entirely on synthetic data. A 45-class result measured on data
+that exercises 8 classes is a threat to validity on its own.
+
+**Report coverage rather than claiming the taxonomy.** "The taxonomy covers N% of
+observed real traffic, with M classes anchored only in synthetic data" is
+defensible and checkable. "45-class real-world attack classification" is not, on
+this evidence.
+
+Note the asymmetry this creates with the frozen dataset, which is balanced to a
+minimum 2,000 sessions per class: the rarest real class here has **one** session.
+Balanced synthetic training against 99.7%-in-4-classes reality is itself a
+distribution mismatch, separate from the feature-level one in section 1.
+
+---
+
 ## 4. The fix — three parts, in dependency order
 
 ### Part 0 (first, ~1 hour) — make the silent failure loud
@@ -410,6 +517,10 @@ report nobody runs is how this survived three months.
    single epoch runs.
 6. **Re-measure everything** and reissue the comparison table. Expect the numbers
    to move; the old ones describe a dataset with 45 constant inputs.
+7. **Decide the taxonomy question** (section 3d). Coverage reporting, a phase-first
+   head, and an UNKNOWN class bootstrapped from the 4,354 catch-all sessions are
+   all cheap. Deciding nothing means shipping a 45-class claim backed by 8
+   observed classes.
 
 ## 6. Hard constraints for the rebuild session
 

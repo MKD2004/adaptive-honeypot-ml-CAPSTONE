@@ -4,11 +4,12 @@ cve_intelligence/analyzers.py
 Analytics Layer
 ═══════════════
 Contains all scoring, classification, and filtering logic.
-No API calls are made here — this module consumes DataFrames
-produced by the pipeline and enriches them.
+Apart from the EPSS fetch, no API calls are made here — this module
+consumes DataFrames produced by the pipeline and enriches them.
 
 Responsibilities:
-  - EPSS score fetching (real) with simulation fallback
+  - EPSS score fetching (real, FIRST.org v1); unscored CVEs are labelled,
+    not simulated (simulation only behind config.ALLOW_SIMULATED_EPSS)
   - CWE / keyword-based attack type classification
   - Priority score computation (CVSS × EPSS × KEV)
   - Severity labelling
@@ -22,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -36,71 +37,72 @@ logger = logging.getLogger(__name__)
 # ══════════════════════════════════════════════════════════════════════════════
 # EPSS scoring
 # ══════════════════════════════════════════════════════════════════════════════
+def fetch_epss_details(
+    cve_ids: List[str],
+    batch_size: int = config.EPSS_BATCH_SIZE,
+) -> Dict[str, Dict[str, float]]:
+    """
+    Fetch real EPSS scores + percentiles from the FIRST.org API in batches.
+
+    Returns:
+        Dict mapping CVE ID -> {"epss": float, "percentile": float}.
+        CVEs FIRST has not scored yet (typically published in the last day or
+        two) are simply absent -- the v1 API answers 200 and omits them.
+
+    Raises nothing: a failed batch is logged and skipped. If EVERY batch fails
+    the caller sees an empty dict and the ERROR log says why.
+    """
+    out: Dict[str, Dict[str, float]] = {}
+    ids = [c for c in dict.fromkeys(cve_ids) if c]
+    batches = [ids[i: i + batch_size] for i in range(0, len(ids), batch_size)]
+    logger.info("Fetching EPSS for %d CVEs in %d batch(es) from %s.",
+                len(ids), len(batches), config.EPSS_API_URL)
+
+    failed = 0
+    for i, batch in enumerate(batches, start=1):
+        try:
+            resp = requests.get(
+                config.EPSS_API_URL,
+                params={"cve": ",".join(batch)},
+                timeout=config.REQUEST_TIMEOUT,
+            )
+            resp.raise_for_status()
+            for entry in resp.json().get("data", []):
+                cve_id = entry.get("cve", "")
+                if cve_id:
+                    out[cve_id] = {
+                        "epss": float(entry.get("epss", 0.0) or 0.0),
+                        "percentile": float(entry.get("percentile", 0.0) or 0.0),
+                    }
+        except Exception as exc:
+            failed += 1
+            logger.warning("EPSS batch %d/%d failed: %s", i, len(batches), exc)
+
+    if batches and failed == len(batches):
+        logger.error("EPSS: every request to %s failed -- no real scores this run.",
+                     config.EPSS_API_URL)
+    logger.info("EPSS fetch complete: %d / %d CVEs scored by FIRST.", len(out), len(ids))
+    return out
+
+
 def fetch_epss_scores(
     cve_ids: List[str],
     batch_size: int = config.EPSS_BATCH_SIZE,
 ) -> dict:
-    """
-    Fetch real EPSS scores from the FIRST.org API in batches.
-
-    Args:
-        cve_ids:    List of CVE ID strings.
-        batch_size: Maximum CVE IDs per API request.
-
-    Returns:
-        Dict mapping CVE ID → EPSS score (float).
-        CVE IDs not found in the response are absent from the dict.
-    """
-    epss_map: dict = {}
-    batches = [cve_ids[i: i + batch_size] for i in range(0, len(cve_ids), batch_size)]
-    logger.info(
-        "Fetching EPSS scores for %d CVEs in %d batch(es).",
-        len(cve_ids),
-        len(batches),
-    )
-
-    for i, batch in enumerate(batches, start=1):
-        try:
-            params = {"cve": ",".join(batch)}
-            resp = requests.get(
-                config.EPSS_API_URL,
-                params=params,
-                timeout=config.REQUEST_TIMEOUT,
-                
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            for entry in data.get("data", []):
-                cve_id = entry.get("cve", "")
-                score  = entry.get("epss", 0.0)
-                if cve_id:
-                    epss_map[cve_id] = float(score)
-        except Exception as exc:
-            logger.warning("EPSS batch %d failed: %s", i, exc)
-
-    logger.info(
-        "EPSS fetch complete: %d / %d scores retrieved.",
-        len(epss_map),
-        len(cve_ids),
-    )
-    return epss_map
+    """CVE ID -> EPSS score (float). Thin wrapper over fetch_epss_details()."""
+    return {k: v["epss"] for k, v in fetch_epss_details(cve_ids, batch_size).items()}
 
 
 def simulate_epss(df: pd.DataFrame) -> pd.Series:
     """
-    Simulate EPSS scores using a plausible distribution when live data
-    is unavailable.
+    Simulate EPSS scores using a plausible distribution. Only used when
+    config.ALLOW_SIMULATED_EPSS is on (env CVE_ALLOW_SIMULATED_EPSS=1) -- never
+    by default, because simulated scores are not threat intelligence.
 
     Distribution:
-      - KEV entries              → Beta(5, 2)  — biased toward 0.5–1.0
-      - Critical CVSS (≥ 9.0)   → Beta(3, 3)  — moderate–high
-      - Everything else          → Beta(1, 8)  — mostly low
-
-    Args:
-        df: DataFrame containing 'is_kev' and 'cvss_score' columns.
-
-    Returns:
-        pandas.Series of simulated EPSS scores aligned to df.index.
+      - KEV entries              -> Beta(5, 2)  -- biased toward 0.5-1.0
+      - Critical CVSS (>= 9.0)   -> Beta(3, 3)  -- moderate-high
+      - Everything else          -> Beta(1, 8)  -- mostly low
     """
     rng = np.random.default_rng(seed=42)
     scores: List[float] = []
@@ -119,34 +121,30 @@ def simulate_epss(df: pd.DataFrame) -> pd.Series:
 
 def enrich_epss(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Add an 'epss_score' column to df.
+    Add 'epss_score', 'epss_percentile' and 'epss_source' columns.
 
-    Strategy:
-      1. Attempt real EPSS fetch.
-      2. Simulate scores for any CVE not covered by the real fetch.
-      3. Merge real + simulated (real takes priority).
-
-    Args:
-        df: DataFrame with at minimum 'cve_id' and 'is_kev' columns.
-
-    Returns:
-        df with 'epss_score' column added (float, 0.0 → 1.0).
+    epss_source is one of:
+      - "first.org"  real score from the FIRST EPSS API
+      - "unscored"   FIRST has no score yet (new CVE); epss_score = 0.0
+      - "simulated"  only when config.ALLOW_SIMULATED_EPSS is enabled
     """
     df = df.copy()
+    real = fetch_epss_details(df["cve_id"].tolist())
 
-    real_epss   = fetch_epss_scores(df["cve_id"].tolist())
-    simulated   = simulate_epss(df)
+    df["epss_score"] = df["cve_id"].map(lambda c: real.get(c, {}).get("epss"))
+    df["epss_percentile"] = df["cve_id"].map(lambda c: real.get(c, {}).get("percentile"))
+    df["epss_source"] = np.where(df["epss_score"].notna(), "first.org", "unscored")
 
-    df["epss_score"] = df["cve_id"].map(real_epss)
-    df["epss_score"] = df["epss_score"].combine_first(simulated).fillna(0.0)
+    if config.ALLOW_SIMULATED_EPSS:
+        missing = df["epss_score"].isna()
+        df.loc[missing, "epss_score"] = simulate_epss(df)[missing]
+        df.loc[missing, "epss_source"] = "simulated"
 
-    real_count = df["cve_id"].isin(real_epss).sum()
-    logger.info(
-        "EPSS enrichment: %d real / %d simulated out of %d total.",
-        real_count,
-        len(df) - real_count,
-        len(df),
-    )
+    df["epss_score"] = df["epss_score"].astype(float).fillna(0.0)
+    df["epss_percentile"] = df["epss_percentile"].astype(float).fillna(0.0)
+
+    counts = df["epss_source"].value_counts().to_dict()
+    logger.info("EPSS enrichment: %s (of %d CVEs).", counts, len(df))
     return df
 
 

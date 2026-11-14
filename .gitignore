@@ -15,6 +15,7 @@ honeypot_dataset/cowrie/honeyfs/
 traffic_gateway/logs/
 traffic_gateway/data/blacklist.json
 traffic_gateway/data/whitelist.json
+cve_intelligence/data/live/
 honeypot_dataset/venv/
 *.npy
 *.npz

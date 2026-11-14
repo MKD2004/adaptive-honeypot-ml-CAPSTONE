@@ -24,6 +24,10 @@ REPO_ROOT = _MODULE_DIR.parent
 ACTIVE_CONFIG_PATH = _MODULE_DIR / "active_config.json"
 CONFIG_LOG_PATH = REPO_ROOT / "logs" / "honeypot_config_changes.jsonl"
 TRENDING_PROFILES_PATH = REPO_ROOT / "cve_intelligence" / "data" / "trending_profiles.json"
+# Written by cve_intelligence/refresher.py from live NVD / CISA KEV / EPSS
+# pulls. Preferred over the committed snapshot above whenever it exists.
+LIVE_TRENDING_PROFILES_PATH = (REPO_ROOT / "cve_intelligence" / "data" / "live"
+                               / "trending_profiles.json")
 
 # Cowrie's [honeypot] contents_path, bind-mounted into the container. Cowrie
 # resolves <contents_path>/<relpath> ahead of its bundled filesystem and builds
@@ -143,16 +147,34 @@ DEFAULT_BANNERS = {
 # Which kill-chain phases a trending CVE's attack_type is plausibly relevant to.
 # Used to decide whether a trending CVE should reshape the honeypot at all --
 # a path-traversal CVE is not evidence for how to answer an SSH brute-forcer.
+# Keys are the attack_type labels cve_intelligence actually emits
+# (config.CWE_ATTACK_MAP / KEYWORD_MAP), lower-cased. Live NVD data produces
+# "Code Injection / RCE" and "Insecure Deserialisation", not "remote code
+# execution" / "deserialization"; the older keys are kept for old profile files.
+# Memory-corruption types (buffer overflow, use-after-free, OOB) are left out
+# on purpose: there is no coherent honeypot surface to dress up for them.
 ATTACK_TYPE_PHASES: Dict[str, List[int]] = {
     "authentication bypass": [0, 1],
+    "brute force": [1],
+    "hardcoded credentials": [1],
+    "weak password policy": [1],
     "broken access control": [1, 3, 4],
-    "path traversal": [3, 8],
     "sql injection": [1, 3],
+    "code injection / rce": [2, 4],
     "remote code execution": [2, 4],
     "command injection": [2, 4],
+    "insecure deserialisation": [2, 4],
     "deserialization": [2, 4],
+    "remote file inclusion": [2],
     "privilege escalation": [4],
+    "insecure permissions": [4],
+    "path traversal": [3, 8],
+    "local file inclusion": [3, 8],
+    "file inclusion": [3, 8],
+    "ssrf": [3],
+    "xxe": [3, 8],
     "information disclosure": [3, 8],
+    "credential exposure": [3, 8],
 }
 
 
@@ -190,7 +212,9 @@ def _match_cve_profile(phase: int, target: str,
         if phase not in phases:
             continue
         svc = str(prof.get("honeypot_config", {}).get("service", "")).lower()
-        if not web_like and any(w in svc for w in ("web", "api", "http", "file server")):
+        # (an app-server / PHP profile would put a "Tomcat/9.0" banner on SSH)
+        if not web_like and any(w in svc for w in ("web", "api", "http", "file server",
+                                                   "application server", "php")):
             continue
         if best is None or float(prof.get("priority_score", 0)) > float(
                 best.get("priority_score", 0)):
@@ -213,13 +237,40 @@ class HoneypotConfigurator:
 
     def __init__(self, config_path: Path = ACTIVE_CONFIG_PATH,
                  log_path: Path = CONFIG_LOG_PATH,
-                 profiles_path: Path = TRENDING_PROFILES_PATH) -> None:
+                 profiles_path: Optional[Path] = None) -> None:
         self.config_path = Path(config_path)
         self.log_path = Path(log_path)
-        self.profiles_path = Path(profiles_path)
+        # None = follow the live intel (LIVE_TRENDING_PROFILES_PATH) when it
+        # exists, else the committed snapshot. An explicit path pins one file.
+        self._pinned_profiles = Path(profiles_path) if profiles_path else None
+        self.profiles_path = self._pinned_profiles or TRENDING_PROFILES_PATH
+        self._profiles_key: Optional[tuple] = None
         self._lock = threading.Lock()
-        self._profiles = _load_trending_profiles(self.profiles_path)
+        self._profiles: List[dict] = []
+        self._reload_profiles()
         self.changes = 0
+
+    # -- trending CVE intel ------------------------------------------------
+    def _reload_profiles(self) -> None:
+        """Re-read the CVE profiles if the refresher replaced them.
+
+        Cheap (one stat per call), so build_config() calls it every time and a
+        live refresh takes effect on the very next session, no restart.
+        """
+        path = self._pinned_profiles or (
+            LIVE_TRENDING_PROFILES_PATH if LIVE_TRENDING_PROFILES_PATH.exists()
+            else TRENDING_PROFILES_PATH)
+        try:
+            st = path.stat()
+            key = (str(path), st.st_mtime_ns, st.st_size)
+        except OSError:
+            key = (str(path), None, None)
+        if key == self._profiles_key:
+            return
+        self._profiles = _load_trending_profiles(path)
+        self.profiles_path = path
+        self._profiles_key = key
+        log.info("trending CVE profiles: %d loaded from %s", len(self._profiles), path)
 
     # -- config state ------------------------------------------------------
     def load_active(self) -> Dict[str, Any]:
@@ -266,6 +317,7 @@ class HoneypotConfigurator:
         })
 
         # -- CVE-aware overlay --------------------------------------------
+        self._reload_profiles()
         profile = _match_cve_profile(phase, target, self._profiles)
         if profile is not None:
             hc = profile.get("honeypot_config", {})
@@ -276,8 +328,12 @@ class HoneypotConfigurator:
                 "severity": profile.get("severity"),
                 "cvss_score": profile.get("cvss_score"),
                 "epss_score": profile.get("epss_score"),
+                "epss_source": profile.get("epss_source"),   # first.org / unscored
                 "is_kev": bool(profile.get("is_kev")),
+                "kev_date_added": profile.get("kev_date_added"),
                 "priority_tier": profile.get("priority_tier"),
+                "intel_source": ("live" if self.profiles_path == LIVE_TRENDING_PROFILES_PATH
+                                 else "snapshot"),
                 "service": hc.get("service"),
                 "endpoint": hc.get("endpoint"),
                 "emulation": hc.get("emulation"),

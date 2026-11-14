@@ -598,7 +598,7 @@ and item 4 moved.
 
 **The only wall-clock-bound item.** Real traffic accrues over weeks and no amount
 of effort speeds it up, so it must not wait behind laptop work. See
-`ANUSHKA_HERALDING.md` for the deployment runbook and `MULTI_HONEYPOT.md` section
+`ANUSHA_HERALDING.md` for the deployment runbook and `MULTI_HONEYPOT.md` section
 6 for the Track A / Track B split this follows.
 
 Heralding only. **SNARE/TANNER and Dionaea wait** — see step 5.

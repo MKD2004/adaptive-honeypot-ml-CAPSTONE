@@ -1,9 +1,16 @@
 # Heralding deployment — collection runbook
 
-**For Anushka.** You already did the hard version of this: Cowrie in Docker on an
+**For Anusha.** You already did the hard version of this: Cowrie in Docker on your
 Oracle Cloud VM, 13 days, 114,490 sessions, zero malformed lines. This is the same
 shape of job for a second honeypot, on the **same VM**, and it should take an
 afternoon.
+
+> Two people with similar names work on this project and an earlier draft of this
+> file credited the wrong one. To be precise: **Anusha Shrivastava** runs the
+> Oracle VM and produced the Cowrie capture; **Anushka Singh** wrote
+> `deploy/sandbox`, the internet-facing Cowrie kit and runbook, plus the
+> `response_mitigation` package. So if this runbook itself needs changing, ask
+> Anushka. If it needs *running*, that is Anusha, because the VM is hers.
 
 **Why we need it, in one line:** going from 8 days to 13 days of Cowrie produced
 **2.5× the data and zero new attack classes**. Only a second protocol broadens

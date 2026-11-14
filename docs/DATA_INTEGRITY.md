@@ -588,25 +588,114 @@ report nobody runs is how this survived three months.
 
 ---
 
-## 5. Suggested order of work
+## 5. The plan (agreed 2026-11-14)
 
-1. **Part 0** — loud failures. One hour, prevents recurrence of the whole class.
-2. **Part 3's checks 1-3** — write the validator *before* rebuilding, and run it
-   on the current `data/final/` to get the complete damage report. I examined the
-   24 temporal features in detail and the distinct-value counts for all 128;
-   **nobody has checked the arithmetic invariants on B_network, C_payload or
-   D_semantic.** Expect more findings.
-3. **Part 1** — event-stream generation, calibrated against
-   `cowrie_logs_20261109/`.
-4. **Part 2** — primitive/derived split and the TabSyn change.
-5. **Rebuild, then re-validate, then retrain.** The validator must pass before a
-   single epoch runs.
-6. **Re-measure everything** and reissue the comparison table. Expect the numbers
-   to move; the old ones describe a dataset with 45 constant inputs.
-7. **Decide the taxonomy question** (section 3d). Coverage reporting, a phase-first
-   head, and an UNKNOWN class bootstrapped from the 4,354 catch-all sessions are
-   all cheap. Deciding nothing means shipping a 45-class claim backed by 8
-   observed classes.
+Owner's five-point plan, with the sequencing and gaps worked through. Items 1, 2
+and 5 are the owner's wording and are kept as written; item 3 was already done
+and item 4 moved.
+
+### Start immediately and in parallel: Heralding collection
+
+**The only wall-clock-bound item.** Real traffic accrues over weeks and no amount
+of effort speeds it up, so it must not wait behind laptop work. See
+`ANUSHKA_HERALDING.md` for the deployment runbook and `MULTI_HONEYPOT.md` section
+6 for the Track A / Track B split this follows.
+
+Heralding only. **SNARE/TANNER and Dionaea wait** — see step 5.
+
+### 1. Part 0 — make silent failures loud (about an hour)
+
+Extractors must return `NaN` or raise when an input is missing, never substitute
+a fabricated value. This is the root cause of findings one and three and the
+cheapest item on the list. Do it first or the next pipeline finds a new way to do
+the same thing.
+
+### 2. Session-level aggregation, and the manually reviewed evaluation set
+
+These two unlock measurement, so they come before anything that needs measuring.
+
+**Aggregation.** Keep the full event sequence, the detected states, the primary
+label and the phase as **separate fields**. Define how the primary label is
+selected and test it against known scenarios. Two mechanical notes:
+
+- Keep `micro_state` as the primary-label field and ADD the others.
+  `feature_bridge`, `post_session_pipeline` and the dashboard all read that name;
+  renaming it is a live-pipeline change for no benefit.
+- Add the new fields to `session_contract.py` **and its tests**, or they become
+  silently optional and the next parser omits them.
+
+Measured motivation: the current rule takes `meaningful[-1]`, the last non-recon
+label, so `PRIVESC_SUDO_ABUSE` appears in 532 sessions and reaches the final
+label in zero. Deepest-phase labelling alone raises coverage from 8 classes to 9.
+
+**The evaluation set** is the highest-value item in the whole plan, because it is
+the only thing that turns "23.3% agreement with our own rules" into an accuracy
+number. Sample sessions containing privilege escalation, uploads, environment
+probing and unmatched commands, and verify the labels by hand before using them.
+Three additions without which it will not hold up:
+
+- **Stratify by source IP, not by session.** 1,071 addresses produced 114,490
+  sessions and the top talker made thousands; random sampling returns the same
+  bot repeatedly.
+- **Deduplicate by command text first.** Many sessions are byte-identical
+  replays. This is exactly what produced the 29.74% train/test overlap in the
+  frozen set.
+- **Measure labelling consistency** — two annotators, or one annotator twice with
+  a gap. Otherwise "manually verified" carries no error bar.
+
+### 3. Generate logs not features, and split primitive from derived
+
+**The temporal generator is already fixed** (`f9fa918`, `5280666`): per-event
+timestamps calibrated to 283,432 real inter-arrival gaps, duration and
+event-count baselines recalibrated per phase, 12 of 14 dead features revived,
+`data/final/` untouched.
+
+**That was a down payment, not the whole generator problem.** It does nothing
+about finding two. Fixing timestamps gives TabSyn better columns to learn from; it
+does not stop TabSyn producing `iat_mean > iat_max` or breaking all five `log1p`
+pairs. Both halves of section 4 still have to happen:
+
+- **Part 1** — the generator emits Cowrie-format events through the real parser
+  and extractors, so derived features are computed and never generated.
+- **Part 2** — TabSyn generates primitives only; derived features are recomputed.
+  **Without this the rebuild reproduces the 47% incoherence** and the run is
+  wasted.
+
+### 4. Wire the validator in as a gate
+
+`feature_integrity.py` exists with 26 tests but nothing calls it at the training
+entry point. A report nobody runs is how 46 constant columns survived three
+months. `assert_valid()` must fail the build.
+
+### 5. The decisions that cannot be deferred further
+
+Each changes what the paper claims, and none is a code problem:
+
+- **The benign class** (`02-11-2026 FINDINGS.md` finding #1). MT3 still cannot say
+  "safe". A 46th class or a two-stage gate — the gate is cleaner, since benign is
+  not a kill-chain state. Note the trap: real honeypot traffic contains no benign
+  sessions, so benign examples come only from netflow and the model can learn
+  "netflow-shaped = benign" instead of the concept.
+- **An UNKNOWN class** (section 3d). The catch-all sessions are the candidate
+  examples — 45% of commands match no rule.
+- **The 26 DROP columns** (section 3c). The schema goes 128 to about 102 and two
+  of the six feature groups stop being branches.
+- **The taxonomy question**, which gates SNARE/TANNER and Dionaea. Neither has a
+  slot today: no SQL-injection class, no database-auth class, no SMB class.
+  Collecting from them before this is decided produces data that cannot be
+  honestly labelled.
+
+### 6. Rebuild and evaluate
+
+Retrain only once the data and labels are trustworthy. **Report performance
+separately by protocol, class and data source** — that single reporting decision
+is what stops a headline number hiding that 99.7% of real traffic is four
+classes. Add two more splits: **coverage** (what fraction of real traffic the
+taxonomy covers) and the **clean subset**, since 29.74% of `test_real` is
+byte-identical to training rows.
+
+Keep the old arrays until the new ones are measured against them. Without the
+comparison there is no way to show the rebuild helped.
 
 ## 6. Hard constraints for the rebuild session
 

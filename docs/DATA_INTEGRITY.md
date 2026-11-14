@@ -368,6 +368,89 @@ problems, one root cause.
    disagreeing is a free novelty signal, computable today, and the pipeline
    already logs both.
 
+### 13-day update (2026-11-14): more data, same coverage
+
+A second capture arrived: **114,490 sessions from 1,071 source IPs over 13 days**
+(2026-11-01 to 11-13, 754,063 events, 0 unparseable lines), superseding the
+45,648-session one. It is 2.5x the data and it produced **zero new micro-states**.
+
+```
+                              sessions
+ACCESS_BRUTE_SSH   phase 1     52,748     \
+DISC_ENV_PROBE     phase 3     45,711      |  the only four above the frozen
+RECON_IP_SCAN      phase 0      8,891      |  dataset's own 2,000-per-class floor
+EXEC_SHELL_OPEN    phase 2      6,996     /
+PRIVESC_SUDO_ABUSE phase 4        532
+EXEC_WGET_EXEC     phase 2        137
+DISC_NETSTAT_SCAN  phase 3         11
+EVASION_HIST_ERASE phase 6          6
+EXFIL_SCP_DATA     phase 8          2
+DISC_PROC_ENUM     phase 3          1
+```
+
+| | 8-day capture | 13-day capture |
+|---|---|---|
+| sessions | 45,648 | **114,490** |
+| source IPs | 641 | 1,071 |
+| micro-states obtained | 8 | **8** (9 by deepest-phase) |
+| classes above 2,000 sessions | 4 | **4** |
+
+**The mix shifted — brute force overtook environment probing — but the coverage
+did not move at all.** That is the finding: *collecting Cowrie for longer does not
+broaden the taxonomy.* Only more protocols will. It is now measured rather than
+assumed, and it is the strongest argument available for the Heralding / SNARE /
+Dionaea work in `MULTI_HONEYPOT.md`.
+
+Supporting counts from the same capture: 31,702 distinct command strings, of
+which **38,404 uses (45%) match none of the parser's 15 command rules** and fall
+through to `EXEC_SHELL_OPEN`. Of the 16 labels the labeller can emit, 8 never
+fired at all — no `crontab` persistence, no `authorized_keys` injection, no
+Python or Perl droppers, no log wiping, no SUID hunting. Generous keyword probing
+across all 45 classes finds traces of 11; another 25 are not SSH-shell behaviours
+in the first place.
+
+### Two labelling defects this exposed
+
+**1. The session label discards the deepest behaviour.** `build_record` assigns
+`meaningful[-1]` — the LAST non-recon label in the sequence. Botnet scripts end
+with `uname`, so a session that escalates privileges and then fingerprints is
+filed as `DISC_ENV_PROBE`. `PRIVESC_SUDO_ABUSE` appears in 532 sessions and
+reached the final label in **zero** of them. Labelling by deepest kill-chain
+phase instead recovers it and raises coverage from 8 classes to 9. The per-command
+detail was never lost — it is in `micro_state_sequence` — only the single label
+throws it away. **Switching the rule is a one-line change and should be made
+during the rebuild.**
+
+**2. `file_upload` was mapped to exfiltration — FIXED.** Cowrie logs
+`cowrie.session.file_upload` when the **attacker pushes a file TO the honeypot**:
+a dropper, an implant, a miner. That is MITRE **T1105 Ingress Tool Transfer**, a
+tool coming *in*. It was mapped to `EXFIL_SCP_DATA` — **T1048.002, "Exfiltration
+Over Asymmetric Encrypted Non-C2 Protocol", phase 8** — which inverts the
+direction of the transfer and files routine malware delivery as the deepest stage
+of the kill chain.
+
+It also hid finding 1: because phase 8 outranks everything, those 574 sessions
+masked the phase-4 `PRIVESC_SUDO_ABUSE` that 532 of them contained. The botnet
+uploads its implant *and* sudo-chmods it, and the wrong label won.
+
+Now mapped to `EXEC_WGET_EXEC`, which already carries T1105 and phase 2 and is
+where `file_download` goes, so both directions of tool transfer agree. Effect on
+the capture:
+
+```
+                        before    after
+EXFIL_SCP_DATA (label)     574        0
+PRIVESC_SUDO_ABUSE           0      532   (deepest-phase)
+EXEC_WGET_EXEC             100      137
+distinct, deepest-phase      8        9
+```
+
+**Consequence worth stating plainly: no real session now maps to any `EXFIL_*`
+class.** That is correct rather than a regression — Cowrie's event set carries no
+signal for data *leaving* the honeypot, so all five exfiltration micro-states have
+no real support and rest entirely on synthetic data. The two sessions that still
+label `EXFIL_SCP_DATA` typed an actual `scp` command, which is genuine.
+
 ### The part that matters more than the open-set question
 
 Two numbers a reviewer will go straight for:
@@ -375,7 +458,10 @@ Two numbers a reviewer will go straight for:
 - **The rule labeller can only ever emit 16 of the 45 labels.** 29 classes are
   unreachable by construction -- they have never been assigned to a real session
   even in principle, and exist only in data we generated ourselves.
-- **Real traffic puts 99.7% of its mass in 4 classes.**
+- **Real traffic puts ~99.7% of its mass in 4 classes**, and that held across
+  both captures: 45,648 sessions and 114,490 sessions gave the same four.
+- **Five `EXFIL_*` classes have no real support at all**, now that implant
+  uploads are correctly labelled as ingress tool transfer.
 
 So the sharper problem is not "some attacks fall outside the 45". It is that the
 taxonomy is far richer than anything we can currently observe or label, and 37 of

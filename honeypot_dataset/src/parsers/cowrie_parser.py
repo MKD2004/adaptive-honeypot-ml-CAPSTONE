@@ -140,7 +140,31 @@ def build_record(events: List[dict], *,
             downloads.append(ev.get("url", ""))
             seq.append("EXEC_WGET_EXEC")
         elif etype == "cowrie.session.file_upload":
-            seq.append("EXFIL_SCP_DATA")
+            # T1105 Ingress Tool Transfer, NOT T1048 exfiltration.
+            #
+            # Cowrie logs `file_upload` when the ATTACKER PUSHES A FILE TO the
+            # honeypot -- a dropper, an implant, a miner. That is a tool coming
+            # IN. This previously mapped to EXFIL_SCP_DATA (T1048.002,
+            # "Exfiltration Over Asymmetric Encrypted Non-C2 Protocol", phase 8),
+            # which inverted the direction of the transfer and filed routine
+            # malware delivery as the deepest stage of the kill chain.
+            #
+            # Measured on the 13-day capture (114,490 sessions) before the fix:
+            # 574 sessions carried EXFIL_SCP_DATA, every one of them an implant
+            # upload. Because phase 8 outranks everything, those sessions also
+            # masked the PRIVESC_SUDO_ABUSE (phase 4) that 532 of them contained
+            # -- the botnet uploads its implant AND sudo-chmods it, and the wrong
+            # label won.
+            #
+            # EXEC_WGET_EXEC already carries T1105 and phase 2, and
+            # `file_download` (the honeypot fetching from an attacker URL) maps
+            # there too. Both directions of tool transfer now agree.
+            #
+            # Consequence worth stating: no real session now maps to any EXFIL_*
+            # class. That is correct -- Cowrie's event set has no signal for data
+            # LEAVING the honeypot, so the five exfiltration micro-states have no
+            # real support and rest entirely on synthetic data.
+            seq.append("EXEC_WGET_EXEC")
 
     if not seq:
         seq = ["RECON_IP_SCAN"]

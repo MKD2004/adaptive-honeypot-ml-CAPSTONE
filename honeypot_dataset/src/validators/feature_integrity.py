@@ -369,9 +369,16 @@ TRIAGE: Dict[str, Tuple[str, str]] = {
     # live threat-intel features would lean on a block that is all-zero at
     # inference. Revive this only if a CVE can be inferred from observed
     # behaviour for BOTH real and synthetic sessions.
-    **{n: ("DROP", "associated_cve is empty in 100% of real sessions; "
-                   "populating it only in synthetic data creates a train/serve "
-                   "mismatch")
+    # TWO independent causes, both verified. (1) No producer attaches an
+    # associated_cve -- kill_chain_simulator, cowrie_parser and heralding_parser
+    # all hard-code "". (2) The extractor's EPSS client called FIRST's retired
+    # /data/1.0/ path, which returns HTTP 404 for every CVE, so even an attached
+    # CVE would have yielded nothing. (2) is fixed as of 2026-11-14; (1) is not,
+    # and (1) alone is sufficient to keep these dropped.
+    **{n: ("DROP", "associated_cve is empty in 100% of real sessions, AND the "
+                   "EPSS endpoint was a retired 404 path until 2026-11-14; "
+                   "populating it only in synthetic data would create a "
+                   "train/serve mismatch")
        for n in ("cvss_v3_base", "cvss_v3_norm", "cvss_exploitability",
                  "cvss_impact", "epss_score", "epss_percentile",
                  "epss_7d_delta", "is_cisa_kev", "kev_days_since_added",

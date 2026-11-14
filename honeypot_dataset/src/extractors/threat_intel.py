@@ -105,7 +105,20 @@ def fetch_epss(cve_ids: list[str]) -> dict[str, dict]:
         batch = uncached[i:i+100]
         try:
             r = requests.get(
-                "https://api.first.org/data/1.0/epss",
+                # /data/1.0/ is RETIRED and returns HTTP 404 for every CVE.
+                # Verified 2026-11-14: 1.0 -> 404, v1 -> 200. So every EPSS
+                # lookup in every dataset build so far silently returned
+                # nothing, which is the SECOND independent reason all 14
+                # E_threat_intel features are constant -- the first being that
+                # no producer ever attaches an `associated_cve` at all.
+                # Anusha fixed the LIVE path in feature_bridge.py (8974273);
+                # this is the dataset path, which she did not touch.
+                #
+                # Reproducibility note for the rebuild: EPSS scores move daily,
+                # so a build that reaches the live API is not reproducible.
+                # ti_cache.json exists for this -- pin and commit a snapshot
+                # before generating a dataset anyone will cite.
+                "https://api.first.org/data/v1/epss",
                 params={"cve": ",".join(batch)},
                 timeout=15,
             )

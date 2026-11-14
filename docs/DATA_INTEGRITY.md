@@ -265,6 +265,42 @@ populating these would make them alive for 13 netflow classes and dead for the
 other 32 — the same mismatch as the threat-intel block, reached by a different
 route.
 
+### Update 2026-11-14: E_threat_intel had a SECOND cause, now verified
+
+`fix/threat-intel-epss` was merged (`8974273`, Anusha). It does **not** change
+the DROP decision, and it explains it better.
+
+The branch records that `src/extractors/threat_intel.py` called FIRST's
+**retired** `/data/1.0/epss` path. Verified directly rather than taken on trust:
+
+```
+https://api.first.org/data/1.0/epss  ->  HTTP 404   (every CVE)
+https://api.first.org/data/v1/epss   ->  HTTP 200   (1 record)
+```
+
+So `E_threat_intel` was dead for **two independent reasons**: no producer ever
+attaches an `associated_cve` (all three hard-code `""`), *and* even an attached
+CVE would have hit a 404. Either alone is sufficient.
+
+Her fix covers the **live** path only (`traffic_gateway/feature_bridge.py`, now
+routed through `cve_intelligence`'s CISA and FIRST v1 clients). The **dataset**
+extractor was untouched; its endpoint is corrected to `v1` here. She also found
+that `get_kev_set()` returns its `ti_cache.json` copy forever once one exists, so
+the KEV list was frozen too.
+
+**Two consequences for the rebuild:**
+
+- **The live and dataset paths now fetch threat intel differently** — live via
+  `cve_intelligence`, dataset via the extractor. That is a train/serve skew
+  waiting to happen if threat intel is ever revived. Converge them first.
+- **EPSS scores move daily, so a build that reaches the live API is not
+  reproducible.** `ti_cache.json` exists for exactly this; pin and commit a
+  snapshot before generating a dataset anyone will cite. `epss_drift.py` already
+  assumes a fixed baseline.
+
+The 14 features stay DROPped. Reviving them requires solving CVE *attribution*,
+which is the hard half and which nothing currently attempts.
+
 ### ALLOW — 6
 
 Constant today, genuinely informative once a second protocol lands. Keep in the

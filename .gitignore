@@ -50,3 +50,11 @@ pulse-engineering-metrics-and-incident-response-console.zip
 # Real honeypot captures: 180 MB+ of raw logs. Irreplaceable, but raw data
 # does not belong in git -- back it up outside the repo.
 cowrie_logs_*/
+
+# Gateway runtime state, not source. These are written by gateway_logger and
+# session_tracker as the gateway runs, and demo/reset_demo.py deletes them, so
+# they are disposable by design. Committing them meant every demo run showed up
+# as a source change, and one machine's blacklist state leaked into another's
+# checkout. The directory is recreated by GatewayConfig.__post_init__.
+traffic_gateway/data/ip_records.json
+traffic_gateway/data/sessions.jsonl

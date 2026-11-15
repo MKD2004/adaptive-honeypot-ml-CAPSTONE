@@ -632,6 +632,20 @@ and item 4 moved.
 
 ### Start immediately and in parallel: Heralding collection
 
+**DONE — live since 2026-11-14 19:07 UTC.** Anusha deployed it on the Oracle VM
+alongside Cowrie: 8 services, first real attacker 51 minutes in, ~150 sessions in
+the first hour, planned stop on or after 2026-11-29. Her report is
+`Heralding_deployment_update.md`; it lists seven errors in our runbook that she
+had to fix on the VM, including one that would have silently enabled the mysql
+and postgres sensors the runbook says must stay off.
+
+Our side is verified ready: the parser produces a contract-valid record from the
+exact session she observed, with the naive-UTC timestamp converted correctly.
+**Two sessions-worth of data hygiene must survive until the archive arrives** —
+exclude `171.76.81.68` between 19:07 and 19:58 UTC on 11-14 (her own tests), and
+expect a cluster of `num_auth_attempts: 0` FTP sessions from the Windows client's
+`OPTS UTF8 ON`.
+
 **The only wall-clock-bound item.** Real traffic accrues over weeks and no amount
 of effort speeds it up, so it must not wait behind laptop work. See
 `ANUSHA_HERALDING.md` for the deployment runbook and `MULTI_HONEYPOT.md` section

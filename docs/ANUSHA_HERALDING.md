@@ -5,6 +5,28 @@ Oracle Cloud VM, 13 days, 114,490 sessions, zero malformed lines. This is the sa
 shape of job for a second honeypot, on the **same VM**, and it should take an
 afternoon.
 
+> ## ✅ DEPLOYED 2026-11-14 19:07 UTC — and this runbook was wrong in 7 places
+>
+> Anusha deployed it, hit seven errors in the instructions below, fixed them all
+> on the VM, and wrote them up in `Heralding_deployment_update.md`. The steps here
+> are corrected from her report and marked **CORRECTED**. The authoritative config
+> is the one on the VM at `~/heralding/heralding.yml`, which comes with the final
+> archive.
+>
+> **The dangerous one:** I told her to mount the config at
+> `/etc/heralding/heralding.yml`. Heralding actually reads `heralding.yml` from
+> its **working directory**, and when it does not find a config it **silently
+> falls back to a default that enables 16 services, including ssh, mysql and
+> postgresql** — the exact three this runbook says must never be on. Following my
+> instructions would have produced the taxonomy-corrupting capture the runbook
+> exists to prevent, with a reassuring-looking container running the whole time.
+> She caught it by checking for the absence of the `Using default config file`
+> warning, which is a better verification than anything I wrote.
+>
+> Status: live since 2026-11-14 19:07 UTC, 8 services, first real attacker 51
+> minutes in, ~150 sessions in the first hour. Our parser reads her session format
+> correctly — verified against the exact Telnet session she reported.
+
 > Two people with similar names work on this project and an earlier draft of this
 > file credited the wrong one. To be precise: **Anusha Shrivastava** runs the
 > Oracle VM and produced the Cowrie capture; **Anushka Singh** wrote
@@ -94,80 +116,140 @@ nc -vz <VM_PUBLIC_IP> 23
 If those do not connect, stop here and fix it. Everything after this depends on
 traffic actually arriving.
 
-## Step 3 — the config
+## Step 3 — the config  **CORRECTED**
+
+**The key names below are not the ones I originally wrote.** Heralding has no
+`logging:` block and no `activate_sensors:` list — those settings would have been
+read as unknown keys and silently ignored. The real structure is
+`activity_logging:` → `file:` → `*_log_file`.
 
 Create `~/heralding/heralding.yml` on the VM:
 
 ```yaml
-# Heralding — collection only. No shell, no filesystem, credentials only.
-logging:
-  # These three files are what we need. log_session.json is the one our parser
-  # reads; the CSVs are a convenient cross-check.
-  session_csv:
+# Heralding -- collection only. Credentials, no shell, no filesystem.
+activity_logging:
+  file:
     enabled: true
-    filename: /var/log/heralding/log_session.csv
-  session_json:
-    enabled: true
-    filename: /var/log/heralding/log_session.json
-  auth_csv:
-    enabled: true
-    filename: /var/log/heralding/log_auth.csv
+    session_csv_log_file: log_session.csv
+    session_json_log_file: log_session.json
+    authentication_log_file: log_auth.csv
 
-activate_sensors: [ftp, telnet, smtp, http, pop3, imap, https, vnc]
-
+# Enabling a capability is done by listing it here. There is no separate
+# activate_sensors key. Anything NOT listed is off.
 capabilities:
-  ftp:    { enabled: true, port: 21,   timeout: 30, protocol_specific_data: { max_attempts: 3, banner: "220 FTP server ready" } }
+  ftp:    { enabled: true, port: 21,   timeout: 30, protocol_specific_data: { max_attempts: 3, banner: "220 FTP server ready", syst_type: "Unix" } }
   telnet: { enabled: true, port: 23,   timeout: 30, protocol_specific_data: { max_attempts: 3 } }
   smtp:   { enabled: true, port: 25,   timeout: 30, protocol_specific_data: { max_attempts: 3, banner: "220 smtp.local ESMTP" } }
   http:   { enabled: true, port: 80,   timeout: 30, protocol_specific_data: { banner: "", max_attempts: 3 } }
   pop3:   { enabled: true, port: 110,  timeout: 30, protocol_specific_data: { max_attempts: 3 } }
   imap:   { enabled: true, port: 143,  timeout: 30, protocol_specific_data: { max_attempts: 3 } }
-  https:  { enabled: true, port: 443,  timeout: 30, protocol_specific_data: { banner: "", max_attempts: 3 } }
   vnc:    { enabled: true, port: 5900, timeout: 30 }
+  https:
+    enabled: true
+    port: 443
+    timeout: 30
+    protocol_specific_data:
+      banner: ""
+      max_attempts: 3
+      # REQUIRED. Without a cert block Heralding crashes at startup trying to
+      # generate https.pem.
+      cert:
+        common_name: "*"
+        country: "US"
+        state: "None"
+        locality: "None"
+        organization: "None"
+        organizational_unit: "None"
+        valid_days: 365
+        serial_number: 0
 ```
 
 ### Why MySQL, Postgres and MSSQL must stay off
 
 Our 45-class attack taxonomy has **no database-authentication class and no
-SQL-injection class** — I checked: of 45 labels exactly one mentions web or HTTP.
-So a captured MySQL login attempt cannot be labelled honestly. It would have to be
-mapped to a neighbouring class that does not fit, which quietly corrupts the
-training data.
+SQL-injection class** — of 45 labels exactly one mentions web or HTTP. A captured
+MySQL login attempt cannot be labelled honestly; it would have to be mapped to a
+neighbouring class that does not fit, which quietly corrupts the training data.
 
-We would rather have no database data than mislabelled database data. If you turn
-those sensors on by accident, tell us — we can filter them out, but only if we
-know.
+**This is also the failure mode of getting the config path wrong**, which is why
+step 4 insists on the working-directory mount and step 5 checks for the
+default-config warning. A Heralding that cannot find its config turns these three
+on by itself.
 
-## Step 4 — run it
+## Step 4 — build and run  **CORRECTED**
+
+**Build from source.** The `honeynet/heralding` image I originally pointed at is
+not documented anywhere; Heralding's own README only describes building from the
+repo.
 
 ```bash
-sudo mkdir -p /var/log/heralding
-sudo chmod 755 /var/log/heralding
+git clone https://github.com/johnnykv/heralding.git
+cd heralding
+```
+
+**Two Dockerfile fixes are needed before it will build:**
+
+```
+1. python:3.9-slim-bullseye  ->  python:3.9-slim-bookworm
+   Debian 11 security packages now 404, so the build fails partway.
+
+2. Add `WORKDIR /src` immediately after `FROM base as build`
+   Without it, `COPY . .` copies the repo's bin/ folder onto /bin, which is a
+   symlink in bookworm, and the build fails.
+```
+
+Then:
+
+```bash
+docker build -t heralding:local .
+
+mkdir -p ~/heralding          # put heralding.yml here first
+cd ~/heralding
 
 docker run -d \
   --name heralding \
   --restart unless-stopped \
-  -v ~/heralding/heralding.yml:/etc/heralding/heralding.yml:ro \
-  -v /var/log/heralding:/var/log/heralding \
+  -v ~/heralding:/work -w /work \
   -p 21:21 -p 23:23 -p 25:25 -p 80:80 \
   -p 110:110 -p 143:143 -p 443:443 -p 5900:5900 \
-  honeynet/heralding:latest
+  heralding:local
 ```
 
-Pin the version once it works (`docker image ls` to get the digest, then use it
-instead of `latest`). We got caught by a Cowrie version drift already: your
-capture came from a newer Cowrie than our docs recorded, and its close event
-carries `duration_ms`, which the documented version does not emit. Nothing broke,
-but we could not tell which version produced the data.
+**`-v ~/heralding:/work -w /work` is the important part.** Heralding reads
+`heralding.yml` from its working directory and writes its logs there too. Mounting
+a single file at `/etc/heralding/heralding.yml` — which is what I originally said —
+does not work, and the failure is silent.
 
-Check it started:
+Record the image digest now, while you have it:
 
 ```bash
-docker logs heralding --tail 30
-docker ps | grep heralding
+docker inspect heralding --format '{{.Image}}'
 ```
 
 ## Step 5 — verify it is capturing REAL traffic
+
+**The single best check, and it is not one I thought of.** Anusha's:
+
+```bash
+docker logs heralding 2>&1 | grep -i "default config"
+```
+
+**Any output here means your config was NOT read** and Heralding is running its
+own 16-service default — including ssh, mysql and postgresql. Silence is what you
+want. Then confirm exactly eight capabilities started:
+
+```bash
+docker logs heralding 2>&1 | grep -c "capability"     # expect 8
+docker logs heralding 2>&1 | grep "capability"        # and check the names
+```
+
+On Windows, test reachability with PowerShell rather than `nc`, which is not
+available there:
+
+```powershell
+Test-NetConnection <VM_PUBLIC_IP> -Port 21
+Test-NetConnection <VM_PUBLIC_IP> -Port 23
+```
 
 Give it 30–60 minutes, then:
 
@@ -228,6 +310,33 @@ anything odd     : restarts, config changes, downtime, anything you changed
 This sounds bureaucratic and it is the thing we most regret not having for the
 Cowrie capture. Without it we cannot say in the paper which software version
 produced the data or over exactly what window, and we cannot reproduce it.
+
+---
+
+## Things we must know about this capture when we analyse it
+
+From Anusha's deployment report. These are recorded here so they are not lost
+between now and the archive arriving:
+
+- **`destination_ip` is `172.17.0.2`**, the container's internal address, not the
+  VM's public IP. Expected, and the same situation as Cowrie's `172.18.0.2`.
+  `source_ip` is the real client address.
+- **Sessions from `171.76.81.68` between 19:07 and 19:58 UTC on 2026-11-14 are
+  Anusha's own tests and must be excluded from analysis.** This is the kind of
+  thing that silently becomes a "finding" if nobody writes it down.
+- **Some test sessions show `num_auth_attempts: 0`** because the Windows `ftp`
+  client sends `OPTS UTF8 ON` first and Heralding's fake FTP server rejects it.
+  Real bots log credentials normally. Our parser handles a zero-attempt session
+  already — it labels it `RECON_IP_SCAN`, a bare connect — so this needs no code
+  change, but a cluster of them at the start of the capture is explained.
+- **Admin SSH is on port 22222** and was confirmed working before anything was
+  changed. Cowrie still owns 22 → 2222 and was left untouched.
+- Both containers use `restart unless-stopped`, so both survive a VM reboot.
+
+**Our side is ready.** The parser was verified against the exact session she
+reported — `root` / `solokey` over Telnet from `195.178.110.78` — and it produces
+a contract-valid record labelled `ACCESS_BRUTE_SSH` with the naive-UTC timestamp
+converted correctly. Nothing needs writing before the logs arrive.
 
 ---
 

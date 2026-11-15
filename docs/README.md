@@ -31,6 +31,7 @@ you add a doc, keep its name unique for the same reason.
 | `MULTI_HONEYPOT.md` | The plan for growing from one honeypot to four. Expansion of ROADMAP M4. Read before adding a honeypot or claiming the system has more than one. |
 | `TEAMMATES.md` | Hard rules for collaborators and any AI assistant. |
 | `ANUSHKA_TASKS.md` | What Anushka works on while the dataset is being rebuilt: commit the held-back dashboard work, put the mitigation layer on the real VM with Anusha, and watch a real block work for the first time. Includes the file-level split so nobody collides. |
+| `Heralding_deployment_update.md` | **Anusha's deployment report, 2026-11-15.** Heralding live since 11-14 19:07 UTC. Lists the seven errors in the runbook she had to fix on the VM, and the sessions to exclude as her own tests. |
 | `ANUSHA_HERALDING.md` | Deployment runbook for the second sensor, for Anusha, who runs the Oracle Cloud VM that produced the Cowrie capture. Ports, the two Oracle firewalls, why the database sensors stay off, and what to send back. |
 | `MT3_PROMPT.md` | The binding spec for the MT3 pipeline. **Cited from code** — `mt3_pipeline/data.py`, `evaluate.py` and `losses.py` all reference it as the requirement they implement. |
 

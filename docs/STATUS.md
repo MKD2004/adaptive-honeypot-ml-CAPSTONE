@@ -6,6 +6,84 @@ snapshot, not a log (that's DECISIONS.md / ERRORS.md).
 
 ---
 
+## Last updated: 2026-11-15 (Dhanya laptop)
+
+### Session summary (2026-11-15) — REBUILD PART 1 DONE: the generator emits logs, not features
+
+**Read `DATA_INTEGRITY.md` section 8 for the full write-up.** This entry is the
+snapshot.
+
+**What was built.** `honeypot_dataset/src/generators/cowrie_simulator.py` — a new
+generator that emits synthetic sessions as **Cowrie log events** and runs them
+through `cowrie_parser.build_record()` and `pipeline.extract_all()`, the same
+path real traffic takes. 32 tests in `tests/test_cowrie_simulator.py`; full suite
+84 tests, all passing. This is Part 1 of the three-part fix in
+`DATA_INTEGRITY.md` section 4.
+
+**`data/final/` is untouched** — `X_train.npy` still carries its 2026-08-27
+timestamp. `kill_chain_simulator.py` is unmodified, so notebooks 01 and 03b still
+reproduce the frozen build. Every number in `CLAUDE.md` still describes the OLD
+data; do not quote the two side by side without saying which is which.
+
+**Calibrated against the 13-day capture** in `cowrie_logs/` (114,490 sessions,
+754,063 events, 0 unparseable lines) — not the 8-day one. Note
+`DATA_INTEGRITY.md` section 6 names the older `cowrie_logs_20261109/`; both
+captures exist, both are gitignored and irreplaceable, back up both.
+
+**Measured result — finding two is structurally gone:**
+
+```
+                           impossible-row checks failed    constant columns
+X_train      (frozen)                13 of 97                  50 / 128
+X_val        (frozen)                16 of 97                  50 / 128
+X_test_synth (frozen)                14 of 97                  50 / 128
+generated corpus (18,000 rows)        0 of 97                  39 / 128
+```
+
+13 of the 14 FIX features from the section 3c triage are alive. The specific
+shape skews that put real sessions 226x outside training are closed:
+`login_attempts` max 1 (was 552), `bytes_out` always 0, `bytes_in` 86 for a
+one-command session, and duration/long-pause rates matching real within a few
+percent in every stratum.
+
+**Four assumptions the real data killed**, all in section 8: commands are the
+*fastest* events in a Cowrie session (98.1% sub-100 ms — scripted bots, not
+humans typing); the generated label must be the walk's *deepest* state, not its
+first; 74% of a deep session's time is the implant-upload gap; and
+`attacker_repeat_visitor` is 99.06% constant in the **real** capture too, so
+section 3c's FIX verdict for it is wrong.
+
+### Three decisions now waiting on the owner
+
+1. **Label agreement is 24.0%, with 29 of 45 classes at 0.0%.** `cowrie_parser`
+   can only emit 18 of the 45 micro-states. Decided this session: keep the
+   intended label, record the parser's alongside, report the gap per class
+   (`agreement_report()`). The consequence to accept or revisit: those 29 classes
+   rest entirely on our own assertion, and MT3 agreeing with the rule labeller is
+   not evidence of correctness. See DECISIONS.md.
+2. **12 newly UNTRIAGED constant columns** need DROP/ALLOW verdicts in
+   `feature_integrity.TRIAGE` — `bytes_out`, `log_bytes_out`, `bytes_ratio`,
+   `packets_*`, `dst_port_norm`, `is_ssh_port`, `is_http_port`, `protocol_enc`.
+   Most went constant *because* the generator stopped fabricating them. Honest
+   count is now **89 informative of 128** for an SSH-only corpus.
+3. **Balanced-corpus vs real-marginal mismatch, quantified.** 91% of generated
+   sessions issue commands against 46% of real ones — unavoidable when 39 of 45
+   classes are post-access states. Only conditional distributions transfer.
+
+### Next
+
+- **Part 2 — TabSyn generates primitives only, derived features recomputed.** NOT
+  STARTED, and it is the one that matters most: without it a rebuild reproduces
+  the 47% incoherence across the 720k synthetic rows. Part 1 only fixes the
+  generator's own output.
+- **Part 0** — extractors return NaN or raise instead of fabricating. Not done.
+  The new generator never takes the `temporal.py` fallback, but it is still there.
+- **Part 3** — wire `feature_integrity.assert_valid()` in as a training gate.
+  Still nothing calls it at the entry point.
+- Heralding collection continues on the Oracle VM (live since 2026-11-14, planned
+  stop on or after 2026-11-29) — wall-clock bound, unaffected by this work.
+
+---
 ## Last updated: 2026-11-11 (ASUS TUF)
 
 ### Session summary (2026-11-09 → 11) — FIRST REAL DATA, AND A DATASET INTEGRITY PROBLEM

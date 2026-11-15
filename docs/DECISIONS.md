@@ -5,6 +5,140 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-15 — Synthetic Cowrie: keep the intended label, record the parser's too
+
+`cowrie_simulator.py` generates sessions as Cowrie events and parses them with
+the real `cowrie_parser`. That raised a question the Heralding generator never
+had to answer: **the parser's label disagrees with the intended class for ~80% of
+generated sessions.**
+
+Root cause, measured: `cowrie_parser` can only ever emit **18 of the 45**
+micro-states — the 15 `COMMAND_PATTERNS` labels, the `EXEC_SHELL_OPEN` catch-all,
+plus `RECON_IP_SCAN` and `ACCESS_BRUTE_SSH` from the event stream. The other 27
+are unreachable by construction. Over the 135 command templates in
+`sim_commands.py`, only 27 are labelled as the class they were written for; 108
+disagree, and 41 of the 45 states have at least one template the parser calls
+something else.
+
+So `heralding_simulator`'s `verify_labels=True` pattern — parser label is truth,
+mismatch raises — **cannot be applied here**. Three options were on the table:
+
+1. Keep the intended label, record both. 45 classes survive; labels are not
+   reproducible by the live labeller for ~80% of rows.
+2. Parser label wins. Zero train/serve label skew; the Cowrie half of the
+   dataset collapses from 45 classes to 18 and the 45-class contribution goes
+   with it.
+3. Rewrite the templates so the parser agrees. Possible for the 18 reachable
+   labels, impossible for the other 27 without adding rules to `cowrie_parser`
+   — which would change how LIVE traffic is labelled.
+
+**Decision: option 1.** Every row carries `micro_state` (intended, the training
+target), `parser_micro_state`, `parser_sequence`, `label_agrees` and
+`label_source`, and `agreement_report()` prints the per-class table. Measured
+overall agreement is **24.0%**, with **29 of 45 classes at 0.0%**.
+
+**Why.** Option 2 throws away the taxonomy that is the project's contribution, to
+buy a consistency we can measure and report instead. Option 3 edits the live
+labelling path to make synthetic data look right, which is the tail wagging the
+dog. Option 1 costs nothing we were not already paying — the frozen dataset has
+exactly the same gap, it was just never computed — and it turns the gap into a
+number a reviewer can check.
+
+**The limitation this creates must be stated wherever these rows are used:**
+training on `micro_state` means the labels are not reproducible by the rule
+labeller for most classes, so MT3 agreeing with the rules is not evidence of
+correctness and disagreeing is not evidence of error. The 29 zero-agreement
+classes rest entirely on our own assertion. This is the same honesty problem
+`heralding_simulator` records in its LABEL HONESTY note, one degree worse.
+
+`micro_state` keeps its name deliberately: `feature_bridge`,
+`post_session_pipeline` and the dashboard all read that field, and renaming it
+would be a live-pipeline change for no benefit. DATA_INTEGRITY.md section 5 asked
+for exactly this (keep the name, ADD the others).
+
+---
+
+## 2026-11-15 — Event timing is drawn PER EVENT TYPE, and duration is derived
+
+This supersedes part of the 2026-11-09 timing decision below, for the
+event-based generator only. `kill_chain_simulator.generate_event_timestamps` is
+unchanged and still used by the frozen build.
+
+**What changed and why.** The 2026-11-09 model fitted a three-component lognormal
+mixture to the POOLED real inter-arrival distribution and then shuffled the drawn
+gaps across the session. Stratifying by the event each gap arrives at shows the
+pooled fit hides the structure completely:
+
+```
+gap arriving at        n         p50 s    frac < 100 ms
+command.input       84,815      0.0004        98.1%    <- fastest
+client.version     112,478      0.0005        82.8%
+session.closed     114,490      0.0470        54.4%
+client.kex         110,726      0.1829        27.4%
+log.closed          53,466      0.2364         0.1%
+session.params      53,466      0.8840         0.0%
+login.success      104,385      1.0127         0.1%    <- slowest common
+file_upload            580     59.7255         1.2%
+POOLED             639,570      0.1817        42.5%
+```
+
+**Commands are the fastest events in a real Cowrie session**, because the traffic
+is bots pasting a command block, not humans typing. Authentication and shell
+setup are the slow parts. A shuffled pooled draw gets this backwards and will put
+a 13-second idle pause between `connect` and `client.version`.
+
+So `cowrie_simulator` samples per-event-type quantile grids by inverse CDF,
+interpolated in log space (the grids span 0.0002 s to 300 s, and several are
+bimodal — 82.8% of `client.version` gaps are sub-millisecond and the rest run to
+seconds, which no single lognormal fits).
+
+**`session_duration_s` is now the SUM of the generated gaps.** The 2026-11-09
+decision went to some trouble to preserve duration exactly, because duration was
+an independent draw that four features depended on. Once the event stream is the
+source of truth, that reverses: duration is a *derived* quantity like
+`log_session_duration` and `events_per_sec`, and drawing it separately is the
+same mistake as drawing a log1p pair. Three further consequences, all measured
+against the real capture:
+
+- The gap into `session.closed` is keyed by session type, because pooling it
+  spans a factor of 7,000 and hides Cowrie's 120 s idle timeout: login+commands
+  p50 0.0007 s, login/no-commands 0.475 s, **no login 4.615 s with p90 119.8 s**.
+- Long pauses are decided once per session from its shape, not per gap. Real rate
+  by type: no login 23.52%, login+0 cmds 0.42%, login+1-4 cmds 0.24%,
+  login+5+ cmds 37.31% — a 65x spread between neighbouring buckets.
+- 74% of a deep session's elapsed time is ONE gap, the SFTP implant transfer
+  (mean 91.8 s, present in 43.8% of 5+ command sessions against 0.03% of
+  shallower ones).
+
+---
+
+## 2026-11-15 — The generated label is the walk's DEEPEST state, not its first
+
+`kill_chain_simulator.generate_session_sequence(force_start=label)` pins the
+intended label to the START of the DAG walk and then advances. Measured
+consequence: **57.5% of RECON-labelled sessions escalated into phase 2-4 and
+issued shell commands**, which no real reconnaissance session does (all 8,898 real
+`RECON_IP_SCAN` sessions carry zero commands, and 7.76% of real sessions never
+authenticate at all).
+
+It is also the exact inverse of the labelling rule DATA_INTEGRITY.md section 3d
+settles on for the real capture: label by DEEPEST kill-chain phase, because
+`build_record` taking `meaningful[-1]` filed 532 privilege-escalation sessions as
+`DISC_ENV_PROBE`. A generator whose label is the walk's *shallowest* state cannot
+be trained against that rule.
+
+**Decision: build the walk backwards.** `cowrie_simulator._sequence_ending_at()`
+random-walks the DAG's reverse edges from the intended label, so the label is the
+terminal and deepest state. The sequence stays DAG-valid and phase-monotone (a
+reversed reverse-path is a forward path), and the corpus stays balanced at one
+session per class per draw — which labelling-by-deepest-phase on a forward walk
+would not, since it over-represents the deep classes.
+
+Guarded by `test_recon_sessions_mostly_do_not_authenticate`, which asserts that
+no reconnaissance-labelled session issues a shell command.
+
+---
+
 ## 2026-11-09 — Generator timing: calibrated to the real capture, not to intuition
 
 The first real capture showed real sessions sitting 226x outside MT3's training

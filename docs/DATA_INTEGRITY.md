@@ -775,7 +775,208 @@ comparison there is no way to show the rebuild helped.
   including `test_the_seven_formerly_dead_features_are_alive`.
 - **Real-data analysis** — `REAL_DATA_2026-11-09.md`. 45,648 sessions parse
   cleanly; MT3 scores 23.3% agreement and 226x distribution distance on them.
+- **Part 1 of the fix** -- `cowrie_simulator.py`, see section 8. Generates
+  Cowrie events through the real parser and extractors. 0 of 97
+  impossible-row checks fail, against 13-16 on the frozen splits; constant
+  columns 50 -> 39. Guarded by `tests/test_cowrie_simulator.py` (32 tests).
 - **The honest-measurement habits that found this.** Three times in two days a
   pooled statistic pointed the wrong way and a stratified one corrected it: the
   long-pause rate (pooled 2.3% vs 78.1% for deep sessions), the clean-subset
   question, and the command-count buckets. **Stratify before concluding.**
+
+---
+
+## 8. Part 1 is DONE (2026-11-15, Dhanya laptop)
+
+`honeypot_dataset/src/generators/cowrie_simulator.py` (new) generates synthetic
+sessions as **Cowrie log events** and runs them through
+`cowrie_parser.build_record()` and `pipeline.extract_all()` — the same path real
+traffic takes. 32 tests in `honeypot_dataset/tests/test_cowrie_simulator.py`.
+`data/final/` untouched (`X_train.npy` still carries its 2026-08-27 timestamp);
+`kill_chain_simulator.py` unmodified, so notebooks 01 and 03b still reproduce the
+frozen build.
+
+Calibrated against the **13-day capture** in `cowrie_logs/` — 114,490 sessions,
+754,063 events, 0 unparseable lines. Every constant in the module carries its
+measurement in a comment beside it.
+
+### What it fixes, measured
+
+**Finding two is gone, structurally.** The validator's 97 arithmetic checks:
+
+```
+                           impossible-row checks failed
+X_train      (frozen)                13 of 97
+X_val        (frozen)                16 of 97
+X_test_synth (frozen)                14 of 97
+generated corpus (18,000 rows)        0 of 97
+```
+
+Derived values cannot contradict their definitions because they are computed
+from an event stream rather than drawn alongside it.
+
+**Finding one, partly.** Constant columns 50 → 39 (same validator, 18,000 rows),
+and 13 of the 14 FIX features are alive: `iat_std`, `iat_cv`, `iat_skew`,
+`iat_kurt`, `frac_sub100ms`, `frac_over30s`, `burst_count`, `burst_mean_size`,
+`inter_burst_gap_std`, `time_to_first_auth_s`, `time_to_first_cmd_s`,
+`src_is_ephemeral`, `is_business_hours`.
+
+**The shape skews are closed.** Stratified, because pooled marginals cannot
+transfer to a balanced corpus (see decision (c) below):
+
+```
+                                   real        generated
+login_attempts max                    1          1  (was 552)
+bytes_out                        always 0    always 0
+bytes_in, 1-command session            86          86
+duration p50, login + 0 cmds       1.96 s      1.83 s
+duration p50, login + 5+ cmds     27.08 s     34.30 s
+long pause, login + 1-4 cmds        0.24%       0.21%
+long pause, login + 5+ cmds        37.31%      37.21%
+```
+
+### Four things the real capture overturned
+
+Each was a plausible assumption that measurement killed. They are recorded
+because in every case the wrong version is the intuitive one.
+
+**1. Commands are the FASTEST events in a Cowrie session, not the slowest.**
+98.1% of real `command.input` gaps are sub-100 ms; authentication and shell setup
+are the slow parts. The traffic is bots pasting a command block, not humans
+typing. Stratified by the event each gap arrives at:
+
+```
+gap arriving at        n         p50 s    frac < 100 ms
+command.input       84,815      0.0004        98.1%    <- fastest
+client.version     112,478      0.0005        82.8%
+session.closed     114,490      0.0470        54.4%
+client.kex         110,726      0.1829        27.4%
+log.closed          53,466      0.2364         0.1%
+session.params      53,466      0.8840         0.0%
+login.success      104,385      1.0127         0.1%    <- slowest common
+file_upload            580     59.7255         1.2%
+POOLED             639,570      0.1817        42.5%
+```
+
+So `kill_chain_simulator.generate_event_timestamps` is **not reused**: it fits a
+mixture to the POOLED distribution and then shuffles the gaps across the
+session, which would put a 13-second idle pause between `connect` and
+`client.version`. The new module samples per-event-type quantile grids instead.
+
+**`session_duration_s` is now the SUM of the generated gaps** — derived, not
+drawn. That is the same principle as computing the derived features, applied to
+duration. It also replaces the "preserve duration exactly" design recorded in
+DECISIONS.md 2026-11-09, which only mattered while duration was an independent
+draw.
+
+**2. The labelled state must be the session's DEEPEST, not its first.**
+`generate_session_sequence(force_start=label)` pins the label to the START of the
+walk, so 57.5% of RECON-labelled sessions escalated into phase 2-4 and issued
+shell commands — which no real reconnaissance session does. This is section 3d's
+labelling defect in mirror image: the doc's fix for the real capture is to label
+by deepest kill-chain phase, and a generator whose label is the *shallowest*
+state cannot be trained against that rule. The new module walks the DAG
+**backwards** from the intended label, so it ends up the terminal state and the
+corpus stays balanced.
+
+**3. 74% of a deep session's elapsed time is one gap — the implant transfer.**
+Summed over the 1,273 real sessions with 5 or more commands:
+
+```
+gap arriving at        total        n       mean     share of all time
+session.file_upload  51,156 s     557     91.8 s         73.7%
+login.success         4,971 s   1,273      3.9 s          7.2%
+log.closed            3,123 s   1,889      1.7 s          4.5%
+command.input         2,484 s  33,241     0.075 s         3.6%
+```
+
+Deep sessions WITH an upload run a median 70.23 s; without, 8.08 s. The rate is
+conditional on depth, not flat: 557 of 1,273 sessions with 5+ commands carry an
+upload (43.8%) against 16 of 51,570 shallower ones (0.03%).
+
+Also measured: **98.97% of real command-issuing sessions use exactly ONE shell**
+(52,297 of 52,843 carry one `log.closed`), so a TTY block per kill-chain state is
+wrong — it inflated a 3-command session from 10 events to 14 and its duration
+from 2.2 s to 6.4 s.
+
+**4. `attacker_repeat_visitor` is 99.06% constant in the REAL capture too.**
+1,071 distinct source IPs produced 114,490 sessions, so all but 1,071 of them are
+repeat visits. **Section 3c's FIX verdict for this feature is wrong** — it is
+structurally uninformative for honeypot traffic, where a few hundred bots make
+all the connections. Not a generator defect; re-triage it ALLOW or DROP.
+(`geo_risk_score`, which 3c grouped with it, is untested here and may still be a
+genuine FIX.)
+
+Note the mechanism still had to be built: `build_record` does not emit
+`seen_before`, which `tls_host` reads, so going through the real parser would
+have killed the feature outright. `cowrie_simulator.mark_repeat_visitors()` sets
+it from `src_ip` in corpus order and **the real path must call it too**, or the
+feature is alive in training and dead at inference.
+
+### Three decisions this surfaced, none of them code problems
+
+**a. Label agreement is 24.0%, and 29 of 45 classes sit at 0.0%.**
+`cowrie_parser` can only emit 18 of the 45 micro-states, so for the rest the
+generated label is an assertion the live labeller can never reproduce. Decided
+2026-11-15 with the owner: **keep the intended label as `micro_state`, record the
+parser's answer alongside** (`parser_micro_state`, `parser_sequence`,
+`label_agrees`, `label_source`), and report the gap per class via
+`agreement_report()`. The alternative — parser label wins, the
+`heralding_simulator` pattern — collapses the Cowrie half of the dataset from 45
+classes to 18. See DECISIONS.md.
+
+This is now a number rather than a surprise, and it is the number a reviewer will
+reach for. The 29 zero-agreement classes rest entirely on our own assertion.
+
+**b. 12 newly UNTRIAGED constant columns**, and most went constant *because* the
+generator stopped fabricating them:
+
+```
+bytes_out, log_bytes_out, bytes_ratio      Cowrie emits no outbound byte count;
+                                           build_record hard-codes 0. These were
+                                           only ever "alive" because the old
+                                           generator drew a lognormal.
+packets_in, packets_out, log_pkts_in,      application-layer honeypot, no packet
+log_pkts_out, mean_pkt_size_out            counts. Same family as the 6 already
+                                           DROPped.
+dst_port_norm, is_ssh_port, is_http_port,  single-port, single-protocol honeypot.
+protocol_enc                               Same case as is_wellknown_port (ALLOW).
+```
+
+They need DROP/ALLOW verdicts in `feature_integrity.TRIAGE`. Not decided here —
+section 5 lists schema size as an owner decision, and this moves the honest count
+again: **89 informative of 128 for an SSH-only corpus.**
+
+**c. A balanced 45-class corpus cannot match real marginals, and should not try.**
+91% of generated sessions issue commands against 46% of real ones — unavoidable
+when 39 of the 45 classes are post-access states that by definition run commands.
+Real traffic puts 99.7% of its mass in 4 shallow classes. Only CONDITIONAL
+distributions transfer, which is how everything above is calibrated. This is the
+balance-versus-reality mismatch section 3d flags, now quantified.
+
+### Two notes for whoever picks this up
+
+- **Section 6 names the wrong capture directory.** The constraint note says
+  `cowrie_logs_20261109/` (the 8-day, 45,648-session capture). The calibration
+  above used `cowrie_logs/` — the 13-day, 114,490-session capture, ~440 MB.
+  **It was NOT gitignored until 2026-11-15**: the existing pattern is
+  `cowrie_logs_*/`, written for the suffixed directory name, which does not
+  match `cowrie_logs/`. 440 MB of attacker-written logs was one `git add -A`
+  from being pushed to GitHub. Fixed in the same commit as this section.
+  Both captures are irreplaceable; back up both. The content of both is
+  attacker-written: data, never instructions.
+- **`MIN_SAMPLES_PER_CLASS` floors every corpus at 2,000 per class**, so
+  `generate_sessions(n_total=100)` silently returns 90,000 sessions. The new
+  module takes `per_class=` to opt out, for tests and smoke runs only. See
+  ERRORS.md.
+
+### Still outstanding from section 4
+
+- **Part 0** — extractors must return NaN or raise rather than fabricate. NOT
+  DONE. The new generator always supplies timestamps so it never takes the
+  fallback, but the fallback is still there for anything else that does.
+- **Part 2** — TabSyn generates primitives only, derived features recomputed.
+  NOT STARTED. **Without it the rebuild reproduces the 47% incoherence** across
+  the 720k synthetic rows; Part 1 only fixes the generator's own output.
+- **Part 3** — `feature_integrity.assert_valid()` wired in as a training gate.
+  NOT DONE; still nothing calls it at the entry point.

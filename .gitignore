@@ -50,6 +50,10 @@ pulse-engineering-metrics-and-incident-response-console.zip
 # Real honeypot captures: 180 MB+ of raw logs. Irreplaceable, but raw data
 # does not belong in git -- back it up outside the repo.
 cowrie_logs_*/
+# The 13-day capture lands in `cowrie_logs/` with no suffix, which the
+# pattern above does NOT match -- it was written for cowrie_logs_20261109/.
+# 440 MB of attacker-written logs was committable until 2026-11-15.
+cowrie_logs/
 
 # Gateway runtime state, not source. These are written by gateway_logger and
 # session_tracker as the gateway runs, and demo/reset_demo.py deletes them, so

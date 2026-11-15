@@ -7,6 +7,75 @@ something from scratch. Newest first.
 
 ---
 
+## A generated Cowrie log reads back as `source: "cowrie_real"` (2026-11-15)
+
+**What breaks.** `cowrie_simulator.write_jsonlines()` produces a genuine Cowrie
+JSON log — by design, so it goes through the same parser as real traffic. But
+`cowrie_parser.build_record()` hard-codes `"source": "cowrie_real"`, because
+until now it only ever saw real logs. So:
+
+```python
+parse_closed_sessions("data/processed/cowrie_sim/cowrie.json")
+# -> every record claims source == "cowrie_real"
+```
+
+**Why it matters more here than it looks.** This project has already spent
+months describing 15,000 teammate-generated Cowrie sessions as real data; that
+is the whole of the provenance correction in CLAUDE.md and DECISIONS.md. A
+generator that can produce logs indistinguishable from the real capture is
+exactly how it happens again, and the failure is silent — nothing raises, the
+rows just lie about where they came from.
+
+**Fix.** Read generated logs with `cowrie_simulator.parse_generated_log()`, never
+`parse_closed_sessions()`. It parses with the same `build_record`, then rewrites
+`source` to `"simulated_cowrie_events"` and sets `seen_before`. It also **raises**
+if any event in the file carries a sensor id other than `synthetic-cowrie-01`,
+so a file that mixes generated and real sessions cannot be stamped as either.
+
+**How to tell if it is happening again.** Two independent markers, and they
+disagree only if something is wrong:
+
+```
+real capture      sensor == "7b0b4b6a20d0"      source == "cowrie_real"
+generated         sensor == "synthetic-cowrie-01"  source == "simulated_cowrie_events"
+```
+
+Count sessions by `sensor` before trusting any corpus that might be mixed.
+Guarded by `test_parse_generated_log_stamps_the_synthetic_source` and
+`test_a_log_mixing_real_sessions_is_refused`.
+
+---
+
+## `MIN_SAMPLES_PER_CLASS` silently inflates a small corpus to 90,000 (2026-11-15)
+
+**What breaks.** `generate_balanced_sessions(n_total)` in both generators does:
+
+```python
+per_cls = max(MIN_SAMPLES_PER_CLASS, n_total // N_CLASSES)
+```
+
+`MIN_SAMPLES_PER_CLASS` is 2,000, so **any `n_total` below 90,000 returns 90,000
+sessions**, not the number asked for. `generate_balanced_sessions(45*20)` looks
+like it builds 900 rows and builds 90,000.
+
+**How it showed up.** A test corpus and an end-to-end check with DistilBERT. The
+test run looked like a hang (it was generating 90,000 sessions); the DistilBERT
+run was embedding 90,000 command strings on CPU and would have taken hours. Both
+were read as "something is broken" before the cause was found — the floor is
+correct behaviour for a training corpus and a trap for everything else.
+
+**Fix.** `cowrie_simulator.generate_sessions()`,
+`generate_balanced_sessions()` and `write_jsonlines()` take `per_class=`, which
+overrides the floor. Use it for tests and smoke runs ONLY: a corpus below the
+floor is not a training corpus, which is why the floor exists.
+`kill_chain_simulator.generate_balanced_sessions()` is deliberately NOT changed
+(the frozen build called it; it stays byte-compatible).
+
+**How to tell.** If a "small" generation is slow, print `len(df)` before blaming
+anything else.
+
+---
+
 ## A feature that cannot be computed must be MISSING, not zero (2026-11-11)
 
 The costliest bug in the project so far, and the cheapest to have prevented.

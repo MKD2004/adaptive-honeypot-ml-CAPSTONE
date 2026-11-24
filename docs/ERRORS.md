@@ -7,6 +7,37 @@ something from scratch. Newest first.
 
 ---
 
+## Rounding does not reliably remove a small systematic offset (2026-11-24)
+
+**What breaks.** Group D carried a ~3.0e-6 provenance watermark (real and
+generated rows are encoded in different DistilBERT batches). Rounding the 30
+dimensions to 4 decimals looked like a clean way to destroy it while keeping 3+
+significant digits of real signal. It scored 0.8980 on the raw feature matrix --
+seemingly fixed -- and **0.9701 on the scaled arrays**, with identical rows and
+identical content.
+
+**Root cause, two of them.**
+
+1. **It is space-dependent.** Group D's `scaler.scale_` runs 0.1236 to 2.5828, so
+   a 4dp grid in SCALED space corresponds to 1.24e-05 - 2.58e-04 in raw units --
+   only 4-86x the watermark, against ~33x when rounding raw values. The same
+   line of code is ~8x weaker on the scaled arrays.
+2. **Grid boundaries.** Rounding maps values onto a lattice, and two values
+   separated by less than the grid step still land in DIFFERENT bins when they
+   straddle a boundary. Across 30 dimensions, at least one straddle is
+   near-certain, so a tree recovers the distinction anyway.
+
+**Fix.** Do not quantise to hide a systematic difference -- remove its cause. Here
+that means encoding each DISTINCT command text once and mapping the result back,
+so identical text yields a bit-identical vector by construction.
+
+**How to tell it is happening again.** A mitigation whose effect changes when the
+data is rescaled is not a mitigation. Compare the metric before and after an
+affine transform of the affected columns: if it moves, the control is not doing
+what it claims.
+
+---
+
 ## A pandas record reports absence as NaN, not None (2026-11-24)
 
 **What breaks, and it would have been worse than the bug it was fixing.** The new

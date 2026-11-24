@@ -6,6 +6,51 @@ snapshot, not a log (that's DECISIONS.md / ERRORS.md).
 
 ---
 
+## Last updated: 2026-11-24 (Dhanya laptop) — ADVERSARIAL EVALUATION
+
+### Session summary (2026-11-24, latest) — six adversarial experiments on the shipped dataset
+
+**Read `DATA_INTEGRITY.md` section 12.** Six controlled experiments on
+`data/final_v2/`, equal n per side, random sampling, fixed seed.
+
+**Headline: the synthetic data preserves network, payload and TLS
+characteristics, and does NOT preserve timing.** Within class, `B_network`
+0.515-0.575, `C_payload` 0.496-0.555, `F_tls_host` 0.500-0.553 -- chance.
+`A_temporal` 0.74-0.98 against a strict standard of 0.50.
+
+**Two findings that change how earlier numbers must be read:**
+
+1. **Pooled AUC measures protocol and class, not provenance.** Two REAL netflow
+   datasets separate at 1.0000; class identity alone is worth 0.9702 inside the
+   synthetic data. Only same-protocol, within-class figures mean anything.
+2. **Group D is quarantined.** It carries a provenance watermark (~3.0e-6 from
+   DistilBERT batch padding), not content, and my rounding mitigation FAILED --
+   0.8980 on raw, 0.9701 on scaled, identical rows. Rounding is space-dependent
+   and is not a valid control. Worse than a measurement issue: **any model
+   trained on these 128 features can learn provenance from those 30 columns.**
+   Fix is deduplicating text before encoding (761,142 distinct of 1,749,809 rows,
+   also 2.3x less encoding work). NOT DONE.
+
+**A reproducibility gap closed:** `final_v2` could not say which rows were
+synthetic, because `cowrie_real` and `simulated_cowrie_events` are both
+`event_stream` in `prov_*.npy`. Notebook 05 now saves `gen_<split>.npy`, split
+with identical seeds so `X_*`/`y_*` are byte-unchanged.
+
+**A correction to my own earlier framing** (section 9g): the real-vs-real
+reference band of 0.93-1.00 came from STRUCTURED splits and is the lenient
+standard. A random half-split gives 0.4942-0.5100. Under the strict standard
+`A_temporal` fails; B, C and F still pass.
+
+### Next
+
+- **Deduplicate text before encoding** -- closes the group-D leakage channel and
+  speeds notebook 02. Highest-value remaining dataset item.
+- **Retrain as an ablation** (DATA_INTEGRITY 11a), reporting per class AND per
+  provenance. Note group D leaks provenance until the item above is done.
+- **The A/B intelligence-yield study** (ROADMAP section 5) is still the paper.
+
+---
+
 ## Last updated: 2026-11-24 (Dhanya laptop) — PART 0
 
 ### Session summary (2026-11-24, later) — PART 0 DONE: no more fabricated temporal features

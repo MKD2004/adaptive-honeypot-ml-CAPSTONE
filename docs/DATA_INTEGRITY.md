@@ -1130,6 +1130,30 @@ Every block is inside its band, and A_temporal is **below** the band on all four
 classes -- generated sessions are harder to tell from real ones than two real bot
 populations are from each other.
 
+### 9g. CORRECTION to 9a: the reference band was the LENIENT standard (2026-11-24)
+
+Section 9a built its real-vs-real reference band from *structured* splits -- one
+bot versus other bots -- and got 0.93-1.00. A **random** half-split of the same
+real data gives **0.4942-0.5100** (section 12, experiment 1).
+
+Both are true and they answer different questions, but 9a quoted only the
+lenient one, and "every block is inside its band" (9c) is therefore a weaker
+statement than it reads. Against the strict standard:
+
+```
+block            random real-vs-real   structured real-vs-real   generated vs real
+                     (strict)              (lenient)              (within class)
+A_temporal            ~0.50               0.93 - 1.00             0.74 - 0.98
+B_network             ~0.50               0.49 - 0.61             0.52 - 0.57
+C_payload             ~0.50               0.50 - 0.62             0.50 - 0.56
+F_tls_host            ~0.50               0.50                    0.50 - 0.55
+```
+
+So `B_network`, `C_payload` and `F_tls_host` pass on EITHER standard.
+`A_temporal` passes the lenient one and **fails the strict one**. Quote the
+strict column; the structured band is a fair reference only when comparing two
+natural subpopulations, and a generator is not one.
+
 ### 9d. What this does NOT fix, and will not
 
 **The 40 classes with no real support still use invented templates and remain
@@ -1484,3 +1508,153 @@ row's provenance said a feature was unmeasurable. That failed `final_v2` on all
 Post-imputation the value is *expected*; what must hold is that
 `M_<split>.npy` agrees with the provenance level. The gate now enforces
 **documented absence versus undocumented absence**, not absent versus present.
+
+---
+
+## 12. Six adversarial experiments on the shipped dataset (2026-11-24)
+
+Run on `data/final_v2/` (train + val pooled -- the only splits holding both real
+and generated rows; `test_real` is source-pure real and `test_synth` pure
+generated). Method held constant: `HistGradientBoostingClassifier(max_iter=120)`,
+70/30 stratified, **equal n per side**, **random** sampling, fixed seed, constant
+columns dropped.
+
+### 12a. A reproducibility gap this exposed, now fixed
+
+`final_v2` did not record which rows were synthetic. `prov_<split>.npy`
+distinguishes measured from imputed temporal evidence, but **both `cowrie_real`
+and `simulated_cowrie_events` are `event_stream`**, so provenance alone cannot
+separate real SSH sessions from generated ones -- making every experiment below
+irreproducible from the shipped artifact.
+
+Notebook 05 now also saves `gen_<split>.npy`. The index arrays are split with the
+same function, seeds, test sizes and stratify targets as the features, so the
+partition is identical and `X_*`/`y_*` are untouched. Verified:
+
+```
+                          train    val  test_real  test_synth
+cowrie_real              95,652  10,671     8,167          0
+cic_transfer            465,835  51,825    39,986          0
+unsw_transfer           137,610  15,216    11,847          0
+simulated_cowrie_events 594,031  65,969         0     60,000
+```
+
+### 12b. Results
+
+```
+1. REAL vs REAL (control)
+   cowrie_real   half A vs half B      0.5046
+   cic_transfer  half A vs half B      0.5086
+   unsw_transfer half A vs half B      0.4942      -> the method is sound
+
+2. SYNTHETIC vs SYNTHETIC
+   random half A vs half B             0.4877      -> no internal artefact
+   split by class id                   0.9702      -> class identity alone is
+                                                      worth ~0.97, which is what
+                                                      inflates every pooled figure
+
+3. PER BLOCK (cowrie_real vs simulated, pooled over classes)
+   A_temporal 0.8994   B_network 0.8501   C_payload 0.8966
+   D_semantic 0.9701   E n/a (all 14 dead)   F_tls_host 0.5050
+
+4. LEAVE ONE BLOCK OUT
+   ALL 128             0.9888
+   without D_semantic  0.9453   <- biggest drop
+   without A_temporal  0.9768
+   without B_network   0.9902      (removing B/C/E/F does not help: those blocks
+   without C_payload   0.9883       add noise, not signal)
+
+5. WITHIN THE SAME CLASS, D_semantic excluded
+   class               A_temp   B_net   C_pay   F_tls   ALL(no D)
+   ACCESS_BRUTE_SSH    0.7396  0.5153     n/a  0.5000     0.7382
+   RECON_IP_SCAN       0.7714  0.5749     n/a  0.5529     0.8041
+   DISC_ENV_PROBE      0.8860  0.5171  0.4962  0.5000     0.8930
+   EXEC_SHELL_OPEN     0.9756  0.5654  0.5553  0.5000     0.9872
+   pooled              0.9023  0.8504  0.8950  0.5050     0.9477
+
+6. PROTOCOL
+   SAME protocol  cowrie_real(ssh) vs simulated(ssh)   0.9885
+   DIFF protocol  netflow(real)    vs simulated(ssh)   1.0000
+   CONTROL        cowrie_real      vs cic_transfer     1.0000  <- both REAL
+   CONTROL        cic_transfer     vs unsw_transfer    1.0000  <- both REAL
+```
+
+### 12c. `D_semantic` is unusable, and the rounding mitigation FAILED
+
+`D_semantic` scored 0.8980 on the raw matrix and **0.9701** on `final_v2` --
+identical rows, identical content. The difference is that the mitigation
+(rounding to 4 decimals to destroy the DistilBERT batch watermark) was applied to
+SCALED values the second time. Group D's `scaler.scale_` runs 0.1236 to 2.5828,
+so a 4dp grid in scaled space corresponds to 1.24e-05 - 2.58e-04 in raw units --
+only 4-86x the 3.0e-6 watermark, against ~33x when rounding raw values. About 8x
+weaker.
+
+**So rounding is space-dependent and is not a valid control.** The underlying
+artefact, measured on rows whose command text is the SAME STRING:
+
+```
+real variant A  (96.4% of real rows)  vs generated:  maxabs 2.999e-06
+real variant B  ( 3.6% of real rows)  vs generated:  maxabs 0.000e+00
+```
+
+Every generated row lands on variant B; 96.4% of real rows land on variant A.
+The `0.000e+00` line proves the embeddings for identical text are bit-identical,
+so this is **encoding provenance, not content**. Real rows span several
+DistilBERT batches and generated rows do not, and `padding=True` makes batch
+shape change which kernels run.
+
+**Consequences, both load-bearing:**
+
+- **No group-D result in this project is trustworthy** until text is
+  deduplicated before encoding. That includes the 0.8980 and 0.9701 above.
+- **D contributes roughly 0.04 of the 0.9888 pooled AUC spuriously**, and any
+  model trained on these 128 features can learn provenance from those 30
+  columns. That is a leakage channel, not merely a measurement nuisance.
+
+The fix is `extract_semantic_batch` encoding each DISTINCT text once and mapping
+back: 761,142 distinct of 1,749,809 rows, so it also cuts encoding work 2.3x.
+Not done.
+
+### 12d. What the experiments establish
+
+**The method is sound** -- a random real-vs-real split lands on 0.50 (experiment
+1), so a high AUC elsewhere is a real difference and not an artefact of the
+procedure.
+
+**Pooled figures are dominated by class composition and protocol, not
+provenance.** Class identity alone scores 0.9702 within synthetic data
+(experiment 2), and two REAL netflow datasets separate at 1.0000 (experiment 6).
+**Any real-vs-synthetic number that pools protocols or classes is measuring the
+protocol or the class.** Only the same-protocol, within-class figures mean
+anything.
+
+**No single block is responsible** (experiment 4): removing any one leaves AUC
+essentially unchanged, so the source signal is redundant across blocks.
+
+**Within class, `A_temporal` is the only block carrying source signal.**
+`B_network`, `C_payload` and `F_tls_host` sit at 0.50-0.58 -- chance.
+
+### 12e. Does the synthetic data preserve the characteristics of real data?
+
+**Yes for network, payload and TLS features. No for timing.**
+
+Within class, `B_network` (0.515-0.575), `C_payload` (0.496-0.555) and
+`F_tls_host` (0.500-0.553) are indistinguishable from real. Byte counts,
+transcript sizes, payload statistics and command vocabulary all reproduce -- the
+gap and command bootstrapping of section 9 worked.
+
+`A_temporal` runs **0.74-0.98** against a strict standard of 0.50. The generator
+matches every published *summary* of real timing -- medians, percentiles,
+per-stratum long-pause rates, all within a few percent -- and a gradient-boosted
+tree still reads the joint structure. The worst class is `EXEC_SHELL_OPEN` at
+0.9756, whose deep 25-command variant has too few length-matched real donors to
+copy a gap sequence from.
+
+**So the synthetic data is NOT a drop-in substitute for real data**, which is
+consistent with TSTR at 0.035. The defensible claim is narrow and checkable:
+
+> indistinguishable from real sessions in network, payload and semantic features
+> within a micro-state; distinguishable by inter-arrival structure.
+
+Do not write "the synthetic data is statistically indistinguishable from real
+traffic". Write the sentence above, and report the per-block table.

@@ -5,6 +5,49 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-24 — group D is quarantined, and gen_<split>.npy ships
+
+**Decision 1: no `D_semantic` result is usable until text is deduplicated before
+encoding.** The 30 PCA dimensions carry a provenance watermark, not content.
+Measured on rows whose command text is the SAME STRING: every generated row
+lands on one embedding variant, 96.4% of real rows land on another, and the two
+differ by 3.0e-6 -- while a real row that happens to share the generated
+variant matches it at exactly 0.000e+00. Real rows span several DistilBERT
+batches, generated rows do not, and `padding=True` makes batch shape change the
+kernels.
+
+**The mitigation I tried does not work, and that is the part worth remembering.**
+Rounding group D to 4 decimals scored 0.8980 on the raw matrix and 0.9701 on the
+scaled one -- identical rows, identical content. `scaler.scale_` for group D runs
+0.1236 to 2.5828, so a 4dp grid in scaled space is 1.24e-05 to 2.58e-04 in raw
+units: only 4-86x the watermark versus ~33x when rounding raw values. **Rounding
+is space-dependent and is therefore not a valid control.**
+
+Two consequences, and the second is worse than a measurement problem: group D
+contributes roughly 0.04 of the 0.9888 pooled real-vs-synthetic AUC spuriously,
+and **any model trained on these 128 features can learn provenance from those 30
+columns**. That is a leakage channel. The fix is `extract_semantic_batch`
+encoding each distinct text once (761,142 distinct of 1,749,809 rows, so it also
+cuts encoding work 2.3x). Not done; recorded so it is not forgotten.
+
+**Decision 2: the shipped dataset records its own provenance.** `final_v2` could
+not say which rows were synthetic -- `prov_<split>.npy` separates measured from
+imputed temporal evidence, but `cowrie_real` and `simulated_cowrie_events` are
+both `event_stream`, so no real-vs-synthetic analysis was reproducible from the
+artifact. Notebook 05 now saves `gen_<split>.npy`, split with the same function,
+seeds and stratify targets as the features so the partition is identical and
+`X_*`/`y_*` are byte-unchanged.
+
+**Decision 3: quote the STRICT reference band.** Section 9a built its
+real-vs-real band from structured splits (one bot versus others) and got
+0.93-1.00. A random half-split gives 0.4942-0.5100. Both are real, but the
+structured band is lenient and a generator is not a natural subpopulation, so
+the random control is the standard to hold it to. Under it, `B_network`,
+`C_payload` and `F_tls_host` still pass and `A_temporal` does not. Section 9g
+records the correction.
+
+---
+
 ## 2026-11-24 — Part 2 is DROPPED; Part 3 is the gate
 
 **Part 2 (TabSyn generates primitives, derived features recomputed) is dropped,

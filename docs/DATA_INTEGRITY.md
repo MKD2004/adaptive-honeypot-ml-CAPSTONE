@@ -1876,12 +1876,13 @@ by `donor_origin`. That is what `donor_<split>.npy` exists for.
 
 ## 15. Third capture triaged, NOT incorporated (2026-11-24)
 
-A 23-day capture arrived as `cowrie_logs_24-11-2006/` (687 MB, 24 files; note the
-year typo -- it is 2026 data, and it IS gitignored by `cowrie_logs_*/`). It is a
+A 23-day capture arrived as `cowrie_logs_20261124/` (687 MB, 24 files, gitignored
+by `cowrie_logs_*/`). It landed as `cowrie_logs_24-11-2006` -- a year typo -- and
+was renamed 2026-11-24 to match the `cowrie_logs_20261109` convention. It is a
 STRICT SUPERSET of `cowrie_logs/`: 100.0% of the old session ids reappear in it.
 
 ```
-                    OLD (cowrie_logs)    NEW (24-11-2006)
+                    OLD (cowrie_logs)    NEW (20261124)
 sessions                   114,501            178,738    +56%
 distinct src IPs             1,071              2,623   +145%
 span                   11-01..11-14       11-01..11-24    13.0 -> 22.9 d

@@ -6,6 +6,62 @@ snapshot, not a log (that's DECISIONS.md / ERRORS.md).
 
 ---
 
+## Last updated: 2026-11-25 (Dhanya laptop) — GROUP D DEDUPLICATED, DATASET REBUILT
+
+### Session summary (2026-11-25) — the group-D leak is closed and final_v2 is rebuilt on it
+
+**Read `DATA_INTEGRITY.md` section 16.** `extract_semantic_batch` encodes each
+DISTINCT command text once (761,108 of 1,749,809 rows) and scatters the result
+back, so identical text yields a bit-identical embedding. The watermark is
+removed at its cause, not quantised over -- the rounding attempt failed and is
+in `ERRORS.md`.
+
+**Verified.** 850 texts appear in both a real and a generated row; group-D maxabs
+difference between them went 2.999e-06 -> **0.000e+00**. Within class the block
+is now at chance -- 0.5000 / 0.5000 / 0.4998 / 0.4722 on the four
+real-supported classes, against 0.9701 pooled before. Pooled is 0.8948 and
+should stay high: class identity alone is worth 0.9702 (section 12d).
+
+**So section 12e's claim is now fully supported** -- the synthetic data is
+indistinguishable from real in network, payload AND semantic features within a
+micro-state, and distinguishable by inter-arrival structure.
+
+**`data/final_v2/` was rebuilt** (notebooks 02 then 05, in place). Row counts per
+split, per generator and per `donor_origin` are identical to the 2026-11-24
+build, `NaN count: 10,185,865` came back exactly, and the Part 3 gate PASSES all
+four splits with 0 NaN. Two pooled numbers moved and neither is a fidelity
+measure (sections 9a, 13d): adversarial AUC 0.9981 -> 0.9921, 45-class TSTR
+0.036 -> 0.0278.
+
+**The pipeline is 2.7x faster:** notebook 02 went 66.2 -> 24.5 min. Cell 5
+54.6 -> 17.0 (dedup); cell 3 11.4 -> 7.4 (chunked `to_dict("records")` instead
+of `iterrows`, verified value-identical on 6,000 rows). Notebook 05 is 30 s.
+
+**A profiling lesson, recorded because it cost real time:** a timing taken while
+notebook 02 was running reported `iterrows` at 1.000 ms/row against a true
+0.391, and pointed at the wrong bottleneck entirely. The notebooks store
+per-cell `execution` metadata -- read that instead.
+
+**CLAUDE.md Current Status was rewritten.** It still described `data/final/`:
+the model table, the "~83 informative features" count and the 29.74%
+duplication figure were all measured on the retired build and are now marked
+retired.
+
+### Next
+
+- **Retrain on `final_v2`** -- now unblocked, the last reason not to is gone. As
+  an ablation, reported per class AND per `donor_origin`, on the DGX (this
+  laptop is the 15 GB / RTX 3050 machine).
+- **Open the PR** for `rebuild/part1-cowrie-event-generator` (15 commits). Body
+  drafted; `gh` is not installed on this machine, so it needs doing from the web
+  UI or a machine that has it.
+- **The A/B intelligence-yield study** (ROADMAP section 5) is still the paper.
+- Not incorporated: the 23-day capture (`cowrie_logs_20261124/`). Section 15 --
+  it must REPLACE the 13-day capture, not join it, and every measured constant
+  would need re-deriving.
+
+---
+
 ## Last updated: 2026-11-24 (Dhanya laptop) — ADVERSARIAL EVALUATION
 
 ### Session summary (2026-11-24, latest) — six adversarial experiments on the shipped dataset

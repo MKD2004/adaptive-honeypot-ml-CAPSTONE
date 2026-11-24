@@ -1922,3 +1922,110 @@ Every measured constant would need re-deriving: the gap pools, the command
 pools, `REAL_COMMAND_COUNTS`, the ttylog table, and the session-shape
 percentiles in section 9. Not done; `data/final_v2/` is built from the 13-day
 capture.
+
+---
+
+## 16. Group D is deduplicated, and the leak is closed (2026-11-25)
+
+Section 12c's outstanding item. `extract_semantic_batch` now encodes each
+DISTINCT command text once and scatters the result back, so identical text
+yields a bit-identical embedding by construction. 761,108 distinct of 1,749,809
+rows. `data/processed/X_real.npy` and `data/final_v2/` were rebuilt on it
+(notebooks 02 then 05).
+
+### 16a. Verified, three ways
+
+**Identical text now gives identical vectors.** 850 command texts appear in both
+a `cowrie_real` row and a `simulated_cowrie_events` row. Over 200 of them, the
+group-D maxabs difference between the real and the generated row is:
+
+```
+before (section 12c)   2.999e-06   for 96.4% of real rows
+after                  0.000e+00   for every pair tested
+```
+
+The most common text occurs 254,885 times and all sampled rows are byte-equal.
+
+**Within class, group D is now at chance.** Same method as section 12b --
+`HistGradientBoostingClassifier(max_iter=120)`, equal n per side, random
+sampling, 70/30 stratified, constant columns dropped:
+
+```
+class               D_semantic   n/side
+ACCESS_BRUTE_SSH       0.5000    14,666
+RECON_IP_SCAN          0.5000     8,234
+DISC_ENV_PROBE         0.4998    14,667
+EXEC_SHELL_OPEN        0.4722     6,504
+POOLED                 0.8948    20,000   (was 0.9701)
+```
+
+**Pooled stays high and that is expected.** Section 12d: class identity alone is
+worth 0.9702 inside the synthetic data, so a pooled figure measures class
+composition. 0.8948 says group D still carries class information -- which is its
+job -- and the within-class row says it no longer carries provenance. Note
+0.8948 lands essentially on the 0.8980 that section 12c measured in RAW space,
+which is the number that was never corrupted by the rescaled rounding.
+
+**So group D is usable again, and with it the claim in section 12e** that the
+synthetic data is indistinguishable from real in network, payload and semantic
+features within a micro-state. Before this, the semantic third of that sentence
+was not supported.
+
+### 16b. What was NOT re-measured
+
+Only group D. The leave-one-block-out table in section 12b (`without D_semantic`
+0.9453 against ALL 0.9888) was computed with the watermark present and D as the
+largest single contributor; that comparison is now stale and has not been re-run.
+`A_temporal` 0.74-0.98, the 54.5% `per_event` fallback and every donor figure are
+unaffected -- dedup touches 30 columns and nothing else.
+
+### 16c. The rebuild reproduces itself
+
+Row counts per split, per generator and per `donor_origin` are identical to the
+2026-11-24 build, so the split is a function of the seeds and not of the feature
+values. `NaN count: 10,185,865` and `915,320 rows (52.3%)` came back exactly,
+confirming dedup touched no temporal feature. The Part 3 gate PASSES train, val,
+`test_real` and `test_synth`, all four with 0 NaN after imputation.
+
+Two pooled numbers moved and neither should be read as fidelity (sections 9a,
+13d): adversarial AUC 0.9981 -> 0.9921, 45-class TSTR 0.036 -> 0.0278.
+
+### 16d. It also made the pipeline 2.7x faster
+
+Per-cell wall time from the notebooks' own execution metadata:
+
+```
+                              before     after
+notebook 02, cell 5 (DistilBERT)   54.64 min   17.04 min   <- dedup, 2.3x fewer texts
+notebook 02, cell 3 (extractors)   11.40 min    7.37 min   <- chunked to_dict("records")
+notebook 02, TOTAL                 66.20 min   24.52 min
+notebook 05, TOTAL                  0.50 min    0.52 min
+```
+
+`df_real.iterrows()` rebuilt a pandas Series per row across the frame's 17 dtype
+blocks. Chunked `to_dict("records")` is value-identical (verified NaN-aware on
+6,000 rows spanning all four sources) and saves about 4 minutes.
+
+**A measurement caution worth more than the 4 minutes.** A quick timing taken
+*while notebook 02 was running* reported iterrows at 1.000 ms/row -- 2.5x its
+true 0.391 ms/row -- and identified cell 3 as a 37-minute bottleneck. It was
+never more than 11.4 minutes, and the real cost was always group D at 54.6. Do
+not profile this pipeline against a busy machine; read the per-cell
+`execution` metadata the notebooks already store instead.
+
+### 16e. Still outstanding
+
+- **No model has been trained on `final_v2`.** This was the blocker: group D
+  leaked provenance, so any model could learn it. That is now closed, and the
+  retrain is an ablation reported per class and per `donor_origin` (11a, 14e).
+- **`fit_pca` is unchanged on purpose.** It fits 30 linear axes on a random 50k
+  sample; deduplicating there would change the axes and therefore every group-D
+  column in both builds, for no measurable gain.
+- **The live path still encodes one text per batch**
+  (`traffic_gateway.feature_bridge.SemanticEncoder`), so it sits at its own
+  ~3e-6 offset from the training embeddings. Pre-existing, now uncorrelated with
+  anything, and the reason not to treat group D as high-precision.
+- **`quality_report.json` still reports `NaN values: 281635` and FAILS its shape
+  check.** Unchanged from the previous build: `run_full_validation` is handed a
+  pre-imputation array. The shipped splits carry 0 NaN -- verified through
+  `load_split()` -- so this is a defect in the report, not in the data.

@@ -7,6 +7,35 @@ something from scratch. Newest first.
 
 ---
 
+## An adversarial AUC compared across different n is not a comparison (2026-11-25)
+
+**What breaks.** Within-class `A_temporal` separability on the rebuilt dataset
+read 0.8076 / 0.8037 / 0.9126 / 0.9201 against the 0.7492 / 0.7853 / 0.8835 /
+0.9127 recorded in DATA_INTEGRITY.md 13a -- which reads as the generator's
+timing fidelity having regressed during the group-D rebuild.
+
+**Root cause.** Sample size. The same experiment, same columns, same data:
+
+```
+ACCESS_BRUTE_SSH   n=2,000 -> 0.6939   n=5,000 -> 0.7492   n=max -> 0.8076
+DISC_ENV_PROBE     n=2,000 -> 0.8478   n=5,000 -> 0.8862   n=max -> 0.9126
+```
+
+`n=5,000` reproduces 13a exactly. A gradient-boosted tree given more rows per
+side finds more structure, so the AUC climbs with n even though the data is
+identical -- and the rebuild had reproduced its row counts and NaN count
+exactly, so the temporal columns could not have changed.
+
+**Fix.** `src/validators/source_separability.py` logs `n/side` beside every
+number and caps at 20,000. Quote the n with the figure, always, and never
+compare two runs taken at different n.
+
+**How to tell it is happening again.** Any separability number with no n beside
+it. If a figure moved and the data did not, re-measure both points at the same n
+before believing the difference.
+
+---
+
 ## Rounding does not reliably remove a small systematic offset (2026-11-24)
 
 **What breaks.** Group D carried a ~3.0e-6 provenance watermark (real and

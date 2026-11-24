@@ -56,6 +56,15 @@ the model table, the "~83 informative features" count and the 29.74%
 duplication figure were all measured on the retired build and are now marked
 retired.
 
+**Source separability re-measured end to end** (section 17), and it is a module
+now rather than an ad hoc script: `python -m src.validators.source_separability`.
+Controls hold (real-vs-real 0.5040, synth-vs-synth 0.4987). Group D went from
+the largest single source-leak to inert -- leave-one-out `without D_semantic`
+0.9453 (the worst drop) -> 0.9521 (no effect), pooled ALL 0.9888 -> 0.9522.
+Within class only `A_temporal` is above chance. **And this AUC is sample-size
+dependent:** n=5,000 reproduces 13a's figures exactly, so quote every
+separability number with its n (ERRORS.md).
+
 ### Next
 
 - **Retrain on `final_v2`** -- now unblocked, the last reason not to is gone. As

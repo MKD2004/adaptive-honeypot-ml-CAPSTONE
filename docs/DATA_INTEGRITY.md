@@ -1971,13 +1971,13 @@ synthetic data is indistinguishable from real in network, payload and semantic
 features within a micro-state. Before this, the semantic third of that sentence
 was not supported.
 
-### 16b. What was NOT re-measured
+### 16b. What was NOT re-measured here
 
-Only group D. The leave-one-block-out table in section 12b (`without D_semantic`
-0.9453 against ALL 0.9888) was computed with the watermark present and D as the
-largest single contributor; that comparison is now stale and has not been re-run.
-`A_temporal` 0.74-0.98, the 54.5% `per_event` fallback and every donor figure are
-unaffected -- dedup touches 30 columns and nothing else.
+Only group D was re-measured in this section. Section 12b's leave-one-block-out
+table was computed with the watermark present, so it was stale rather than
+corrected. **Section 17 re-runs the whole suite** and replaces the stale rows
+there. The 54.5% `per_event` fallback and every donor figure are unaffected --
+dedup touched 30 columns and nothing else.
 
 ### 16c. The rebuild reproduces itself
 
@@ -2059,3 +2059,94 @@ The thresholds themselves are NOT recalibrated: `wasserstein` and
 `adversarial_auc` compare pooled real against pooled generated, which sections
 9a and 12d show measures protocol and class composition. Read the per-block,
 within-class table instead.
+
+---
+
+## 17. Source separability re-measured end to end (2026-11-25)
+
+Section 12's experiments were run ad hoc and 12a records what that cost: the
+numbers could not be reproduced from the shipped artifact. They are now a
+module -- `src/validators/source_separability.py`, run as
+`python -m src.validators.source_separability`, results written to
+`data/final_v2/source_separability.json`.
+
+It is deliberately NOT `quality_checks.adversarial_auc`, which takes the FIRST n
+rows of each side, keeps constant columns and establishes no control. Three
+differences matter: equal n per side sampled at RANDOM (the splits are not
+source-balanced, so the first n compares different class mixtures), constant
+columns dropped (27 of 128 are dead -- they separate nothing but they change
+where the tree splits), and a real-vs-real control.
+
+### 17a. The controls hold
+
+```
+real vs real,           random half-split    0.5040
+synthetic vs synthetic, random half-split    0.4987
+```
+
+Both at chance, so every figure below is a real difference rather than an
+artefact of the procedure.
+
+### 17b. Group D has gone from the largest leak to inert
+
+```
+LEAVE ONE BLOCK OUT         before (12b)        now
+ALL 128                        0.9888          0.9522
+without D_semantic             0.9453  <-worst 0.9521  <- no effect at all
+without A_temporal             0.9768          0.9225  <- now the worst
+without B / C / E / F          ~unchanged      ~unchanged
+
+PER BLOCK, POOLED           before (12b)        now
+A_temporal                     0.8994          0.9146
+B_network                      0.8501          0.8498
+C_payload                      0.8966          0.8961
+D_semantic                     0.9701          0.8948
+E_threat_intel                 n/a (14 dead)   n/a
+F_tls_host                     0.5050          0.5047
+```
+
+Dropping all 30 group-D columns now moves the pooled AUC by 0.0001. The fall
+from 0.9888 to 0.9522 is the leak leaving the dataset, and `A_temporal` is the
+only block still carrying source signal.
+
+### 17c. Within class, only timing separates
+
+```
+class               A_temp  B_net   C_pay   D_sem   F_tls    ALL   ALL-D
+ACCESS_BRUTE_SSH    0.8076  0.5070  0.5000  0.5000  0.4994  0.8037  0.8037
+RECON_IP_SCAN       0.8037  0.5738  0.5000  0.5000  0.5534  0.8136  0.8136
+DISC_ENV_PROBE      0.9126  0.5025  0.4994  0.4998  0.5000  0.9157  0.9157
+EXEC_SHELL_OPEN     0.9201  0.5761  0.5547  0.4722  0.5000  0.9390  0.9380
+```
+
+`ALL` and `ALL-D` agree to three decimals in every class -- group D is inert for
+provenance, confirmed independently of 16a. So section 12e's claim holds in
+full: indistinguishable from real in network, payload AND semantic features
+within a micro-state, distinguishable by inter-arrival structure.
+
+### 17d. This AUC is sample-size dependent, and it has been misread already
+
+The `A_temporal` figures above look WORSE than section 13a's post-donor numbers.
+They are not. 13a was measured at a smaller n:
+
+```
+class               n=2,000   n=5,000   n=max (6.5k-20k)
+ACCESS_BRUTE_SSH     0.6939    0.7492    0.8076
+RECON_IP_SCAN        0.7951    0.8076    0.8037
+DISC_ENV_PROBE       0.8478    0.8862    0.9126
+EXEC_SHELL_OPEN      0.8815    0.9222    0.9201
+```
+
+`n=5,000` reproduces 13a's `ACCESS_BRUTE_SSH` 0.7492 exactly and its
+`DISC_ENV_PROBE` 0.8835 to 0.003. The temporal columns did not change -- the
+rebuild reproduced its row counts and its NaN count exactly (16c) -- more rows
+simply let the tree find more structure.
+
+**So every adversarial AUC in this project must be quoted with its n**, and two
+runs of the same experiment at different n must never be presented as a change.
+The module caps at 20,000 per side and logs the n beside every number for
+exactly this reason. See ERRORS.md.
+
+A consequence for 17b: section 12b never recorded its n, so its column is
+indicative, not exact. The rows measured in a single run under one method --
+all of 17a-17c -- are the ones that can be compared with each other.

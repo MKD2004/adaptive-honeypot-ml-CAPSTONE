@@ -2150,3 +2150,169 @@ exactly this reason. See ERRORS.md.
 A consequence for 17b: section 12b never recorded its n, so its column is
 indicative, not exact. The rows measured in a single run under one method --
 all of 17a-17c -- are the ones that can be compared with each other.
+
+---
+
+## 18. Which temporal relationships are still missing (2026-11-25)
+
+Section 12e established that timing is the one block that does not reproduce
+(`A_temporal` above chance, everything else at it). This localises WHERE, and
+prices it. All of it comes out of
+`python -m src.validators.source_separability`, which now reports these three
+breakdowns, so nothing here is an ad hoc number.
+
+**n is held fixed inside each table.** This AUC climbs with n on unchanged data
+(17d), so a breakdown measured at whatever n each cell happens to have is a
+table of sample sizes.
+
+### 18a. The marginals are close. The JOINT structure is what is missing
+
+One temporal feature at a time, within class, real vs generated, n=5,000/side:
+
+```
+feature                 BRUTE   SCAN   PROBE  SHELL   worst
+session_day_of_week     0.592  0.543  0.587  0.756   0.756   <- not timing at all
+iat_skew                0.581  0.739  0.541  0.585   0.739
+frac_sub100ms           0.555  0.717  0.527  0.627   0.717
+iat_cv                  0.535  0.714  0.538  0.536   0.714
+iat_std                 0.551  0.709  0.557  0.542   0.709
+frac_sub1s              0.523  0.694  0.514  0.614   0.694
+inter_burst_gap_std     0.552  0.693  0.565  0.543   0.693
+iat_mean                0.554  0.685  0.534  0.515   0.685
+events_per_sec          0.566  0.684  0.538  0.510   0.684
+iat_median              0.578  0.683  0.564  0.528   0.683
+iat_max                 0.545  0.667  0.538  0.539   0.667
+log_session_duration    0.562  0.648  0.544  0.514   0.648
+inter_burst_gap_mean    0.561  0.648  0.556  0.523   0.648
+iat_min                 0.547  0.647  0.538  0.517   0.647
+session_duration_s      0.565  0.644  0.546  0.513   0.644
+session_hour            0.523  0.531  0.633  0.516   0.633
+burst_mean_size         0.512  0.611  0.502  0.583   0.611
+burst_count             0.509  0.605  0.523  0.589   0.605
+time_to_first_auth_s    0.568  0.583  0.564  0.517   0.583
+iat_kurt                0.582  0.572  0.562  0.568   0.582
+frac_over30s            0.500  0.576  0.500  0.552   0.576
+time_to_first_cmd_s     0.500  0.500  0.557  0.527   0.557
+commands_per_min        0.500  0.500  0.545  0.517   0.545
+is_business_hours       0.505  0.482  0.537  0.522   0.537   <- best match
+```
+
+**No single feature exceeds 0.76, and the 24 together reach 0.75-0.92 at the
+same n** (17c, measured at n=5,000 in 17d). So the per-feature distributions are
+close to right -- that is what the section 9 calibration bought -- and what is
+missing is how the statistics CO-VARY inside one session. A real session with a
+high `iat_std` has a particular `iat_skew` and `frac_sub100ms` to go with it;
+the generated one does not.
+
+That is a statement about `_bootstrap_sequence`: copying a real gap sequence
+preserves the covariance, and drawing each gap independently cannot, however
+well each marginal is calibrated.
+
+**One entry is not inter-arrival structure at all.** `session_day_of_week` is
+the single most separable temporal feature (0.756 on `EXEC_SHELL_OPEN`), and
+`session_hour` reaches 0.633 on `DISC_ENV_PROBE`. The generator's calendar
+distribution does not match the capture's. That is a few hours of work and the
+cheapest fidelity gain left in the block.
+
+### 18b. There are two timing tiers, and they are far apart
+
+`donor_exact` copies a real session of the same class and bucket;
+`donor_bucket` borrows another class's rhythm; `per_event` draws each gap
+independently. Compared at MATCHED n, with `donor_exact` re-measured at the
+fallback group's own n:
+
+```
+class              fallback       n/side   fallback   donor_exact at same n
+ACCESS_BRUTE_SSH   per_event        280     0.9667          0.5852
+RECON_IP_SCAN      donor_bucket   2,193     1.0000          0.7178
+```
+
+Copied timing sits near chance. Independently drawn timing is almost perfectly
+identifiable, and borrowed-from-the-wrong-class timing is PERFECTLY
+identifiable. (The other six cells hold 6-162 rows -- these four classes almost
+never take a fallback -- and are reported as unmeasurable rather than filled
+with a number.)
+
+Now the exposure, and this is the part that matters:
+
+```
+                            donor_exact  donor_bucket   per_event
+the 4 real-supported classes     94.9%        4.0%         1.1%
+the other 41 classes              3.4%       36.9%        59.7%
+```
+
+**The broken timing is concentrated almost entirely in the classes with no real
+data** -- the ones where a model has nothing else to fall back on. The cause is
+the donor-length desert (14b): real Cowrie sessions have either ~7 gaps or ~34,
+the generated mid-depth classes sit at ~10, and no real session of that shape
+exists to copy. Three captures across 8, 13 and 23 days confirm it (15), so this
+is a property of SSH bot behaviour, not a bug.
+
+### 18c. For 46.7% of rows the sequence-level relationships do not exist at all
+
+Share of train rows where each temporal feature was MEASURED rather than imputed:
+
+```
+100.0%   iat_mean, session_duration_s, log_session_duration, events_per_sec,
+         commands_per_min, time_to_first_auth_s, time_to_first_cmd_s,
+         session_day_of_week, session_hour, is_business_hours
+ 89.3%   iat_std, iat_min, iat_max, iat_cv        <- CIC ships real Flow IAT stats
+ 53.3%   iat_median, iat_skew, iat_kurt, frac_sub100ms, frac_sub1s,
+         frac_over30s, burst_count, burst_mean_size, inter_burst_gap_mean,
+         inter_burst_gap_std
+```
+
+For every netflow row those last ten are the train median -- a constant. A flow
+summary cannot report burst structure or a gap distribution's shape. So across
+46.7% of the corpus, "temporal relationship" means four summary numbers and
+nothing about sequence. This is honest rather than fabricated (that is Part 0's
+whole point, and `M_*.npy` records it per row), but it is a ceiling: no
+generator work raises it, only a different data source would.
+
+### 18d. And one gap no generator work can close
+
+Everything above is WITHIN a session. The schema carries nothing ACROSS
+sessions: no inter-session gap, no per-source-IP campaign ordering, no
+return-visit interval. `attacker_repeat_visitor` is 99.06% constant in the real
+capture because 1,071 IPs produced 114,490 sessions (section 8).
+
+For a honeypot that reconfigures BETWEEN sessions -- which is what this project
+builds -- that is arguably the most consequential missing relationship, and it is
+a schema limitation rather than a fidelity one. It is also the most interesting
+one: see ROADMAP.
+
+### 18e. How much it matters for real-world detection
+
+**For the four anchored classes: almost not at all.** `n_commands`,
+`login_attempts` and `n_events` nearly determine them, which is why full-feature
+TSTR saturates at 0.9996 (13c), and 94.9% of their generated rows carry copied
+timing anyway. Detection claims for brute-force, scanning, env-probing and
+shell-open are defensible.
+
+**For the 28 synthetic-only classes: it matters a great deal, and the news is
+bad.** 14d is the proof -- strip the structural counts and class-blind timing
+scores at chance while class-aware reaches 0.946. Those classes sit at 59.7%
+`per_event`, the regime that measures 0.9667 against real data. So any
+timing-dependent detection of persistence, privilege escalation or exfiltration
+rests on timing the generator demonstrably cannot model. A model trained here
+reads counts and command text for those classes; its temporal branch is
+decoration.
+
+**One mitigating fact from how the system is built.** MT3 classifies only at
+`cowrie.session.closed` and consumes session SUMMARIES, never a live gap
+sequence. The joint-structure gap therefore degrades features the model already
+uses coarsely. That caps the damage; it does not remove it.
+
+### 18f. What to do, cheapest first
+
+1. **Fix the calendar distributions** (hour of day, day of week). Biggest single
+   marginal in 18a, smallest effort, and it is not even a timing-model problem.
+2. **Report every result split by `donor_origin`.** Free -- `donor_*.npy` already
+   ships -- and it stops the 18b asymmetry being averaged away.
+3. **Restrict timing-dependent claims to `donor_exact` rows**, or state the
+   fallback share beside the claim.
+4. **Do NOT synthesise 10-19-gap templates.** There is no real session of that
+   shape to learn from, so anything generated there is invention. Closing it for
+   real needs a higher-interaction honeypot that elicits mid-length sessions, or
+   the limit accepted in writing.
+5. **Cross-session features** (18d) are a schema change, not a generator fix.

@@ -88,6 +88,107 @@ def _halves(idx: np.ndarray, seed: int) -> tuple[np.ndarray, np.ndarray]:
     return shuffled[:mid], shuffled[mid:]
 
 
+# n is held FIXED across every cell of the two breakdowns below, because this
+# AUC rises with n on unchanged data (17d) -- a breakdown measured at whatever n
+# each cell happens to have is a table of sample sizes.
+BREAKDOWN_CAP = 5_000
+
+
+def per_feature_within_class(X, y, gen, seed: int = 42,
+                             cap: int = BREAKDOWN_CAP) -> dict:
+    """One feature at a time: which temporal statistic is still separable?
+
+    The point of the breakdown is the comparison with the whole block. If no
+    single feature approaches the block's AUC, the marginals are right and what
+    is wrong is how they co-vary within a session (section 18a).
+    """
+    from configs.schema import LABEL_TO_IDX
+    from src.extractors.temporal import TEMPORAL_FEATURE_NAMES
+    from configs.schema import FEATURE_GROUPS
+
+    start = FEATURE_GROUPS["A_temporal"]["start"]
+    real, synth = np.where(gen == REAL_GEN)[0], np.where(gen == SYNTH_GEN)[0]
+    out: dict = {}
+    for j, fname in enumerate(TEMPORAL_FEATURE_NAMES):
+        col = np.array([start + j])
+        out[fname] = {}
+        for cls in REAL_SUPPORTED:
+            c = LABEL_TO_IDX[cls]
+            auc, _ = separability(X, real[y[real] == c], synth[y[synth] == c],
+                                  col, seed=seed, cap=cap)
+            out[fname][cls] = None if auc is None else round(auc, 4)
+        worst = [v for v in out[fname].values() if v is not None]
+        out[fname]["worst"] = max(worst) if worst else None
+        log.info("  %-24s %s", fname,
+                 "  ".join(f"{cls[:5]} {out[fname][cls]}" for cls in REAL_SUPPORTED))
+    return out
+
+
+def by_donor_origin(X, y, gen, don, seed: int = 42) -> dict:
+    """Does the timing fallback explain the gap? Compare at MATCHED n.
+
+    `donor_exact` copies a real session of the same class; `donor_bucket`
+    borrows another class's rhythm; `per_event` draws each gap independently.
+    Each fallback group is small in these four classes, so `donor_exact` is
+    re-measured at the fallback group's own n rather than at its full size --
+    otherwise the comparison is 17d's trap.
+    """
+    from configs.schema import FEATURE_GROUPS, LABEL_TO_IDX
+
+    A = np.arange(FEATURE_GROUPS["A_temporal"]["start"],
+                  FEATURE_GROUPS["A_temporal"]["end"])
+    real, synth = np.where(gen == REAL_GEN)[0], np.where(gen == SYNTH_GEN)[0]
+    out: dict = {}
+    for cls in REAL_SUPPORTED:
+        c = LABEL_TO_IDX[cls]
+        r = real[y[real] == c]
+        exact = synth[(y[synth] == c) & (don[synth] == "donor_exact")]
+        out[cls] = {}
+        for origin in ("donor_bucket", "per_event"):
+            s = synth[(y[synth] == c) & (don[synth] == origin)]
+            auc, n = separability(X, r, s, A, seed=seed, cap=len(s))
+            if auc is None:
+                out[cls][origin] = {"n": int(len(s)), "auc": None,
+                                    "donor_exact_at_same_n": None}
+                log.info("  %-18s %-13s n=%-6d too few to measure", cls, origin, len(s))
+                continue
+            base, _ = separability(X, r, exact, A, seed=seed, cap=n)
+            out[cls][origin] = {"n": int(n), "auc": round(auc, 4),
+                                "donor_exact_at_same_n":
+                                    None if base is None else round(base, 4)}
+            log.info("  %-18s %-13s n=%-6d %s %.4f   donor_exact %.4f",
+                     cls, origin, n, "fallback", auc, base)
+    # exposure: the fallback paths concentrate in the classes with no real data
+    anchored = np.isin(y[synth], [LABEL_TO_IDX[k] for k in REAL_SUPPORTED])
+    out["exposure"] = {}
+    for label, mask in (("real_supported_classes", anchored),
+                        ("other_classes", ~anchored)):
+        sub = don[synth][mask]
+        out["exposure"][label] = {"n": int(len(sub)), **{
+            o: round(100.0 * float((sub == o).mean()), 1)
+            for o in ("donor_exact", "donor_bucket", "per_event")}}
+        log.info("  %-24s n=%-8d %s", label, len(sub),
+                 "  ".join(f"{o} {out['exposure'][label][o]}%"
+                           for o in ("donor_exact", "donor_bucket", "per_event")))
+    return out
+
+
+def temporal_coverage(data_dir: Path) -> dict:
+    """Share of train rows where each temporal feature was MEASURED, not filled.
+
+    A feature imputed on half the corpus carries no within-session relationship
+    for those rows -- it is the train median (section 18c).
+    """
+    from src.extractors.temporal import TEMPORAL_FEATURE_NAMES
+
+    M = np.load(data_dir / "M_train.npy")
+    out = {name: round(100.0 * float(M[:, j].mean()), 1)
+           for j, name in enumerate(TEMPORAL_FEATURE_NAMES)}
+    for name, pct in out.items():
+        log.info("  %-24s measured in %5.1f%% of train rows", name, pct)
+    return out
+
+
 def run(data_dir: Path, seed: int = 42) -> dict:
     """Every experiment, on the train+val splits of a built dataset."""
     from configs.schema import FEATURE_GROUPS, LABEL_TO_IDX
@@ -99,6 +200,9 @@ def run(data_dir: Path, seed: int = 42) -> dict:
     gen = np.concatenate([np.load(data_dir / "gen_train.npy", allow_pickle=True),
                           np.load(data_dir / "gen_val.npy", allow_pickle=True)])
     gen = np.asarray([str(v) for v in gen])
+    don = np.concatenate([np.load(data_dir / "donor_train.npy", allow_pickle=True),
+                          np.load(data_dir / "donor_val.npy", allow_pickle=True)])
+    don = np.asarray([str(v) for v in don])
     # train+val are the only splits holding both sides: test_real is source-pure
     # real and test_synth source-pure generated.
 
@@ -144,6 +248,15 @@ def run(data_dir: Path, seed: int = 42) -> dict:
         record("ALL 128", out["within_class"][cls], r, s, allcols)
         no_d = np.setdiff1d(allcols, blocks["D_semantic"])
         record("ALL minus D_semantic", out["within_class"][cls], r, s, no_d)
+
+    log.info("PER TEMPORAL FEATURE, within class (n=%d/side fixed)", BREAKDOWN_CAP)
+    out["per_temporal_feature"] = per_feature_within_class(X, y, gen, seed=seed)
+
+    log.info("BY TIMING ORIGIN -- matched n, donor_exact re-measured alongside")
+    out["by_donor_origin"] = by_donor_origin(X, y, gen, don, seed=seed)
+
+    log.info("TEMPORAL COVERAGE -- measured, not imputed")
+    out["temporal_coverage"] = temporal_coverage(data_dir)
     return out
 
 

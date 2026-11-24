@@ -7,6 +7,65 @@ something from scratch. Newest first.
 
 ---
 
+## A pandas record reports absence as NaN, not None (2026-11-24)
+
+**What breaks, and it would have been worse than the bug it was fixing.** The new
+`temporal_provenance()` decides what a session can support by checking which keys
+are present:
+
+```python
+have = [k for k in ("iat_mean_s", "iat_std_s", ...) if session.get(k) is not None]
+```
+
+Records reach the extractors as `df.to_dict("records")`. pandas fills a missing
+column with float **NaN**, and `float("nan") is not None` is **True** -- so every
+netflow row would have been declared to carry flow statistics it does not have.
+That labels fabricated absence as genuine measurement, which is strictly worse
+than the original fabrication because it is self-certifying.
+
+A second form of the same thing: `len(v)` on a missing list column raises
+`TypeError: object of type 'float' has no len()`, because the absent
+`event_timestamps` is NaN rather than None.
+
+**Fix.** `_present(v)` (None-safe AND NaN-safe) and `_n_timestamps(v)` (returns 0
+for anything that is not a sequence) in `src/extractors/temporal.py`. Guarded by
+`test_a_pandas_missing_value_is_absent_not_present`.
+
+**How to tell if it is happening again.** Cross-tabulate
+`real_meta.temporal_provenance` against `source`: CIC rows must be `flow_stats`,
+UNSW `flow_mean_only`, Cowrie and generated `event_stream`. Any netflow row
+claiming `event_stream`, or any Cowrie row claiming less, means the presence
+checks have regressed.
+
+---
+
+## `nan_to_num(nan=0.0)` hid the same defect in THREE places (2026-11-24)
+
+**What breaks.** After removing the fabricated inter-arrival time from
+`extract_temporal` and confirming it returned NaN, the built matrix still
+contained **zero NaN**. Two more zero-fills were downstream:
+
+```
+extractors/temporal.py                 return np.nan_to_num(feat, nan=0.0, ...)
+extractors/pipeline.py extract_all     return np.nan_to_num(buf,  nan=0.0, ...)
+notebooks/02 cell 7                    X_real = np.nan_to_num(X_real, nan=0.0, ...)
+```
+
+The third was found only because the first two were already fixed and the count
+was *still* zero. Any one of them silently converts "this session cannot support
+me" into a measured-looking zero.
+
+**Fix.** All three now clamp infinities only -- `np.isposinf` / `np.isneginf` --
+and let NaN through. Infinity comes from division by a near-zero duration and is
+a real computation; NaN means missing input and must stay visible.
+
+**How to tell.** After any extraction, assert that the NaN count is non-zero when
+the corpus contains netflow rows, and that it matches
+`unavailable_features(provenance)` per row. `print(np.isnan(X).sum())` returning 0
+on a mixed corpus is the symptom, not a clean bill of health.
+
+---
+
 ## Sampling with `.head()` makes real data look fake (2026-11-24)
 
 **What breaks.** An adversarial-AUC check compared real Cowrie sessions against

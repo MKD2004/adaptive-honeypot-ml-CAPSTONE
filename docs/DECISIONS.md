@@ -5,6 +5,46 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-24 — Part 0: provenance over imputation, and what NOT to map
+
+**Decision 1: an unmeasurable feature is NaN, and NaN propagates.** The old
+`extract_temporal` invented `duration/(n_events-1)` when a session had no event
+stream. It affected 52.3% of the rebuilt corpus and passed every arithmetic
+invariant, because a one-value IAT array is internally consistent. Zero-filling
+was the mechanism that hid it: a zero is indistinguishable from a measured zero.
+NaN is loud -- the validator rejects it and the caller must decide explicitly.
+
+Removing the zero-fill took three edits, not one: `temporal.py`,
+`pipeline.extract_all`, and a third `np.nan_to_num(X_real, nan=0.0, ...)` in
+notebook 02 cell 7 that only surfaced because the NaN count was still zero after
+the first two. Infinities are still clamped everywhere -- those come from
+division, not from absence.
+
+**Decision 2: use the flow statistics CIC actually ships.** CIC-IDS2017 carries
+real `Flow IAT Mean/Std/Max/Min` (microseconds; 0 non-finite, 2 negatives in
+225,745, min<=mean<=max coherent in 100.00%). Those are MEASUREMENTS and are now
+passed through in seconds, so 657,646 rows get genuine `iat_mean/std/min/max/cv`
+instead of a fabricated constant. The sequence-only features stay NaN.
+
+**Decision 3: do NOT map UNSW `sjit` onto `iat_std`.** Argus jitter is a mean
+deviation, not a standard deviation. The temptation is obvious -- it would fill
+four more features for 257,673 rows -- and it would be laundering one statistic
+as another, which is the same failure as the fabrication with better cover. UNSW
+rows therefore report `flow_mean_only`: `sinpkt` is real (confirmed in
+MILLIseconds, ratio exactly 1000.0 against dur/(spkts-1)) and nothing else is.
+
+**Decision 4: provenance is a RECORD field, not a 129th feature.** Adding a
+feature would change `N_FEATURES`, the model output shapes and the live pipeline.
+Instead `temporal_provenance` rides in `real_meta.parquet`, and
+`provenance_from_nan` recovers it from the NaN signature for any array that has
+already been split and shuffled.
+
+**Deliberately not decided here:** how to impute the NaN for training. Three
+options are written up in DATA_INTEGRITY.md 10e. The point of Part 0 is that this
+choice is now explicit instead of being made by a `nan_to_num` call.
+
+---
+
 ## 2026-11-24 — Fidelity: bootstrap real data, and judge it against a real-vs-real band
 
 Four decisions from one session, all driven by the same measurement.

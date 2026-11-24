@@ -6,6 +6,64 @@ snapshot, not a log (that's DECISIONS.md / ERRORS.md).
 
 ---
 
+## Last updated: 2026-11-24 (Dhanya laptop) — PART 0
+
+### Session summary (2026-11-24, later) — PART 0 DONE: no more fabricated temporal features
+
+**Read `DATA_INTEGRITY.md` section 10.** Part 0 was listed first in section 4 and
+skipped through two rebuilds. The audit forced it: **915,320 of 1,749,809 rows
+(52.3%)** of the rebuilt corpus carried a fabricated inter-arrival time -- every
+CIC and UNSW row, because a netflow record has no event stream.
+
+**Why it survived:** the fabricated row is ARITHMETICALLY CONSISTENT. `min <=
+mean <= max` holds with equality, `cv == std/mean` holds at 0/x. Every invariant
+passed. The validator was asking "is this self-consistent?", never "could this
+have been measured?".
+
+**The good news from inspecting the raw files:** CIC-IDS2017 ships genuine
+`Flow IAT Mean/Std/Max/Min` (microseconds; min<=mean<=max coherent in 100.00% of
+225,745 rows), so 657,646 rows now get REAL statistics instead of a constant.
+UNSW gives a real mean via `sinpkt` (milliseconds, confirmed). `sjit` is NOT
+mapped to `iat_std` -- Argus jitter is a mean deviation, and mapping it would
+launder one statistic as another.
+
+**What changed:**
+- `extractors/temporal.py` -- four provenance levels, NaN for anything
+  unmeasurable, NaN-safe presence checks for pandas records
+- `extractors/pipeline.py` -- NaN preserved; `verify_schema` allows it only in
+  the temporal block
+- `validators/feature_integrity.py` -- `fabricated_iat_mask`,
+  `validate_provenance` (new violation kind `fabricated`), `provenance_from_nan`
+- `notebooks/01` -- passes CIC/UNSW real timing through, records
+  `temporal_provenance` per row; `notebooks/02` -- carries it into real_meta
+- zero-fill removed in THREE places, the third found only because the first two
+  were fixed and the NaN count was still zero
+- `extractors/semantic.py` -- chunked encode+project; the unchunked version
+  peaked at 10.75 GB on a 15 GB machine and was OS-killing notebook 02
+
+**Tests:** 14 new in `tests/test_temporal_provenance.py`, 98 in the suite. The
+one that matters is `test_a_consistent_fabrication_is_still_rejected` -- it builds
+a row passing every arithmetic invariant and asserts refusal.
+
+### Open decision this creates
+
+`data/final_v2/` now carries NaN by design. `StandardScaler` handles it natively,
+but **the imputation strategy is deliberately undecided** (DATA_INTEGRITY 10e):
+impute with a documented mask, restrict training to `event_stream` rows, or train
+the temporal branch only where it has evidence. The point of Part 0 is that this
+is now an explicit choice rather than a `nan_to_num` side effect.
+
+### Next
+
+- Rebuild in flight at the time of writing; the provenance audit (by source,
+  class and split) runs against it. `data/final/` stays frozen.
+- **Then assess Part 2** -- retrain, evaluate, or further experiments -- only
+  once the temporal representation is defensible.
+- Part 3 (`assert_valid` / `assert_temporal_provenance` at the training entry
+  point) still not wired.
+
+---
+
 ## Last updated: 2026-11-24 (Dhanya laptop)
 
 ### Session summary (2026-11-24) — FIDELITY: generated sessions now match real data as well as real data matches itself

@@ -1162,3 +1162,144 @@ describe the generator, not that dataset** -- they were measured on freshly
 generated sessions against the raw capture, never on the saved arrays. Any
 dataset quoted alongside section 9 must be rebuilt with 01 -> 02 -> 05 after
 these changes.
+
+---
+
+## 10. Part 0 is DONE — a feature that cannot be computed is now MISSING (2026-11-24)
+
+Part 0 was listed first in section 4 and left undone through both rebuilds. The
+2026-11-24 audit is what forced it: **915,320 of 1,749,809 rows (52.3%) of the
+rebuilt corpus carried a fabricated inter-arrival time** -- every CIC-IDS2017 and
+UNSW-NB15 row, because a netflow record has no event stream. Part 1 fixed the
+generator's half and did nothing for the netflow half, which had become the
+majority of the corpus.
+
+### 10a. Why it survived three months: it was CONSISTENT
+
+```python
+iat = np.array([duration / max(n_events - 1, 1)])    # ONE invented value
+```
+
+One value has no spread, no shape and no runs, so `iat_min == iat_mean ==
+iat_median == iat_max` and ten further features collapse. **Every arithmetic
+invariant in `feature_integrity` passes on that row**: `min <= mean <= max`
+holds with equality, `iat_cv == iat_std / iat_mean` holds at `0/x = 0`, every
+`frac_*` lies in `[0, 1]`. It was not an impossible row. It was a perfectly
+coherent fiction, and the validator was only ever asking "is this
+self-consistent?" rather than "could this have been measured?".
+
+That is the lesson worth keeping: **arithmetic consistency is not evidence of
+measurement.**
+
+### 10b. What the raw sources actually carry — measured, not assumed
+
+The first question was whether the netflow rows have any genuine timing at all.
+They do, and more than expected.
+
+**CIC-IDS2017 ships real flow IAT statistics.** `Flow IAT Mean/Std/Max/Min`, in
+MICROseconds. Verified on 225,745 rows: **0 non-finite, 2 negatives,
+`min <= mean <= max` coherent in 100.00%**, and 100% of flows carry >= 2 packets
+so an inter-arrival time genuinely exists.
+
+**UNSW-NB15 gives the mean only.** `sinpkt` is the mean source inter-packet time
+in MILLIseconds -- confirmed because `dur/(spkts-1)` vs `sinpkt` has a ratio of
+exactly **1000.0**. 98.5% of flows carry >= 2 packets.
+
+```
+feature group                      Cowrie + generated   CIC        UNSW
+iat_mean                                  yes           yes real   yes real
+iat_std / iat_min / iat_max / iat_cv      yes           yes real   NO
+iat_median / iat_skew / iat_kurt          yes           NO         NO
+burst_*, frac_sub100ms, frac_over30s,     yes           NO         NO
+inter_burst_gap_*
+```
+
+**`sjit` is deliberately NOT mapped to `iat_std`.** Argus jitter is a MEAN
+DEVIATION, not a standard deviation. Mapping it would launder one statistic as
+another -- the same class of error as the fabrication, just better disguised.
+`test_jitter_is_not_silently_treated_as_a_standard_deviation` guards it.
+
+### 10c. The extractor contract
+
+`extract_temporal` now declares what the session supports and abstains otherwise.
+Four levels, in `src/extractors/temporal.py`:
+
+```
+PROV_EVENT_STREAM   >= 2 real timestamps   all 24 temporal features computable
+PROV_FLOW_STATS     genuine mean/std/min/max (CIC)
+PROV_FLOW_MEAN      genuine mean only (UNSW)
+PROV_NONE           no temporal evidence
+```
+
+`unavailable_features(level)` is the contract, and the NaN pattern must match it
+exactly. Measured on the smoke build:
+
+```
+provenance        rows    NaN in the 24-feature temporal block
+event_stream     9,524             0
+flow_stats       1,799            10
+flow_mean_only   1,789            14
+none                 6            15
+```
+
+**NaN survives, and that took fixing in THREE places.** Zero-filling is what hid
+the fabrication, because a zero is indistinguishable from a measured zero:
+
+1. `extractors/temporal.py` -- the trailing `np.nan_to_num(feat, nan=0.0, ...)`
+2. `extractors/pipeline.py:extract_all` -- the same call on the 128-d buffer
+3. **`notebooks/02_feature_extraction.ipynb` cell 7** -- a THIRD
+   `np.nan_to_num(X_real, nan=0.0, ...)`, found only because the first two were
+   fixed and the NaN count was still zero. Infinities are still clamped in all
+   three: those come from division by a near-zero duration, not missing input.
+
+A trap worth recording separately (ERRORS.md): a record arriving through pandas
+reports an absent value as float **NaN, not None**, so `v is not None` is True
+for a column that is not there. A naive provenance check would therefore declare
+every netflow row to carry flow statistics it does not have -- labelling
+fabricated absence as genuine measurement, which is *worse* than the original
+bug. `_present()` and `_n_timestamps()` exist for exactly this.
+
+### 10d. The validator now checks provenance, not just arithmetic
+
+Three additions to `src/validators/feature_integrity.py`:
+
+- **`fabricated_iat_mask(X)`** -- flags a degenerate IAT (all four order
+  statistics equal) across MORE than two events. A genuine two-event session has
+  one gap, so `min == mean == median == max` honestly; that must not
+  false-positive, and `test_a_genuine_two_event_session_is_not_flagged` holds it.
+  `n_events` is not one of the 128, so it is recovered as
+  `events_per_sec * session_duration_s`.
+- **`validate_provenance(X, provenance)`** -- checks BOTH directions. A number
+  where the level forbids one is a new violation kind, `fabricated`. NaN where
+  the level supports a value means the available evidence went unused.
+- **`provenance_from_nan(X)`** -- recovers the level from the NaN signature
+  (0/10/14/15 are unique), so any saved array can be audited without threading a
+  column through the resample, shuffle and split. Scaling preserves NaN, so this
+  works on `data/final*/X_*.npy` as written.
+
+The decisive test is `test_a_consistent_fabrication_is_still_rejected`: it builds
+a row that passes every arithmetic invariant and asserts the validator refuses it
+anyway. 14 tests in `tests/test_temporal_provenance.py`, 98 in the suite.
+
+### 10e. What this costs, and the decision it forces
+
+`data/final_v2/` now carries NaN **by design**, so anything feeding it straight
+to a model produces NaN loss. `StandardScaler` handles NaN natively (ignored in
+`fit`, preserved in `transform`), so assembly works, but the imputation decision
+is deliberately LEFT OPEN rather than smuggled in:
+
+- impute with a documented strategy and ship a companion mask, or
+- restrict training to `event_stream` rows, or
+- train the temporal branch only where it has evidence.
+
+Whichever is chosen must be written down, because the whole point of Part 0 is
+that the choice stops being made silently by a `nan_to_num` call.
+
+### 10f. Still open from section 4
+
+- **Part 2** (TabSyn primitives-only) -- NOT STARTED, and currently sidestepped:
+  TabSyn is excluded from the build (`HS_INCLUDE_TABSYN=1` to opt in) because the
+  generator now supplies the volume.
+- **Part 3** (`assert_valid` at the training entry point) -- the pieces now exist
+  (`assert_valid`, `assert_temporal_provenance`) but nothing calls them where
+  training starts.

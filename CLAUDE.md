@@ -65,14 +65,50 @@ UNSW-NB15), 720k TabSyn synthetic, 240k GReaT synthetic. Minimum 2,000 per class
 
 **What was actually built** — `HoneySynth-960k`, frozen 2026-08-27 in `data/final/`:
 240k real-derived + 720k TabSyn, GReaT deferred. 7,410-226,999 per class.
+**This describes `data/final/` (FROZEN, superseded).** The current build is
+`data/final_v2/` — 1,556,809 rows, TabSyn excluded, see the provenance table
+below and `DATA_INTEGRITY.md` §§8-14.
 
-**Provenance (corrected 2026-08-28 — read `DECISIONS.md` before writing any paper text):**
-the 15,000 Cowrie sessions are **synthetic** (teammate-generated), not real. Genuinely
-real data is **CIC-IDS2017 + UNSW-NB15 only**, anchoring **13 of 45** micro-states, all
-network-flow classes. There is no real honeypot data in the project. Describe the
-dataset as "real network-intrusion data anchoring 13 kill-chain classes, augmented with
-synthetic honeypot sessions + TabSyn to cover the full 45-class MITRE taxonomy" — never
-as 22 real classes.
+**Provenance (re-measured 2026-11-24 — read `DATA_INTEGRITY.md` §14 before writing any
+paper text).** This replaces the 2026-08-28 note, which said real data was
+"CIC-IDS2017 + UNSW-NB15 only, anchoring 13 of 45" and that there was no real
+honeypot data. Both were true when written and are now wrong.
+
+There IS real honeypot data now: **114,490 Cowrie sessions**, 1,071 source IPs,
+13 days (2026-11-01 to 11-14), 754,029 events, captured on the Oracle VM. It
+replaced the 15,000 teammate-generated sessions that were previously mislabelled
+as real.
+
+Composition of `data/final_v2/` (1,749,809 rows pre-split):
+
+| tier | rows | share |
+|---|---|---|
+| real honeypot (Cowrie SSH) | 114,490 | 6.5% |
+| real netflow (CIC-IDS2017) | 657,646 | 37.6% |
+| real netflow (UNSW-NB15) | 257,673 | 14.7% |
+| synthetic (`cowrie_simulator`, NOT TabSyn) | 720,000 | 41.1% |
+| **measured, any real source** | **1,029,809** | **58.9%** |
+| **real honeypot only** | **114,490** | **6.5%** |
+
+Class anchoring, 46 labels (45 micro-states + BENIGN):
+
+| anchoring | classes |
+|---|---|
+| real honeypot **+** netflow | **4** — `ACCESS_BRUTE_SSH`, `DISC_ENV_PROBE`, `EXEC_SHELL_OPEN`, `RECON_IP_SCAN` |
+| trace honeypot only (<300 sessions) | 4 — `DISC_PROC_ENUM` (1), `EVASION_HIST_ERASE` (6), `EXFIL_SCP_DATA` (36), `EXEC_WGET_EXEC` (100) |
+| real netflow only | 10 |
+| **synthetic only, no real evidence** | **28** |
+
+So **18 of 46 classes have some real evidence and only 4 have enough honeypot
+data to train on**, not the 13 stated previously. Four classes hold 99.87% of the
+honeypot capture. Collecting longer does not help: 2.5x more capture added zero
+new classes (`DATA_INTEGRITY.md` §3d).
+
+Describe it as: "a 13-day real SSH honeypot capture (114,490 sessions) anchoring
+4 trainable kill-chain classes, plus real network-intrusion flows anchoring 10
+more, augmented with calibrated synthetic sessions to cover the 45-class MITRE
+taxonomy — 28 classes rest on synthetic data alone." Never as 22 real classes,
+and never imply the honeypot capture covers the taxonomy.
 
 ## Key Commands
 
@@ -81,7 +117,10 @@ as 22 real classes.
 cd honeypot_dataset
 pip install -r ../requirements.txt
 python -m src.extractors.pipeline      # feature extraction
-python -m src.generators.kill_chain_simulator  # synthetic session generation
+python -m src.generators.cowrie_simulator      # synthetic sessions (Cowrie events)
+#   kill_chain_simulator is SUPERSEDED for dataset building: it writes summary
+#   rows, not event streams. Kept byte-compatible for the frozen data/final/
+#   build and its tests. See DATA_INTEGRITY.md section 8.
 python -m src.validators.quality_checks        # dataset validation
 ```
 

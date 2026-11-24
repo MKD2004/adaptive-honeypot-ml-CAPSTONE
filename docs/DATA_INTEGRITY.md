@@ -2316,3 +2316,134 @@ uses coarsely. That caps the damage; it does not remove it.
    real needs a higher-interaction honeypot that elicits mid-length sessions, or
    the limit accepted in writing.
 5. **Cross-session features** (18d) are a schema change, not a generator fix.
+
+---
+
+## 19. BENIGN is a label now, and the sequences ship (2026-11-25)
+
+Two changes, both asked for after section 18's assessment.
+
+### 19a. BENIGN (label 45) is IN the splits
+
+`data/final_v2/` is now **1,749,809 rows / 46 labels**:
+
+```
+split        rows        labels   BENIGN
+train     1,466,828        46     163,602
+val         162,981        46      18,178
+test_real    60,000        17      11,220
+test_synth   60,000        45           0
+```
+
+`test_synth` has no benign rows and cannot: benign exists only in netflow,
+which is measured data, so it lands only in the real splits. The Part 3 gate
+PASSES all four, 0 NaN.
+
+**Why this reverses section 5's two-stage-gate preference.** Benign is still not
+a kill-chain state -- no MITRE technique, no phase, no DAG edges -- so BENIGN is
+a LABEL and is deliberately NOT added to `MICRO_STATES` (`configs/schema.py`:
+`BENIGN_IDX = 45`, `N_LABELS = 46`). But shipping it outside the splits left MT3
+a closed set over 45 attack classes. 02-11-2026 FINDINGS.md finding #1 measured
+the cost on real traffic: four benign sessions all labelled attacks, one
+auto-blacklisted, and on Heralding records a bare TCP connect returned
+`DISC_NETSTAT_SCAN` at confidence **1.000** -- clearing the 0.5 auto-blacklist
+threshold. The wrong answers are confident, so a confidence gate was never the
+fix; the model needed somewhere to put "not an attack".
+
+**One line of code is why this stayed broken.** `mt3_pipeline/data.py` validated
+`y.max() >= N_CLASSES` with `N_CLASSES = 45`, so the training entry point
+REJECTED any dataset carrying label 45. The bound is now `N_LABELS`, which
+admits BENIGN and still rejects 46.
+
+**The caveat, which is in the code as well as here.** All 193,000 benign rows are
+CIC/UNSW netflow (100,000 + 93,000) and **ZERO are honeypot sessions**, because
+real honeypot traffic has none. Netflow and Cowrie rows separate at AUC 1.0000
+on source alone (12b), so a model can reach near-perfect BENIGN recall by
+learning "netflow-shaped" -- the data source, not the concept. Benign SSH
+sessions do not exist in any capture we hold, so this cannot be fixed here, only
+stated. `X_benign.npy` is still written for anyone building the two-stage gate
+instead.
+
+### 19b. `seq_<split>.npy` ships the micro-state WALK
+
+`y_*` carries one label per session -- the deepest state reached -- so until now
+nothing recorded which states a session passed through. `micro_state_sequence`
+rides from notebook 01 through `real_meta.parquet` (notebook 02) into
+`seq_<split>.npy`, split by the same partition as `gen_*` and `donor_*`.
+
+```
+seq_train       471,850 multi-state of 1,466,828
+seq_val          52,503
+seq_test_real      3,080   <- all cowrie_real
+seq_test_synth    43,045
+```
+
+### 19c. KCVR had never actually been measured, and the first measurement is a finding
+
+Notebook 05's KCVR cell looked for `tabsyn_meta.parquet` and
+`great_meta.parquet` -- files no build has ever produced, one of them behind a
+literal `if False` -- so it printed "No sequence metadata found" on every build
+and the kill-chain violation rate was never computed. It now reads the shipped
+sequences:
+
+```
+split        KCVR     over
+train       0.0832    471,850 multi-state sessions
+val         0.0845     52,503
+test_real   0.8851      3,080     <- REAL Cowrie sessions
+test_synth  0.0000     43,045     <- generated
+```
+
+**Generated walks are 100% DAG-valid. Real multi-state sessions violate the DAG
+88.5% of the time.** The generator cannot violate it -- `cowrie_simulator` walks
+`KILL_CHAIN_DAG` backwards from the label by construction -- and train/val sit at
+8.3% only because a few per cent of their multi-state rows are real.
+
+Why the real ones fail, over the 3,080 multi-state rows in `test_real` (every one
+`cowrie_real`):
+
+```
+BAD_EDGE,  phase-monotone      2,688  (87.3%)   e.g. ACCESS_BRUTE_SSH -> DISC_ENV_PROBE, phases [1,3]
+fully valid                      354  (11.5%)   e.g. ACCESS_BRUTE_SSH -> EXEC_SHELL_OPEN, phases [1,2]
+BAD_EDGE, not monotone            38  ( 1.2%)   phases [1,2,...,2,8,4,2]
+```
+
+The dominant failure is a **phase skip**: brute-force straight to environment
+discovery, skipping Execution. `KILL_CHAIN_DAG` does allow skips -- 15 of its 102
+edges jump more than one phase -- just not that one. A handful of real sessions
+also run exfiltration and then go back to discovery, which no monotone model
+permits and which is ordinary attacker behaviour.
+
+**So `KILL_CHAIN_DAG` is a modelling assumption that real traffic contradicts**,
+and the honest reading is not "the real data is invalid" but "the DAG is drawn
+tighter than observed behaviour". Two consequences:
+
+1. **It was lucky that the DAG never entered training** (DECISIONS.md records
+   this as a known gap, with MT3 having no CRF despite the naming). Enforcing it
+   would have taught the model to rule out what real attackers do most.
+2. **KCVR cannot be reported as a dataset quality metric without saying which
+   half it describes.** 0.0000 on generated data measures the generator obeying
+   its own rule. 0.8851 on real data measures the rule being wrong.
+
+### 19d. What this does not change
+
+Row counts per split, per generator and per `donor_origin` are unchanged for the
+non-benign rows; `NaN count: 10,185,865` came back exactly again. Pooled figures
+moved slightly with the extra 193,000 rows and the regenerated group D:
+adversarial AUC 0.9929 -> 0.9935, 45-class TSTR 0.0323 -> 0.0351. Neither is a
+fidelity measure (9a, 13d). The `A_temporal` Wasserstein check still FAILS
+(568.3), which is the same true finding section 16f uncovered.
+
+### 19e. Open after this
+
+- **The live path still assumes 45 outputs.** `feature_bridge.MT3Inference`, the
+  trained checkpoint, `configurator.py` and the dashboard label maps are all
+  45-class. A 46-output model needs them updated together; nothing was touched
+  here, so the old checkpoint keeps working.
+- **A rejection mechanism is still missing.** BENIGN gives the model somewhere to
+  put "not an attack"; it does not give it a way to say "none of the above".
+  `ood_distance` exists as an honesty signal and cannot gate -- live sessions
+  measure 425-642 against a training p95 of 15.4.
+- **KCVR on real data wants a decision**: loosen `KILL_CHAIN_DAG` to match
+  observed transitions, or keep it tight and state that it is prescriptive. Do
+  not quietly report 0.0000.

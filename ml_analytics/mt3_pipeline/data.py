@@ -37,6 +37,12 @@ DEFAULT_DATA_DIR = REPO_ROOT / "honeypot_dataset" / "data" / "final"
 
 N_FEATURES = 128
 N_CLASSES = 45
+# BENIGN is label 45 -- one past the 45 kill-chain states, no phase, no DAG
+# edges (configs/schema.py). It is a LABEL, not a micro-state, so N_CLASSES
+# still means kill-chain states and N_LABELS is the output dimension a
+# classifier needs. Before this existed the range check below REJECTED a
+# dataset carrying BENIGN, which is how a closed-set model stayed closed-set.
+N_LABELS = N_CLASSES + 1
 N_PHASES = 9
 
 SPLITS = ("train", "val", "test_real", "test_synth")
@@ -87,10 +93,10 @@ def load_label_names() -> List[str]:
             added = True
         from configs import schema  # type: ignore
 
-        idx_to_label = schema.IDX_TO_LABEL
-        return [idx_to_label[i] for i in range(N_CLASSES)]
+        idx_to_label = getattr(schema, "IDX_TO_LABEL_WITH_BENIGN", schema.IDX_TO_LABEL)
+        return [idx_to_label[i] for i in range(N_LABELS)]
     except Exception:
-        return [f"class_{i:02d}" for i in range(N_CLASSES)]
+        return [f"class_{i:02d}" for i in range(N_LABELS)]
     finally:
         if added:
             try:
@@ -390,9 +396,9 @@ def load_split(
     exp = _EXPECTED_ROWS.get(name)
     if is_canonical and exp is not None and len(y) != exp:
         print(f"[warn] {name}: expected {exp:,} rows, found {len(y):,}")
-    if y.min() < 0 or y.max() >= N_CLASSES:
+    if y.min() < 0 or y.max() >= N_LABELS:
         raise DataError(
-            f"{name}: labels out of range [0,{N_CLASSES}): [{y.min()}, {y.max()}]"
+            f"{name}: labels out of range [0,{N_LABELS}): [{y.min()}, {y.max()}]"
         )
 
     if limit is not None and limit < len(y):
@@ -459,7 +465,7 @@ def load_dataset(
     if verbose:
         print(f"[data] {data_dir}")
         for name, sp in out.items():
-            counts = np.bincount(sp.y, minlength=N_CLASSES)
+            counts = np.bincount(sp.y, minlength=N_LABELS)
             present = sp.classes_present
             print(
                 f"[data]   {name:11s} X{sp.X.shape} y{sp.y.shape} "
@@ -474,7 +480,7 @@ def load_dataset(
     return out, provenance
 
 
-def class_counts(y: np.ndarray, n_classes: int = N_CLASSES) -> np.ndarray:
+def class_counts(y: np.ndarray, n_classes: int = N_LABELS) -> np.ndarray:
     return np.bincount(np.asarray(y, dtype=np.int64), minlength=n_classes)
 
 

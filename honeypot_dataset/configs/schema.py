@@ -70,6 +70,33 @@ LABEL_TO_MITRE: Dict[str,str] = {s["label"]: s["mitre"] for s in MICRO_STATES}
 N_CLASSES = 45
 N_PHASES  = 9
 
+# ─── BENIGN: the 46th label, and deliberately not the 46th micro-state ───────
+# A closed-set softmax over 45 ATTACK states must answer every input with an
+# attack. 02-11-2026 FINDINGS.md finding #1 measured the consequence on real
+# traffic: four benign sessions were all labelled attacks and one was
+# auto-blacklisted, and on Heralding records a bare TCP connect came back
+# DISC_NETSTAT_SCAN at confidence 1.000 -- which clears the 0.5 blacklist
+# threshold. The wrong answers are confident, so a confidence gate is not a fix;
+# the model needs somewhere to put "not an attack".
+#
+# BENIGN sits at index 45, one past the kill-chain states, and is NOT added to
+# MICRO_STATES. It has no MITRE technique, no phase and no DAG edges, so every
+# phase lookup, transition check and kill-chain walk keeps working untouched.
+# `N_CLASSES` still means "kill-chain micro-states"; `N_LABELS` is what a
+# classifier's output layer should be.
+#
+# READ THIS BEFORE REPORTING A BENIGN NUMBER: all 193,000 benign rows are
+# CIC/UNSW netflow (100,000 + 93,000) and ZERO are honeypot sessions, because
+# real honeypot traffic contains no benign sessions. Netflow and Cowrie rows
+# separate at AUC 1.0000 on source alone (DATA_INTEGRITY.md 12b), so a model can
+# score near-perfect BENIGN recall by learning "netflow-shaped", which is the
+# data source and not the concept. See DATA_INTEGRITY.md section 19.
+BENIGN_LABEL = "BENIGN"
+BENIGN_IDX   = 45
+N_LABELS     = N_CLASSES + 1          # 46 -- model output dimension
+LABEL_TO_IDX_WITH_BENIGN: Dict[str, int] = {**LABEL_TO_IDX, BENIGN_LABEL: BENIGN_IDX}
+IDX_TO_LABEL_WITH_BENIGN: Dict[int, str] = {**IDX_TO_LABEL, BENIGN_IDX: BENIGN_LABEL}
+
 # ─── 128-Feature Layout ──────────────────────────────────────────────────────
 FEATURE_GROUPS: Dict[str, Dict] = {
     "A_temporal":     {"start":  0, "end":  24, "size": 24, "arch": "LSTM"},

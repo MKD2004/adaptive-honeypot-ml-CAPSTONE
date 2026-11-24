@@ -1295,6 +1295,94 @@ is deliberately LEFT OPEN rather than smuggled in:
 Whichever is chosen must be written down, because the whole point of Part 0 is
 that the choice stops being made silently by a `nan_to_num` call.
 
+### 10g. The imputation decision, taken 2026-11-24: impute + ship the mask
+
+Chosen over the alternative (train on `event_stream` rows only), which keeps all
+45 attack classes above the 2,000 floor — minimum class 16,000 — but drops
+**BENIGN entirely**, since benign exists only in netflow and therefore has ZERO
+event-stream rows, and shrinks `test_real` from 60,000 to 8,167.
+
+Implemented in notebook 05, after the split so no fill value leaks between
+splits. Three rules make it auditable:
+
+1. the fill is the per-column median of rows that ACTUALLY MEASURED the feature
+   (`event_stream`), never of the whole column;
+2. it is computed on `X_train` only and applied to val/test;
+3. `M_<split>.npy` (1 = measured, 0 = imputed) and `prov_<split>.npy` ship with
+   the arrays, plus `imputation_manifest.json` recording the strategy and every
+   median. `N_FEATURES` stays 128 — the mask is metadata, not a 129th feature,
+   so the live pipeline and model shapes are untouched.
+
+```
+split        rows        measured cells   cells filled   cells repaired
+train     1,293,128           78.8%          6,585,889         457,920
+val         143,681           78.8%            731,418          50,750
+test_real    60,000           60.7%            565,805          39,362
+test_synth   60,000          100.0%                  0               0
+```
+
+**The first attempt reintroduced the defect it was fixing.** Independent
+per-column medians put `iat_median` outside the row's own measured
+`[iat_min, iat_max]` on **18.1% of rows** — 99.9% of those with the median
+imputed and min/max measured — taking the impossible-row count from 3/97 to
+5/97. Imputed order statistics are now clipped into the window the measurements
+allow, and `iat_cv` is recomputed when `iat_std` or `iat_mean` was filled.
+Measured values are never moved to accommodate a fill. That restores 3/97, which
+is the float32 storage-noise floor.
+
+**Known residue: 2,652 train rows (0.21%) still read as degenerate**, and they
+are a detector false positive rather than a data defect. All 2,652 are
+`flow_stats` rows where CIC itself reported `Flow IAT Min == Mean == Max` — real
+two-packet flows with exactly one inter-arrival time, which is legitimately
+degenerate. `fabricated_iat_mask` misreads them because **notebook 01 hard-codes
+`n_events: 5` for every netflow row**, so a one-gap flow presents as a five-event
+session. That constant is itself a small fabrication and is the next thing to
+fix in this family; it needs a decision on what `n_events` means for a flow
+record (packet count, 2, or NaN).
+
+### 10h. Audit results — temporal coverage after Part 0
+
+```
+1. BY SOURCE (NaN-recovered provenance agrees with the recorded field: 100.00%)
+   source                   event_stream  flow_stats  flow_mean_only  none
+   cic_transfer                        0     657,351             289     6
+   cowrie_real                   114,489           0               0     1
+   simulated_cowrie_events       720,000           0               0     0
+   unsw_transfer                       0           0         256,891   782
+
+   Only 789 rows (0.05%) have no temporal evidence at all, down from 915,320
+   fabricated.
+
+2. BY CLASS   all 45 attack classes retain event-stream rows. The thin ones are
+   netflow-anchored: DISC_NETSTAT_SCAN 10.0%, RECON_IP_SCAN 12.6%,
+   DISC_ENV_PROBE 18.2%, ACCESS_KEX_EXPLOIT 26.4%, EXEC_SHELL_OPEN 28.1%.
+   BENIGN is 0.0% by construction.
+
+3. BY SPLIT   provenance contract PASSES on all four; 0 fabricated-IAT rows
+   before imputation.
+   train 53.3% event_stream | val 53.3% | test_real 13.6% | test_synth 100%
+
+4. data/final/ (FROZEN, read-only) — what Part 0 was fixing
+   X_train      756,000 rows   456,051 fabricated-IAT   60.3%
+   X_test_real   60,000 rows    58,796 fabricated-IAT   98.0%
+```
+
+**`test_real` in the frozen dataset is 98.0% fabricated temporal features.** Every
+published real-world number — MT3 0.8276, CNN-LSTM 0.8093, linear probe 0.7681 —
+was measured on that split. Those figures cannot be described as real-world
+performance.
+
+Finding that required fixing the detector first: at its original 1e-9 ABSOLUTE
+tolerance it reported **zero** fabricated rows in a dataset that is 60% of them,
+because the float32 round-trip leaves degenerate rows at ~3e-6 relative spread
+rather than exactly equal. The detector silently cleared the data it was written
+to indict. The 1e-4 RELATIVE threshold sits in an empty gap: 60.41% flagged at
+1e-4, 60.44% at 1e-2, 0.00% at 1e-6.
+
+**`test_real` is now only 13.6% event-stream**, so a "real data" metric from
+`final_v2` is mostly a netflow metric. The split may need renaming before anyone
+quotes it.
+
 ### 10f. Still open from section 4
 
 - **Part 2** (TabSyn primitives-only) -- NOT STARTED, and currently sidestepped:

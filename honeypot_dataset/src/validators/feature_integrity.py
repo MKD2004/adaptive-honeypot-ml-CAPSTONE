@@ -577,30 +577,43 @@ def check_finite(X: np.ndarray) -> List[Violation]:
 _IAT_STAT_KEYS = ("iat_min", "iat_mean", "iat_median", "iat_max")
 
 
-def degenerate_iat_mask(X: np.ndarray, atol: float = 1e-9) -> np.ndarray:
+def degenerate_iat_mask(X: np.ndarray, rtol: float = 1e-4) -> np.ndarray:
     """Rows whose four IAT order statistics are all equal.
 
     That is the fingerprint of a one-value IAT array. It is LEGITIMATE for a
     session with exactly two events (one gap, so min == mean == median == max)
     and FABRICATED for anything else, which is why this returns a mask for the
     caller to interpret against `n_events` rather than a verdict.
+
+    RELATIVE tolerance, and it has to be. An array that was standardised, stored
+    as float32 and un-scaled no longer holds exact equality: measured on
+    `data/final/X_train`, degenerate rows come back with a relative spread around
+    3e-6. A 1e-9 absolute threshold therefore found ZERO fabricated rows in a
+    dataset that is full of them -- the detector silently cleared the data it was
+    written to indict.
+
+    1e-4 is not a fudge, it sits in an empty gap. The share of frozen rows
+    flagged is 60.41% at rtol 1e-4 and 60.44% at 1e-2, while at 1e-6 it is 0.00%:
+    the fabricated rows cluster near 3e-6 and the genuine ones have a p90 spread
+    of 0.19, two decades clear.
     """
     X = np.asarray(X, dtype=np.float64)
     cols = [FEATURE_INDEX[k] for k in _IAT_STAT_KEYS]
     vals = X[:, cols]
     finite = np.isfinite(vals).all(axis=1)
     spread = np.nanmax(vals, axis=1) - np.nanmin(vals, axis=1)
-    return finite & (spread <= atol)
+    scale = np.maximum(np.abs(vals).max(axis=1), 1e-12)
+    return finite & ((spread / scale) <= rtol)
 
 
-def fabricated_iat_mask(X: np.ndarray, atol: float = 1e-9) -> np.ndarray:
+def fabricated_iat_mask(X: np.ndarray, rtol: float = 1e-4) -> np.ndarray:
     """Degenerate IAT rows that CANNOT be explained by a two-event session.
 
     A real one-gap session has `n_events == 2`. Anything with more events and a
     single distinct IAT value never measured its gaps.
     """
     X = np.asarray(X, dtype=np.float64)
-    deg = degenerate_iat_mask(X, atol)
+    deg = degenerate_iat_mask(X, rtol)
     # `n_events` is a record field, not one of the 128, but it is recoverable:
     # events_per_sec == n_events / session_duration_s, both of which ARE features.
     n_ev = (X[:, FEATURE_INDEX["events_per_sec"]]

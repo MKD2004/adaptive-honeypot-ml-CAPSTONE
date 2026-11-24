@@ -228,55 +228,54 @@ back. The code and the shared docs above are byte-identical everywhere; only the
 system-specific files differ per machine. Read this machine's `<MACHINE>.md` for its
 role. Do not edit shared files locally without pushing — that is how sessions drift.
 
-## Current Status (2026-09-29)
+## Current Status (2026-11-24)
 
 **`STATUS.md` is the live, detailed source — this is only a coarse snapshot.**
 
-**System since 2026-09-01 (this is what changed):** the full live pipeline was
-built and connected (see "Live Pipeline / System" above) — traffic gateway ->
-real Cowrie honeypot -> MT3 classification -> adaptive reconfiguration ->
-dashboard, plus the two-laptop live demo and the recording tooling. The
-dataset/model work below is UNCHANGED and still current. Next phase is the
-research paper — see `ROADMAP.md` (deploy Cowrie to a VPS for real data is M1).
+**System since 2026-09-01:** the full live pipeline was built and connected (see
+"Live Pipeline / System" above) — traffic gateway -> real Cowrie honeypot -> MT3
+classification -> adaptive reconfiguration -> dashboard, plus the two-laptop live
+demo and the recording tooling. Next phase is the research paper — see
+`ROADMAP.md`; the A/B intelligence-yield study (section 5) is the contribution,
+not the dataset.
 
-**Dataset: FROZEN.** `data/final/` holds HoneySynth-960k — 756,000 train / 84,000 val /
-60,000 `test_real` / 60,000 `test_synth`, 128 features, 45 classes (`test_real` has 21).
-Notebooks 01, 02, 03 (TabSyn VAE + diffusion + 720k sampling) and 05 are **done**;
-04 (GReaT) stays **deferred**. Do not regenerate — every model below is trained on
-these exact rows.
+**Dataset: `data/final_v2/` is the current build.** 1,556,809 rows —
+1,293,128 train / 143,681 val / 60,000 `test_real` / 60,000 `test_synth`, 128
+features, 46 labels (45 micro-states + BENIGN), min train class 13,199. The
+pipeline is notebooks **01 → 02 → 05**: TabSyn (03, 03b) and GReaT (04) are
+DELETED, Part 2 formally dropped (`DATA_INTEGRITY.md` §11a). Each split also
+ships provenance metadata — `M_*` (measured/imputed mask), `prov_*` (temporal
+provenance), `gen_*` (which source produced the row), `donor_*` (how the timing
+was obtained) — plus `imputation_manifest.json`.
 
-**Two traps when loading `data/final/` — see `ERRORS.md`, top two entries.** The arrays
-are ALREADY SCALED (never call `scaler.transform` on them) and `feature_scaler.pkl` is a
+**`data/final/` (HoneySynth-960k) is RETIRED, not merely frozen.** The arrays are
+untouched on disk, but `ml_analytics/mt3_pipeline/data.py:load_split()` now
+RAISES on them: 60.3% of its train rows and 97.9% of `test_real` carry a
+fabricated temporal block (`DATA_INTEGRITY.md` §11b). `integrity="warn"` or
+`MT3_ALLOW_UNVALIDATED=1` is the deliberately loud escape hatch for reproducing
+old numbers.
+
+**Every model number measured before 2026-11-24 is retired with it.** MT3
+`test_real` 0.8276, CNN-LSTM 0.8093, the 5,805-parameter linear-probe floor
+0.7681, the 29.74% `test_real` duplication and the "~83 informative features"
+count were all measured on `data/final/`. Do not quote them. `final_v2` has
+**101 informative features of 128** (27 dead, all triaged DROP). No model has
+been trained on it yet; when one is, it is an **ablation, not a headline**, and
+results must be reported per class AND per `donor_origin` — class-blind timing
+scores at chance where class-aware reaches 0.946 (§14d).
+
+**Read `DATA_INTEGRITY.md` §§8-15 before quoting any dataset number.** It is the
+self-contained handoff: what was wrong, what is fixed (synthetic sessions are now
+generated as Cowrie log events and parsed by the real extractors; a feature that
+cannot be measured is NaN, not zero; donor pools are class-aware; the integrity
+gate runs at the training entry point), and what is not (54.5% of generated
+sessions fall back to per-event timing, and 28 of 46 classes still rest on
+synthetic data alone).
+
+**Two traps when loading either build — see `ERRORS.md`.** The arrays are ALREADY
+SCALED (never call `scaler.transform` on them) and `feature_scaler.pkl` is a
 joblib dump (`pickle.load` raises). Both corrupt silently.
 
-**THIRD, AND LARGER (2026-11-11): the dataset has a known integrity problem.**
-45 of 128 features are constant across `X_train` — including ALL 14 of
-`E_threat_intel` and ALL 8 of `F_tls_host` — and 47% of TabSyn rows are
-arithmetically impossible in their temporal block (`iat_mean` > `iat_max`,
-`iat_cv = 0` while `iat_min != iat_max`). MT3 reads ~83 informative features, not
-128, and two of the six architecture branches consume constants. Every number in
-this file was measured on that data. **Read `DATA_INTEGRITY.md` before quoting
-any of it or starting a retrain.** The generator's timing half is fixed
-(`f9fa918`); the dataset is not rebuilt.
-
-**Models trained and compared** (same splits, same scaler, macro-F1 over the 21 classes
-present in `test_real`):
-
-| model | params | val macro-F1 | test_real | test_real (clean) | test_synth |
-|---|---|---|---|---|---|
-| linear probe | 5,805 | 0.9376 | 0.7681 | **0.7551** | 0.9373 |
-| CNN-LSTM baseline | 189,581 | 0.9621 | 0.8093 | **0.7976** | 0.9610 |
-| MT3 (d=256, 4 layers) | 3,759,510 | 0.9599 | 0.8276 | **0.8187** | 0.9589 |
-
-Headline finding: **on `test_real` the two models tie** (McNemar p = 0.617 clean), so
-MT3's Transformer fusion does not beat concatenation + MLP at 20x the parameters; the
-CNN-LSTM wins `test_synth` significantly (p = 0.00064). A 5,805-parameter linear probe
-reaching 0.7681 is the floor any result must clear.
-
-**Quote the clean column.** 29.74% of `test_real` rows are byte-identical to rows in
-`X_train` (notebook 05 splits disjointly by index, not by value, and real network flows
-genuinely repeat). The clean subset is 41,785 rows; `test_synth` is unaffected (0.00%).
-
-Known and deliberately not fixed before the review: MT3 has **no CRF** despite the
-naming, and `KILL_CHAIN_DAG` never enters training — measured, both models' errors are
-at or below chance for DAG legality on `test_synth`. See `DECISIONS.md`.
+Known and deliberately not fixed: MT3 has **no CRF** despite the naming, and
+`KILL_CHAIN_DAG` never enters training — measured, both models' errors were at or
+below chance for DAG legality on `test_synth`. See `DECISIONS.md`.

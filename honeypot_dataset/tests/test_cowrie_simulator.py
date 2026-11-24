@@ -53,7 +53,8 @@ def corpus():
     global _CORPUS
     if _CORPUS is None:
         rows = []
-        for label, _seq, events in cs.generate_sessions(0, seed=1234, per_class=40):
+        for label, _seq, events, _origin in cs.generate_sessions(
+                0, seed=1234, per_class=40):
             rec = build_record(list(events))
             if rec is not None:
                 rows.append((label, events, rec))
@@ -385,8 +386,8 @@ class TestLabelHonesty(unittest.TestCase):
         """
         rng_labels = ["PERSIST_CRONTAB", "EXFIL_STAGING_TAR", "PRIVESC_SUDO_ABUSE"]
         found_multi = False
-        for label, seq, events in cs.generate_sessions(0, seed=99, labels=rng_labels,
-                                                       per_class=10):
+        for label, seq, events, _origin in cs.generate_sessions(
+                0, seed=99, labels=rng_labels, per_class=10):
             rec = build_record(list(events))
             if rec is None or rec["n_commands"] < 2:
                 continue

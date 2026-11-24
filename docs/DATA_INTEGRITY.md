@@ -1769,3 +1769,105 @@ classes without any temporal information.
 **0.035 (the dataset card) is the 45-class figure against a 16-class real test
 set** -- a different and much harder question. Neither number means anything
 without saying which task it describes.
+
+---
+
+## 14. Donor provenance, real coverage, and where timing actually pays (2026-11-24)
+
+### 14a. Every generated session records how its timing was obtained
+
+`_bootstrap_sequence` now reports which path it took, and the value rides on each
+row as `donor_origin`, through `real_meta.parquet` into `donor_<split>.npy`:
+
+```
+donor_exact      copied from a real session of the SAME class and bucket --
+                 preserves within-session correlation AND the class's rhythm
+donor_bucket     same bucket, DIFFERENT class -- preserves correlation, imports
+                 the wrong class's rhythm (the 13a defect)
+per_event        no length-matched donor; gaps drawn independently per event
+                 type. Marginals right, joint structure wrong.
+```
+
+Passed via an out-parameter on `generate_cowrie_events` rather than stamped on
+the events, because the events must stay byte-faithful to what real Cowrie
+writes. `generate_sessions` now yields 4-tuples.
+
+### 14b. Real coverage is 45.5%, not the 78% section 13b reported
+
+**Section 13b was wrong.** That figure came from asking whether a suitable donor
+EXISTED in the pool; it ignored that `_bootstrap_sequence` samples only 24
+candidates and rejects any donor more than 50% longer than needed. Measured from
+the recorded origin over 18,000 generated sessions:
+
+```
+donor_exact    2,098  (11.7%)
+donor_bucket   6,094  (33.9%)
+per_event      9,808  (54.5%)   <- the majority
+any donor      8,192  (45.5%)
+```
+
+The split follows real support exactly:
+
+```
+exact donor available              reliant on per-event fallback
+  EXEC_WGET_EXEC     100.0%          EVASION_LOG_WIPE      88.5%
+  EXEC_SHELL_OPEN     99.0%          EXFIL_SCP_DATA        87.8%
+  DISC_ENV_PROBE      98.5%          PRIVESC_SUID_EXPLOIT  87.5%
+  ACCESS_BRUTE_SSH    97.0%          PERSIST_CRONTAB       87.2%
+  RECON_IP_SCAN       85.0%          DISC_SUID_HUNT        87.2%
+  EVASION_HIST_ERASE  45.0%          (all 39 synthetic-only ~85-88%)
+```
+
+**The cause is a donor-length desert.** Donors exist only at 1-4, 7-9 and 20-40
+gaps. Gap counts with NO donor are `[4, 5, 8..22, 41]`, and the synthetic-only
+classes sit at a median of 10 gaps -- squarely inside it. Real Cowrie sessions
+are either ~7 gaps or ~34; nothing in between exists to copy.
+
+### 14c. Timing-only TSTR, 5 seeds, 95% CI
+
+```
+feature set              class-blind          class-aware         delta
+A_temporal (24)       0.7759 +/- 0.0126   0.9686 +/- 0.0005     +0.1927
+pure timing (15)      0.7784 +/- 0.0133   0.9609 +/- 0.0027     +0.1825
+structure only (3)    0.7657 +/- 0.0188   0.8925 +/- 0.0036     +0.1268
+```
+
+The intervals are tight and do not overlap, so +0.19 is a real effect rather
+than a seed artefact.
+
+### 14d. Novel-behaviour rejection -- the decisive experiment
+
+`DISC_ENV_PROBE` and `EXEC_SHELL_OPEN` have **identical real median structure**:
+1 command, 1 login attempt, 8 events. Structural counts cannot separate them, so
+anything that does is reading timing.
+
+```
+feature set              class-blind          class-aware         delta
+A_temporal (24)       0.5457 +/- 0.0189   0.9459 +/- 0.0009     +0.4003
+pure timing (15)      0.5584 +/- 0.0198   0.9443 +/- 0.0020     +0.3859
+structure only (3)    0.5670 +/- 0.0194   0.8535 +/- 0.0028     +0.2865
+                      (0.50 = chance on a balanced 2-class task)
+```
+
+**Class-blind donors sit at CHANCE.** The synthetic data was worthless for this
+task. Class-aware donors reach 0.946 -- a **+0.40** gain, more than double the
++0.19 on the 4-class problem, precisely because the easy structural signal has
+been removed.
+
+### 14e. What this means, and it reframes section 13c
+
+**Temporal fidelity is the difference between a useless model and a working one,
+wherever structural counts cannot discriminate.** That is the honest case for the
+timing work, and it is measurable.
+
+It also explains the saturated 0.9996 in section 13c: that number was high
+because `n_commands` and `login_attempts` solved the task outright. Strip them
+and the class-blind generator collapses to chance -- so the full-feature TSTR was
+**concealing a generator that could not model behaviour at all, only counts.**
+A metric that cannot fail is not a validation.
+
+**And it prices the coverage gap.** 54.5% of generated sessions use `per_event`
+sampling, which has the same defect class-blind donors had. Timing-dependent
+tasks on the 39 synthetic-only classes should therefore be expected to behave
+like the class-blind column -- near chance -- and results must be reported split
+by `donor_origin`. That is what `donor_<split>.npy` exists for.

@@ -485,6 +485,25 @@ _MIN_POOL = 40
 _DURATION_MAX = 400.0
 
 
+# How a session's gap sequence was obtained. Recorded per row, because these
+# three are not equally trustworthy and any timing result must be splittable by
+# which one produced it:
+#
+#   DONOR_EXACT      copied from a real session of the SAME class and bucket --
+#                    the strongest case, preserving both within-session
+#                    correlation and the class's own rhythm.
+#   DONOR_BUCKET     copied from a real session in the same bucket but a
+#                    DIFFERENT class. Preserves correlation, imports the wrong
+#                    class's rhythm -- the defect that held EXEC_SHELL_OPEN at
+#                    AUC 0.9756 (DATA_INTEGRITY.md 13a).
+#   DONOR_PER_EVENT  no length-matched donor existed, so gaps were drawn
+#                    independently per event type. The marginals are right; the
+#                    joint structure is not.
+DONOR_EXACT = "donor_exact"
+DONOR_BUCKET = "donor_bucket"
+DONOR_PER_EVENT = "per_event"
+
+
 def _session_bucket(did_login: bool, n_commands: int) -> str:
     """Which gap pool a session draws from. MUST match `build_gap_pools()`."""
     if not did_login:
@@ -715,7 +734,8 @@ def _ttylog_size(cmds: Sequence[str], rng: random.Random) -> int:
 
 def _bootstrap_sequence(bucket: str, n_gaps: int, eventids: Sequence[str],
                         rng: random.Random,
-                        label: Optional[str] = None) -> List[float]:
+                        label: Optional[str] = None
+                      ) -> Tuple[List[float], str]:
     """`n_gaps` gaps copied from ONE real session of the same bucket.
 
     Preserves within-session correlation, which per-gap draws cannot: after
@@ -735,13 +755,16 @@ def _bootstrap_sequence(bucket: str, n_gaps: int, eventids: Sequence[str],
     The 36 micro-states with no real counterpart always land in the fallback.
     That is honest rather than a gap: there is no real session of that shape to
     copy from.
+
+    Returns `(gaps, origin)`; see the DONOR_* constants.
     """
     pools = _load_gap_pools()
     # The class's OWN donors first, then the bucket's. Timing differs by class
     # inside a bucket (see build_gap_pools), so a bucket-level donor imports
     # whichever class dominates the bucket.
-    keys = ([f"SEQ|{label}|{bucket}"] if label else []) + [f"SEQ|{bucket}"]
-    for key in keys:
+    keys = ([(f"SEQ|{label}|{bucket}", DONOR_EXACT)] if label else []) \
+        + [(f"SEQ|{bucket}", DONOR_BUCKET)]
+    for key, origin in keys:
         flat = pools.get(f"{key}|flat")
         offs = pools.get(f"{key}|offs")
         if flat is None or offs is None or len(offs) <= 2:
@@ -755,8 +778,9 @@ def _bootstrap_sequence(bucket: str, n_gaps: int, eventids: Sequence[str],
         # Only a donor within 50% of the required length preserves the tail.
         if best is not None and (best[1] - best[0]) <= max(n_gaps + 2,
                                                            int(n_gaps * 1.5)):
-            return [float(x) for x in flat[best[0]:best[0] + n_gaps]]
-    return [_bootstrap_gap(eventids[i + 1], bucket, rng) for i in range(n_gaps)]
+            return [float(x) for x in flat[best[0]:best[0] + n_gaps]], origin
+    return ([_bootstrap_gap(eventids[i + 1], bucket, rng)
+             for i in range(n_gaps)], DONOR_PER_EVENT)
 
 
 def _event_timestamps(t_start: float,
@@ -767,6 +791,8 @@ def _event_timestamps(t_start: float,
                       n_commands: int = 0,
                       label: Optional[str] = None) -> List[float]:
     """Ascending timestamps for an event stream, each gap a resampled real one.
+
+    Returns `(timestamps, donor_origin)`.
 
     `session_duration_s` is the SUM of these gaps -- derived, never drawn.
 
@@ -779,9 +805,9 @@ def _event_timestamps(t_start: float,
     """
     n = len(eventids)
     if n <= 1:
-        return [float(t_start)]
+        return [float(t_start)], DONOR_PER_EVENT
     bucket = _session_bucket(did_login, n_commands)
-    gaps = _bootstrap_sequence(bucket, n - 1, eventids, rng, label)
+    gaps, origin = _bootstrap_sequence(bucket, n - 1, eventids, rng, label)
     total = sum(gaps)
     if total > _DURATION_MAX:
         # Trim the single longest gap rather than rescaling everything, so the
@@ -793,7 +819,7 @@ def _event_timestamps(t_start: float,
     for g in gaps:
         acc += g
         out.append(float(t_start) + acc)
-    return out
+    return out, origin
 
 
 # ── Command selection ────────────────────────────────────────────────────────
@@ -1070,12 +1096,17 @@ def generate_cowrie_events(label: str,
                            t_start: Optional[float] = None,
                            session_id: Optional[str] = None,
                            min_len: int = 1,
-                           max_len: int = 8) -> Tuple[List[dict], List[str]]:
+                           max_len: int = 8,
+                           meta: Optional[dict] = None
+                           ) -> Tuple[List[dict], List[str]]:
     """One synthetic session as a list of Cowrie log events.
 
     Returns `(events, micro_state_sequence)`. The events are the same shape the
     real honeypot writes, so `cowrie_parser.parse_cowrie_file` /
     `build_record` consume them with no special casing.
+
+    Pass a dict as `meta` to receive `{"donor_origin": ...}` -- how this
+    session's gap sequence was obtained (see the DONOR_* constants).
     """
     if label not in LABEL_TO_IDX:
         raise ValueError(f"unknown micro-state {label!r}")
@@ -1098,9 +1129,14 @@ def generate_cowrie_events(label: str,
         t_start = rng.uniform(1_793_000_000.0, 1_793_000_000.0 + 13 * 86400)
 
     eventids = [e[0] for e in skeleton]
-    ts = _event_timestamps(t_start, eventids, rng,
-                           did_login=did_login, n_commands=len(issued),
-                           label=label)
+    ts, _donor_origin = _event_timestamps(
+        t_start, eventids, rng, did_login=did_login,
+        n_commands=len(issued), label=label)
+    # Out-parameter rather than a wider return type: the events ARE the product,
+    # and stamping provenance onto them would leak into the written Cowrie log,
+    # which has to stay byte-faithful to what the real honeypot emits.
+    if meta is not None:
+        meta["donor_origin"] = _donor_origin
     duration = ts[-1] - ts[0]            # DERIVED from the event stream
 
     sid = session_id or f"{rng.getrandbits(48):012x}"
@@ -1149,8 +1185,12 @@ def generate_sessions(n_total: int,
                       seed: int = 42,
                       labels: Optional[Sequence[str]] = None,
                       per_class: Optional[int] = None
-                      ) -> Iterator[Tuple[str, List[str], List[dict]]]:
-    """Yield `(intended_label, micro_state_sequence, events)`, balanced per class.
+                      ) -> Iterator[Tuple[str, List[str], List[dict], str]]:
+    """Yield `(intended_label, micro_state_sequence, events, donor_origin)`.
+
+    Balanced per class. `donor_origin` says how the session's gap sequence was
+    obtained -- see the DONOR_* constants. It is yielded rather than inferred
+    because it cannot be recovered from the events afterwards.
 
     `per_class` overrides the balance, INCLUDING the `MIN_SAMPLES_PER_CLASS`
     floor. Use it only for tests and smoke runs: the floor exists because the
@@ -1167,11 +1207,12 @@ def generate_sessions(n_total: int,
     sid = 0
     for label in names:
         for _ in range(per_cls):
+            _meta: Dict[str, str] = {}
             events, seq = generate_cowrie_events(
                 label, rng, src_ip=rng.choice(pool),
-                session_id=f"sim{sid:09x}")
+                session_id=f"sim{sid:09x}", meta=_meta)
             sid += 1
-            yield label, seq, events
+            yield label, seq, events, _meta.get("donor_origin", DONOR_PER_EVENT)
 
 
 def mark_repeat_visitors(records: List[dict]) -> List[dict]:
@@ -1214,7 +1255,8 @@ def generate_balanced_sessions(n_total: int, seed: int = 42,
     from src.parsers.cowrie_parser import build_record
 
     rows: List[dict] = []
-    for label, seq, events in generate_sessions(n_total, seed, per_class=per_class):
+    for label, seq, events, donor_origin in generate_sessions(
+            n_total, seed, per_class=per_class):
         rec = build_record(events)
         if rec is None:
             continue
@@ -1230,6 +1272,9 @@ def generate_balanced_sessions(n_total: int, seed: int = 42,
             "parser_sequence":       parser_seq,
             "label_agrees":          parser_label == label,
             "label_source":          "generator",
+            # How this session's timing was obtained. Results that depend on
+            # temporal features MUST be reported split by this.
+            "donor_origin":          donor_origin,
             "source":                "simulated_cowrie_events",
         })
         rows.append(rec)
@@ -1312,8 +1357,8 @@ def write_jsonlines(out_path: Path, n_total: int, seed: int = 42,
     out_path.parent.mkdir(parents=True, exist_ok=True)
     counts: Dict[str, int] = {}
     with out_path.open("w", encoding="utf-8") as fh:
-        for label, _seq, events in generate_sessions(n_total, seed,
-                                                     per_class=per_class):
+        for label, _seq, events, _origin in generate_sessions(
+                n_total, seed, per_class=per_class):
             for ev in events:
                 fh.write(json.dumps(ev) + "\n")
             counts[label] = counts.get(label, 0) + 1

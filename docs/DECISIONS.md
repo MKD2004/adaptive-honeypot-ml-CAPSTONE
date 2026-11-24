@@ -5,6 +5,44 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-24 — donor_origin ships, and timing is validated where it matters
+
+**Decision: every generated row records `donor_origin`** -- `donor_exact`,
+`donor_bucket` or `per_event` -- carried through `real_meta.parquet` into
+`donor_<split>.npy`. The three are not equally trustworthy, and the measurement
+below shows the gap is the difference between chance and 0.95, so a timing
+result that does not say which it used is not interpretable.
+
+Recorded via an out-parameter on `generate_cowrie_events` rather than on the
+events themselves: the events have to stay byte-faithful to real Cowrie logs.
+`generate_sessions` now yields 4-tuples, which is a breaking change for any
+caller unpacking three.
+
+**Correction: real donor coverage is 45.5%, not the 78% recorded in section
+13b.** The old figure asked whether a donor existed in the pool and ignored that
+the sampler tries only 24 candidates and rejects anything over 50% too long.
+Breakdown: exact 11.7%, bucket 33.9%, per-event 54.5%. The misses are the 39
+synthetic-only classes, which sit at a median 10 gaps inside a donor-length
+desert (real sessions have ~7 or ~34 gaps, nothing between 10 and 19). Permanent
+limit, not a bug.
+
+**The validation that justifies the timing work.** On classes with IDENTICAL
+structural counts (`DISC_ENV_PROBE` and `EXEC_SHELL_OPEN` are both 1 command / 1
+login / 8 events in the real capture), trained on synthetic and tested on real
+over 5 seeds:
+
+    A_temporal   class-blind 0.5457 +/- 0.0189   class-aware 0.9459 +/- 0.0009
+
+Class-blind donors are at chance. Class-aware reach 0.946. On the 4-class task
+the same comparison gives +0.19 with non-overlapping CIs.
+
+**This reframes the 0.9996 full-feature TSTR of section 13c as a measurement
+failure, not a success.** It was high because two structural counts solved the
+task; strip them and the class-blind generator is worthless. A metric that cannot
+fail is not a validation, and full-feature TSTR must not be reported alone.
+
+---
+
 ## 2026-11-24 — donor pools are keyed by CLASS, and TSTR measures the wrong thing by default
 
 **Decision: sequence donor pools are keyed `(class, bucket)`, not `bucket`.**

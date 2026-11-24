@@ -23,6 +23,8 @@ it raises UnpicklingError (invalid load key). Always joblib.load.
 from __future__ import annotations
 
 import json
+import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
@@ -180,14 +182,193 @@ class Split:
         return np.unique(self.y)
 
 
+# ── Part 3: the integrity gate at the training entry point ──────────────────
+# DATA_INTEGRITY.md section 4 Part 3: "Make it a gate at the TRAINING ENTRY
+# POINT, not an optional notebook cell. A report nobody runs is how this
+# survived three months."
+#
+# `load_split` is that entry point -- every training, evaluation and comparison
+# script in this package goes through it -- so the checks run here and RAISE.
+#
+# WHAT IS CHECKED, and why each one exists:
+#
+#   NaN             `extract_temporal` returns NaN for features a session cannot
+#                   support. Notebook 05 imputes them and ships a mask, so a
+#                   split reaching training with NaN means the imputation step
+#                   was skipped. Training on it silently produces NaN loss.
+#   fabricated IAT  a degenerate inter-arrival block across more than two events
+#                   -- the Part 0 defect. Arithmetically consistent, which is
+#                   exactly why nothing caught it before.
+#   arithmetic      the 97 invariant checks in `feature_integrity`.
+#   provenance      if `prov_<split>.npy` is present, every row's NaN pattern
+#                   must match what its provenance level permits.
+#
+# THRESHOLDS ARE MEASURED, NOT GUESSED. The two datasets that exist separate
+# very widely on both axes, so there is no judgement call hiding in these
+# numbers:
+#
+#                        arithmetic failures   fabricated-IAT rows
+#   data/final/    X_train      17 / 97              60.3%
+#                  X_test_real   0 / 97              98.0%
+#   data/final_v2/ X_train       3 / 97               0.21%
+#                  X_test_synth  0 / 97               0.00%
+#
+# So 8/97 and 5% sit in empty space between a clean dataset and a defective one.
+# The 3/97 floor on final_v2 is float32 storage noise, verified at the record
+# level: 0 genuine violations in 40,000 freshly computed records.
+#
+# ESCAPE HATCH, deliberately loud. Reproducing the pre-rebuild numbers requires
+# loading data/final/, which fails this gate by design. Pass
+# `integrity="warn"` or set MT3_ALLOW_UNVALIDATED=1, and the reason is printed
+# every time so it cannot become the silent default.
+MAX_ARITHMETIC_FAILURES = 8
+MAX_FABRICATED_FRACTION = 0.05
+
+
+class IntegrityGateError(DataError):
+    """A split failed the integrity gate at the training entry point."""
+
+
+def check_integrity(X, y, name: str, data_dir: Path,
+                    mode: str = "raise") -> Dict[str, object]:
+    """Gate one split. `mode` is "raise", "warn" or "off"."""
+    import numpy as _np
+
+    if mode == "off":
+        return {"split": name, "mode": "off", "checked": False}
+
+    repo = Path(__file__).resolve().parents[2]
+    hp = repo / "honeypot_dataset"
+    if str(hp) not in sys.path:
+        sys.path.insert(0, str(hp))
+    try:
+        from src.validators.feature_integrity import (  # noqa: E402
+            fabricated_iat_mask, provenance_from_nan, validate,
+            validate_provenance)
+    except Exception as exc:                        # pragma: no cover
+        print(f"[warn] integrity gate unavailable ({exc}); split {name} unchecked")
+        return {"split": name, "mode": mode, "checked": False, "error": str(exc)}
+
+    Xa = _np.asarray(X[: min(len(X), 300_000)], dtype=_np.float64)
+    problems: List[str] = []
+
+    n_nan = int(_np.isnan(Xa).sum())
+    if n_nan:
+        rows = int(_np.isnan(Xa).any(axis=1).sum())
+        problems.append(
+            f"{rows:,} rows carry NaN ({n_nan:,} cells). Notebook 05 imputes "
+            f"the temporal block and ships M_*.npy; this split skipped it.")
+
+    # un-scale so the invariants see real units, and so tolerances can track
+    # each column's magnitude (a flat epsilon cries wolf -- DATA_INTEGRITY 3b)
+    try:
+        scaler = load_scaler(data_dir)
+        Xu = Xa * scaler.scale_ + scaler.mean_
+    except Exception:
+        scaler, Xu = None, Xa
+
+    rep = validate(Xu, scaler=scaler) if scaler is not None else validate(Xu)
+    n_arith = len([v for v in rep.violations if v.kind == "arithmetic"])
+    if n_arith > MAX_ARITHMETIC_FAILURES:
+        failed = ", ".join(v.detail.split(":")[0]
+                           for v in rep.violations if v.kind == "arithmetic")[:200]
+        problems.append(f"{n_arith} of 97 arithmetic invariants fail ({failed})")
+
+    fab = fabricated_iat_mask(Xu)
+    frac = float(fab.mean())
+    if frac > MAX_FABRICATED_FRACTION:
+        problems.append(
+            f"{frac*100:.1f}% of rows have a degenerate inter-arrival block "
+            f"across >2 events -- fabricated temporal features (Part 0)")
+
+    # Provenance, checked against whichever record of absence the split carries.
+    #
+    # There are two legitimate states and the gate must not confuse them:
+    #
+    #   pre-imputation   the feature is NaN. `validate_provenance` applies: a
+    #                    NUMBER where the level forbids one is fabrication.
+    #   post-imputation  the feature holds a median fill and `M_<split>.npy`
+    #                    records mask == 0. The value is expected; what must
+    #                    hold is that the MASK agrees with the provenance level.
+    #
+    # Demanding NaN after imputation failed `final_v2` on all 39 imputed
+    # features, which would have blocked the only clean dataset in the repo. The
+    # distinction being enforced is "undocumented absence" versus "documented
+    # absence", not "absent" versus "present".
+    prov_path = Path(data_dir) / f"prov_{name}.npy"
+    mask_path = Path(data_dir) / f"M_{name}.npy"
+    prov_checked = False
+    if prov_path.exists():
+        prov = _np.load(prov_path)[: len(Xa)]
+        if len(prov) == len(Xa):
+            prov_checked = True
+            if mask_path.exists():
+                from src.extractors.temporal import (  # noqa: E402
+                    TEMPORAL_FEATURE_NAMES, unavailable_features)
+                M = _np.asarray(_np.load(mask_path, mmap_mode="r")[: len(Xa)])
+                mismatched = 0
+                for level in _np.unique(prov):
+                    sel = prov == level
+                    want_absent = unavailable_features(str(level))
+                    for j, fname in enumerate(TEMPORAL_FEATURE_NAMES):
+                        expect = 0 if fname in want_absent else 1
+                        mismatched += int((M[sel, j] != expect).sum())
+                if mismatched:
+                    problems.append(
+                        f"{mismatched:,} mask cells disagree with the row's "
+                        f"provenance level -- M_{name}.npy does not describe "
+                        f"which temporal features were measured")
+            else:
+                prep = validate_provenance(Xu, prov)
+                bad = [v for v in prep.violations if v.kind == "fabricated"]
+                if bad:
+                    problems.append(
+                        f"{len(bad)} temporal features carry a value where the "
+                        f"row's provenance cannot support one, and no "
+                        f"M_{name}.npy documents the fill")
+
+    info = {"split": name, "mode": mode, "checked": True, "rows": int(len(Xa)),
+            "nan_cells": n_nan, "arithmetic_failures": n_arith,
+            "fabricated_fraction": round(frac, 6),
+            "provenance_checked": prov_checked, "problems": problems}
+
+    if problems:
+        _nl = chr(10)
+        msg = ("integrity gate FAILED for split %r in %s:%s  - %s"
+               % (name, data_dir, _nl, (_nl + "  - ").join(problems)))
+        if mode == "raise":
+            raise IntegrityGateError(
+                msg + _nl + _nl
+                + "This is the Part 3 gate. If you are deliberately "
+                + "reproducing pre-rebuild numbers on data/final/, pass "
+                + "integrity='warn' or set MT3_ALLOW_UNVALIDATED=1.")
+        print(f"[INTEGRITY WARNING] {msg}")
+    return info
+
+
+def _integrity_mode(explicit: Optional[str]) -> str:
+    if explicit is not None:
+        return explicit
+    if os.environ.get("MT3_ALLOW_UNVALIDATED") == "1":
+        print("[integrity] MT3_ALLOW_UNVALIDATED=1 -- gate downgraded to warnings")
+        return "warn"
+    return "raise"
+
+
 def load_split(
     name: str,
     data_dir: Path = DEFAULT_DATA_DIR,
     limit: Optional[int] = None,
     mmap: bool = False,
     seed: int = 0,
+    integrity: Optional[str] = None,
 ) -> Split:
-    """Load one frozen split. limit takes a class-stratified subsample (smoke tests)."""
+    """Load one frozen split. limit takes a class-stratified subsample (smoke tests).
+
+    `integrity` gates the split before anything can train on it: "raise"
+    (default), "warn" or "off". See `check_integrity` -- data/final/ fails by
+    design, which is the point of Part 3.
+    """
     if name not in SPLITS:
         raise DataError(f"unknown split {name!r}; expected one of {SPLITS}")
     data_dir = Path(data_dir)
@@ -221,6 +402,8 @@ def load_split(
 
     X = np.ascontiguousarray(np.asarray(X, dtype=np.float32))
     y = np.asarray(y, dtype=np.int64)
+    check_integrity(X, y, name, data_dir, _integrity_mode(integrity))
+
     return Split(name=name, X=X, y=y)
 
 

@@ -296,6 +296,18 @@ six things that will bite. Read that before starting any of the below.
 
 ---
 
+## 6b. Part 2 (TabSyn) is dropped — 2026-11-24
+
+`DATA_INTEGRITY.md` Part 2 (TabSyn generates primitives only) is **dropped, not
+deferred**: TabSyn contributes zero rows to the rebuilt dataset, the generator
+now supplies that volume coherently, and Section 2 already files the dataset as
+supporting rather than headline. Full reasoning in `DECISIONS.md` (2026-11-24).
+
+**Consequence for the write-up:** TabSyn is no longer available as a method
+contribution. The method section should not describe it as part of the pipeline.
+
+---
+
 ## 7. What NOT to claim
 
 - Do **not** claim MT3 outperforms the baseline. It ties. Say so.

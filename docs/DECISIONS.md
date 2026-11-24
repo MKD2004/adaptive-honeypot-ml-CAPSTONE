@@ -5,6 +5,49 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-24 — Part 2 is DROPPED; Part 3 is the gate
+
+**Part 2 (TabSyn generates primitives, derived features recomputed) is dropped,
+not deferred.** Deferred items get re-litigated; this one should not be.
+
+The reasoning, strongest first: TabSyn contributes **zero rows** to `final_v2`,
+so its 47% arithmetic incoherence affects nothing. Its only purpose was volume --
+multiplying 15,000 synthetic Cowrie sessions into 720,000 -- and
+`cowrie_simulator` now produces that volume event-derived, coherent by
+construction, and validated against a real-vs-real reference band. And
+`ROADMAP.md` section 2 already committed the headline to the adaptive closed
+loop, filing the dataset as "supporting, not headline", so further
+synthetic-generator work cannot move the paper's actual claim.
+
+The dataset also clears its own bars without TabSyn: 45 classes, minimum class
+13,199, zero below the 2,000 floor, 101 informative features, 3/97 impossible
+rows (float32 storage noise, 0 genuine in 40,000 freshly computed records).
+
+**The cost, stated so it is not discovered later:** TabSyn stops being available
+as a *method* contribution. If the dataset-generation technique was ever intended
+as a secondary contribution in the write-up, this decision has to be reopened.
+Nothing else in the plan depends on it.
+
+**Part 3 is wired into `load_split()`** rather than offered as a notebook cell,
+because "a report nobody runs is how this survived three months". Thresholds come
+from the measured gap between the two datasets (12/97 and 60.3% on `data/final`
+versus 3/97 and 0.21% on `final_v2`), so 8/97 and 5% sit in empty space rather
+than being tuned.
+
+The consequence is intended and worth being explicit about: **`data/final/` now
+raises at the training entry point.** Reproducing the old numbers requires
+`integrity="warn"` or `MT3_ALLOW_UNVALIDATED=1`, which prints its reason on every
+call so it cannot drift into being the default.
+
+**Design correction made while wiring it:** the gate first demanded NaN wherever
+provenance said a feature was unmeasurable, which failed `final_v2` on all 39
+imputed features -- it would have blocked the only clean dataset in the repo.
+Post-imputation a value is expected; what must hold is that `M_<split>.npy`
+agrees with the provenance level. The gate enforces documented absence versus
+UNdocumented absence, not absent versus present.
+
+---
+
 ## 2026-11-24 — Part 0: provenance over imputation, and what NOT to map
 
 **Decision 1: an unmeasurable feature is NaN, and NaN propagates.** The old

@@ -1391,3 +1391,96 @@ quotes it.
 - **Part 3** (`assert_valid` at the training entry point) -- the pieces now exist
   (`assert_valid`, `assert_temporal_provenance`) but nothing calls them where
   training starts.
+
+---
+
+## 11. Part 2 is DROPPED, and Part 3 is WIRED (2026-11-24)
+
+### 11a. Part 2 (TabSyn primitives/derived split) — DROPPED, not deferred
+
+Recorded as a drop rather than a deferral because deferred items get
+re-litigated. Four reasons, in order of weight:
+
+1. **TabSyn contributes zero rows.** `final_v2` is `tabsyn_sessions: 0`. Its 47%
+   arithmetic incoherence affects nothing in the current dataset, so Part 2
+   would be repairing a generator that is not in the build.
+2. **Its only job was volume, and that job is now done better.** TabSyn existed
+   to multiply 15,000 synthetic Cowrie sessions into 720,000. `cowrie_simulator`
+   produces 720,000 rows that are event-derived, coherent by construction, and
+   validated against a real-vs-real reference band (section 9).
+3. **The dataset is explicitly not the contribution.** `ROADMAP.md` section 2
+   commits to the adaptive closed loop as the headline and files the dataset as
+   "supporting, not headline". Further synthetic-generator work buys nothing for
+   the claim the paper actually makes.
+4. **The dataset clears its own bars without it:**
+
+```
+train          1,293,128 rows   45 classes   min class 13,199   0 below the 2,000 floor
+dead columns   27 / 128, ALL of them TRIAGE=DROP, zero untriaged
+informative    101 features   (section 3c projected ~102)
+impossible     3 / 97   float32 storage noise; 0 genuine in 40,000 fresh records
+```
+
+Note the dead count fell from 39 to 27 and the 12 previously-untriaged columns
+came alive, because netflow rows now carry real CIC flow statistics instead of a
+fabricated constant. Part 0 paid for itself twice.
+
+**What dropping it costs:** TabSyn stops being available as a *method*
+contribution. If the dataset-generation technique were ever meant to be a
+secondary contribution, this decision has to be revisited — see DECISIONS.md.
+
+### 11b. Part 3 — the integrity gate is WIRED at the training entry point
+
+`ml_analytics/mt3_pipeline/data.py:load_split()` is the entry point every
+training, evaluation and comparison script in that package goes through, so
+`check_integrity()` runs there and RAISES.
+
+Four checks, each with a reason it exists:
+
+```
+NaN             extract_temporal abstains with NaN; notebook 05 imputes and ships
+                a mask. NaN reaching training means that step was skipped, and
+                training on it silently produces NaN loss.
+fabricated IAT  a degenerate inter-arrival block across >2 events -- the Part 0
+                defect, arithmetically consistent, which is why nothing caught it.
+arithmetic      the 97 invariant checks in feature_integrity.
+provenance      prov_<split>.npy and M_<split>.npy must agree about which
+                temporal features were measured.
+```
+
+**Thresholds are measured, not chosen.** The two datasets that exist separate
+very widely on both axes, so no judgement is hiding in these numbers:
+
+```
+                            arithmetic failures   fabricated-IAT rows
+data/final/    X_train            12 / 97               60.3%
+               X_test_real         0 / 97               97.9%
+data/final_v2/ X_train             3 / 97                0.21%
+               X_test_synth        0 / 97                0.00%
+```
+
+`MAX_ARITHMETIC_FAILURES = 8` and `MAX_FABRICATED_FRACTION = 0.05` sit in empty
+space between a clean dataset and a defective one.
+
+Verified end to end:
+
+```
+final_v2   train PASS   test_synth PASS   test_real PASS
+data/final train BLOCKED (12/97 arithmetic, 60.3% fabricated)
+           test_real BLOCKED (97.9% fabricated)
+```
+
+**So `data/final/` can no longer be trained on by accident.** That is the
+intended effect: it is 60.3% fabricated in train and 97.9% in test_real.
+
+**Escape hatch, deliberately loud.** Reproducing the pre-rebuild numbers requires
+loading `data/final/`, so `integrity="warn"` or `MT3_ALLOW_UNVALIDATED=1`
+downgrades the gate — and prints the reason every single time, so it cannot
+become a silent default.
+
+**One correction found by wiring it.** The first version demanded NaN wherever a
+row's provenance said a feature was unmeasurable. That failed `final_v2` on all
+39 imputed features — it would have blocked the only clean dataset in the repo.
+Post-imputation the value is *expected*; what must hold is that
+`M_<split>.npy` agrees with the provenance level. The gate now enforces
+**documented absence versus undocumented absence**, not absent versus present.

@@ -33,6 +33,15 @@ four splits with 0 NaN. Two pooled numbers moved and neither is a fidelity
 measure (sections 9a, 13d): adversarial AUC 0.9981 -> 0.9921, 45-class TSTR
 0.036 -> 0.0278.
 
+**The quality report was validating arrays that never shipped.** It claimed
+`NaN values: 281635`, failed its shape check and gave `A_temporal mean_W=nan`
+for a dataset whose four splits carry zero NaN -- notebook 05 cell 16 passed the
+PRE-pool arrays, which `np.vstack` had copied before cell 10 imputed in place.
+Now validates the imputed, unscaled `X_train`: shape check PASSES, and
+`A_temporal` reports a real Wasserstein distance (618.694) that FAILS its
+threshold. That failure is a true finding -- timing is the block that does not
+match -- and it had been hidden behind a NaN.
+
 **The pipeline is 2.7x faster:** notebook 02 went 66.2 -> 24.5 min. Cell 5
 54.6 -> 17.0 (dedup); cell 3 11.4 -> 7.4 (chunked `to_dict("records")` instead
 of `iterrows`, verified value-identical on 6,000 rows). Notebook 05 is 30 s.

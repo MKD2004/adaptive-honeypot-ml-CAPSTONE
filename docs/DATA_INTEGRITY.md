@@ -2013,7 +2013,7 @@ never more than 11.4 minutes, and the real cost was always group D at 54.6. Do
 not profile this pipeline against a busy machine; read the per-cell
 `execution` metadata the notebooks already store instead.
 
-### 16e. Still outstanding
+### 16e. Still open after the dedup
 
 - **No model has been trained on `final_v2`.** This was the blocker: group D
   leaked provenance, so any model could learn it. That is now closed, and the
@@ -2025,7 +2025,37 @@ not profile this pipeline against a busy machine; read the per-cell
   (`traffic_gateway.feature_bridge.SemanticEncoder`), so it sits at its own
   ~3e-6 offset from the training embeddings. Pre-existing, now uncorrelated with
   anything, and the reason not to treat group D as high-precision.
-- **`quality_report.json` still reports `NaN values: 281635` and FAILS its shape
-  check.** Unchanged from the previous build: `run_full_validation` is handed a
-  pre-imputation array. The shipped splits carry 0 NaN -- verified through
-  `load_split()` -- so this is a defect in the report, not in the data.
+
+### 16f. The quality report was validating arrays that never shipped
+
+`quality_report.json` reported `NaN values: 281635`, failed its shape check, and
+gave `A_temporal mean_W=nan` -- for a dataset whose four shipped splits carry
+ZERO NaN. One cause for all three: notebook 05 cell 16 passed `X_r_train` and
+`X_s_train`, the PRE-pool arrays. `X_pool = np.vstack([X_r_train, X_s_train])`
+copies, so cell 10's in-place imputation never reached them.
+
+Fixed by validating the imputed, still-unscaled `X_train`, split into real and
+generated with `gen_splits["train"]` (aligned by construction, asserted in cell
+9). After the fix:
+
+```
+                     before            after
+shape_check    FAIL, NaN 281635   PASS, 0 NaN, 45/45 classes
+A_temporal W   nan  (nan-poisoned) 618.694  (a real number, and it FAILS)
+adversarial    0.9921             0.9929
+TSTR           0.0278             0.0323
+```
+
+`A_temporal` failing its Wasserstein threshold is a true finding, consistent with
+section 12e: timing is the block that does not match. It was previously hidden
+behind a NaN.
+
+**Why this mattered more than a cosmetic defect.** A report that fails on a
+problem the artifact does not have teaches its readers to ignore it -- and the
+two real failures in it (`A_temporal`, adversarial AUC) are the ones a reviewer
+should see. The gate still PASSES all four splits through `load_split()`.
+
+The thresholds themselves are NOT recalibrated: `wasserstein` and
+`adversarial_auc` compare pooled real against pooled generated, which sections
+9a and 12d show measures protocol and class composition. Read the per-block,
+within-class table instead.

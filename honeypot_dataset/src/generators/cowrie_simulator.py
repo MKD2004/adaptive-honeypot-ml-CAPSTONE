@@ -47,9 +47,11 @@ SCOPE AND BOUNDARIES.
 
   - Does NOT touch `data/final/`. That dataset is frozen and every published
     number depends on it (CLAUDE.md, DATA_INTEGRITY.md section 6).
-  - Does NOT edit `kill_chain_simulator.py`. Notebooks 01 and 03b call
-    `generate_balanced_sessions()` and the frozen build used it, so it stays
-    byte-compatible. This module imports FROM it (`KILL_CHAIN_DAG`, the source
+  - Does NOT edit `kill_chain_simulator.py`. The frozen `data/final/` build used
+    its `generate_balanced_sessions()`, and `tests/test_generator_timing.py`
+    plus notebook 01's no-real-data fallback still call it, so it stays
+    byte-compatible. (Notebook 03b was the other caller; it was deleted
+    2026-11-24 with the Part 2 drop.) This module imports FROM it (`KILL_CHAIN_DAG`, the source
     address pool, the ephemeral-port draw) and never the other way round, so the
     dependency runs one direction only.
   - Does NOT reuse `generate_event_timestamps` or `generate_session_sequence`,

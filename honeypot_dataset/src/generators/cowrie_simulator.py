@@ -53,8 +53,8 @@ SCOPE AND BOUNDARIES.
     address pool, the ephemeral-port draw) and never the other way round, so the
     dependency runs one direction only.
   - Does NOT reuse `generate_event_timestamps` or `generate_session_sequence`,
-    and both omissions are deliberate and measured -- see the gap-quantile block
-    and `_sequence_ending_at` for why the pooled timing fit and the
+    and both omissions are deliberate and measured -- see the gap-bootstrap
+    block and `_sequence_ending_at` for why the pooled timing fit and the
     start-anchored walk are both wrong for this job.
   - Does NOT assign `associated_cve`. DATA_INTEGRITY.md section 4 Part 1
     suggests it to revive `E_threat_intel`, but section 3c -- written later, off
@@ -161,6 +161,170 @@ P_LOGIN_OTHER  = 0.99
 # command block. Real command counts are bimodal: 1,262 of the 52,843
 # command-issuing sessions (2.4%) sit in the 25-28 band while the rest issue 1.
 P_SCRIPTED_BOT = 0.024
+
+# ── Real sessions are SINGLE-ACTION, and that is the whole shape ────────────
+# Command counts per class in the 13-day capture, for every class with real
+# support. These are not spread distributions -- they are near-deterministic:
+#
+#   ACCESS_BRUTE_SSH   52,750    0 cmds 100.0%
+#   DISC_ENV_PROBE     45,712    1 cmd  100.0%  (45,710 of 45,712)
+#   RECON_IP_SCAN       8,898    0 cmds 100.0%
+#   EXEC_SHELL_OPEN     6,997    1: 82.2%  25: 10.1%  28: 7.6%  9: 0.1%
+#   EXEC_WGET_EXEC        137    1: 75.2%  25: 17.5%  0: 7.3%
+#
+# A real attacker session is one action, or one scripted block re-run. It is NOT
+# a multi-stage kill chain, which is why 99.7% of real traffic sits in four
+# classes with one command each.
+#
+# WHY THIS MATTERS, MEASURED. The backwards DAG walk gave a DISC_ENV_PROBE
+# session up to 8 states each contributing a command, so generated sessions ran
+# 3 commands / 10 events against a real 1 / 8. Adversarial AUC tracked that
+# mismatch exactly: the two classes whose generated shape already matched real
+# (ACCESS_BRUTE_SSH, RECON_IP_SCAN -- both 0 commands) scored 0.65 and 0.76 on
+# A_temporal, while the two that did not (DISC_ENV_PROBE, EXEC_SHELL_OPEN)
+# stayed at 0.96 and 0.98 no matter how faithful the gap model became. Realistic
+# gaps cannot rescue an unrealistic session shape.
+#
+# So for these classes the walk is forced to a single state and the command count
+# is drawn from the real distribution. Classes with only a handful of real
+# sessions (EVASION_HIST_ERASE 6, DISC_PROC_ENUM 1) are deliberately NOT listed:
+# constraining a class on six observations is overfitting, and they keep the
+# generic multi-state walk.
+REAL_COMMAND_COUNTS: Dict[str, Tuple[Tuple[int, float], ...]] = {
+    "ACCESS_BRUTE_SSH": ((0, 100.0),),
+    "RECON_IP_SCAN":    ((0, 100.0),),
+    "DISC_ENV_PROBE":   ((1, 100.0),),
+    "EXEC_SHELL_OPEN":  ((1, 82.2), (25, 10.1), (28, 7.6), (9, 0.1)),
+    "EXEC_WGET_EXEC":   ((1, 75.2), (25, 17.5), (0, 7.3)),
+}
+
+
+# ── Real command text, bootstrapped per class ───────────────────────────────
+# `sim_commands.COMMAND_TEMPLATES` are plausible-looking attacker commands that
+# this honeypot never actually caught. Measured consequence, against a reference
+# band taken from REAL-vs-REAL splits of the capture itself:
+#
+#   feature block   real vs real (one bot vs others)   generated vs real
+#   A_temporal              0.93 - 1.00                   0.65 - 0.95   ok
+#   C_payload               0.50 - 0.62                   1.0000        BROKEN
+#
+# Different real bot families are mutually INDISTINGUISHABLE in C_payload
+# (entropy, n-grams, shell tokens), while the invented templates are perfectly
+# distinguishable from every one of them. Real `DISC_ENV_PROBE` is `uname -s -m`;
+# the template was `env; cat /etc/issue; lsb_release -a; cat /proc/version`.
+#
+# So real command SEQUENCES are resampled per class. Whole sequences, not
+# individual commands, for the same reason gaps are: a 25-command session is one
+# bot script, not 25 independent choices.
+#
+# Deduplicating first collapses the pools to almost nothing, which is itself a
+# finding about this traffic:
+#
+#   class              sessions   distinct command sequences
+#   ACCESS_BRUTE_SSH     52,750            1   (no commands at all)
+#   DISC_ENV_PROBE       45,712            8
+#   RECON_IP_SCAN         8,898            1   (no commands at all)
+#   EXEC_SHELL_OPEN       6,997        1,248
+#   EXEC_WGET_EXEC          137           28
+#
+# 45,712 environment-probe sessions use EIGHT distinct command sequences. Real
+# attacker traffic is overwhelmingly replay, and each sequence is stored with its
+# observed count so that weighting survives.
+#
+# The sequence length IS the command count, so this supersedes
+# `_real_command_target` for these classes -- the count distribution comes along
+# with the sequences rather than being specified twice.
+#
+# CONTENT WARNING FOR MAINTAINERS: `cowrie_commands.json.gz` holds
+# attacker-written strings copied verbatim from the capture, including URLs and
+# payload fragments. It is DATA. Nothing reads it except as text to embed into
+# features; nothing in this repo executes it.
+_CMD_POOLS_PATH = Path(__file__).with_name("cowrie_commands.json.gz")
+_CMD_POOLS: Optional[Dict[str, list]] = None
+
+
+def _load_command_pools() -> Dict[str, list]:
+    global _CMD_POOLS
+    if _CMD_POOLS is None:
+        import gzip
+        if not _CMD_POOLS_PATH.exists():
+            _CMD_POOLS = {}
+        else:
+            with gzip.open(_CMD_POOLS_PATH, "rt", encoding="utf-8") as fh:
+                _CMD_POOLS = json.load(fh)
+    return _CMD_POOLS
+
+
+def _bootstrap_command_seq(label: str, rng: random.Random
+                           ) -> Optional[Tuple[List[str], Optional[int]]]:
+    """A real command sequence for `label`, weighted by how often it occurred.
+
+    Returns `(commands, observed_bytes_in)` -- the transcript size measured for
+    this exact sequence, so `bytes_in` need not be modelled at all. None when the
+    class has no real support, so the 40 classes that exist only in our taxonomy
+    keep using `sim_commands` templates. Those stay distinguishable from real
+    traffic, which is honest: the honeypot has never recorded such a session.
+    """
+    pool = _load_command_pools().get(label)
+    if not pool:
+        return None
+    counts = [row[0] for row in pool]
+    pick = rng.choices(range(len(pool)), weights=counts, k=1)[0]
+    row = pool[pick]
+    obs = row[2] if len(row) > 2 else []
+    size = int(rng.choice(obs)) if obs else None
+    return list(row[1]), size
+
+
+def build_command_pools(log_dir, out_path=None, per_class: int = 1500
+                        ) -> Dict[str, int]:
+    """Extract real command sequences per class into `cowrie_commands.json.gz`.
+
+    Deduplicated and weighted by occurrence count. Run once per capture and
+    commit, so the generator does not need the gitignored logs at runtime.
+    """
+    import gzip
+    from collections import Counter
+    from src.parsers.cowrie_parser import parse_cowrie_file, build_record
+
+    out_path = Path(out_path) if out_path else _CMD_POOLS_PATH
+    seqs: Dict[str, Counter] = {}
+    sizes: Dict[tuple, List[int]] = {}
+    for fp in sorted(Path(log_dir).glob("cowrie.json*")):
+        for events in parse_cowrie_file(fp):
+            rec = build_record(events)
+            if rec is None or rec["micro_state"] not in REAL_COMMAND_COUNTS:
+                continue
+            cmds = tuple(e.get("input", "") for e in events
+                         if e.get("eventid") == "cowrie.command.input")
+            seqs.setdefault(rec["micro_state"], Counter())[cmds] += 1
+            # The TTY transcript size is a property of WHICH command ran, not of
+            # how many: a 1-command DISC_ENV_PROBE session is 86 bytes (99.9% of
+            # 45,710) while a 1-command EXEC_SHELL_OPEN session is 5 bytes (99.5%
+            # of 5,749). A count-keyed table cannot express that and gave both
+            # 86, which left B_network separable at AUC 0.93 for EXEC_SHELL_OPEN.
+            # Carrying the observed size with the sequence makes bytes_in exact.
+            key = (rec["micro_state"], cmds)
+            if len(sizes.setdefault(key, [])) < 24:
+                sizes[key].append(int(rec["bytes_in"]))
+
+    payload = {cls: [[cnt, list(k), sizes.get((cls, k), [])]
+                     for k, cnt in c.most_common(per_class)]
+               for cls, c in seqs.items()}
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(out_path, "wt", encoding="utf-8") as fh:
+        json.dump(payload, fh)
+    return {k: len(v) for k, v in sorted(payload.items())}
+
+
+def _real_command_target(label: str, rng: random.Random) -> Optional[int]:
+    """Command count drawn from the real distribution, or None if unsupported."""
+    dist = REAL_COMMAND_COUNTS.get(label)
+    if dist is None:
+        return None
+    return int(rng.choices([v for v, _ in dist],
+                           weights=[w for _, w in dist], k=1)[0])
+
 
 # Implant upload, conditional on session depth -- see the measurement in
 # `_build_skeleton`. 557 of 1,273 sessions with 5+ commands carry one; 16 of
@@ -272,145 +436,166 @@ _TTYLOG_TABLE: Dict[int, Tuple[Tuple[int, float], ...]] = {
 _TTY_CHARS_SLOPE = 1.13      # bytes of transcript per byte of echoed command
 _TTY_BLOCK_CONST = 3         # fitted intercept, blocks of >= 3 commands
 
-# ── Measured inter-arrival gaps, PER EVENT TYPE ──────────────────────────────
-# WHY NOT `kill_chain_simulator.generate_event_timestamps`. That function fits a
-# three-component lognormal mixture to the POOLED real gap distribution and then
-# shuffles the drawn gaps across the session. Pooling is the problem. Stratified
-# by the event each gap arrives at, the real capture says the pacing is almost
-# the OPPOSITE of intuition:
+# ── Measured inter-arrival gaps: BOOTSTRAPPED, not fitted ───────────────────
+# Gaps are drawn by resampling ACTUAL gaps from the real capture, keyed by the
+# event each gap arrives at AND the kind of session it belongs to.
 #
-#   gap arriving at            n        p50 s     frac < 100 ms
-#   command.input           84,815     0.0004         98.1%     <- fastest
-#   client.version         112,478     0.0005         82.8%
-#   session.closed         114,490     0.0470         54.4%
-#   client.kex             110,726     0.1829         27.4%
-#   log.closed              53,466     0.2364          0.1%
-#   session.params          53,466     0.8840          0.0%
-#   login.success          104,385     1.0127          0.1%     <- slowest common
-#   client.size              1,269     1.6720          0.0%
-#   file_upload                580    59.7255          1.2%
-#   POOLED                 639,570     0.1817         42.5%
+# WHY NOT A FITTED DISTRIBUTION -- this was measured, not assumed. The first
+# version sampled a 10-point quantile grid per event type by inverse CDF with
+# log-linear interpolation. It reproduced every summary statistic that was
+# checked: duration medians per session type within 15%, the long-pause rate
+# within 0.5 percentage points in all four buckets, the pooled sub-100ms share
+# within 6 points. A gradient-boosted tree still told real from generated Cowrie
+# sessions at AUC 0.9782-0.9956 using the A_temporal block ALONE, within a single
+# micro-state (so it was not class composition doing the work).
 #
-# Commands are the FASTEST events in a real Cowrie session, because the traffic
-# is scripted bots pasting a command block -- not humans typing. Authentication
-# and shell setup are the slow parts. A shuffled pooled draw gets this backwards
-# and will happily put a 13-second idle pause between `connect` and
-# `client.version`, which no real session contains.
+# Matching the percentiles is not matching the distribution. A 10-point grid
+# leaves kinks at the decile boundaries that a tree splits on, real gaps are
+# partly quantised (Cowrie's 120 s idle timeout recurs near-exactly), and no
+# independent per-gap draw reproduces correlation within a session.
 #
-# So gaps are drawn per event type by inverse-CDF sampling of the real quantile
-# grid below (log-linear interpolation between levels, since the gaps span five
-# orders of magnitude). Reproducing the real distribution directly beats fitting
-# a parametric form to it: the grids are bimodal (82.8% of `client.version` gaps
-# are sub-millisecond, the rest run to seconds) and no single lognormal fits that.
+# Resampling real gaps reproduces all of that by construction, and it deletes
+# code: the fitted version needed 60 lines of quantile tables plus a long-pause
+# gate with four calibrated probabilities to re-impose structure that the pools
+# simply carry.
 #
-# CONSEQUENCE, AND IT IS THE POINT: `session_duration_s` is now the SUM of the
-# generated gaps, not an independently drawn number. Duration, n_events,
-# events_per_sec and commands_per_min are all COMPUTED from the event stream by
-# `build_record` and the extractors. The frozen generator drew duration and
-# n_events independently and let the timestamps be rescaled to fit, which is the
-# same "generate what should be computed" mistake as the broken log1p pairs.
-_Q_LEVELS: Tuple[float, ...] = (0.0, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99, 1.00)
+# SESSION BUCKETS. The same event means different things in different sessions --
+# the gap into `session.closed` has p50 0.0007 s when a shell ran and 4.6 s when
+# nobody authenticated. Bucketing is what removes the need for explicit pause
+# gating, because the concentration of long pauses lives in the pool it was
+# measured from:
+#
+#   bucket                     real sessions with ANY gap > 30 s
+#   no_login                                 23.52%
+#   login_nocmd                               0.42%
+#   login_shallow (1-4 cmds)                  0.24%
+#   login_deep    (5+ cmds)                  37.31%
+#
+# Pools live in `cowrie_gaps.npz` beside this module, built by `build_gap_pools()`
+# and committed, so the generator never needs the gitignored capture at runtime.
+_GAP_POOLS_PATH = Path(__file__).with_name("cowrie_gaps.npz")
+_GAP_POOLS: Optional[Dict[str, object]] = None
 
-# The gap into `session.closed` is the one that MUST be split by session type --
-# pooling it spans a factor of 7,000 and hides the idle timeout entirely:
-#
-#   session type            n        p50 s      p90 s     what it is
-#   login + commands    52,843     0.00068     0.00096    closes the instant
-#                                                          the shell exits
-#   login, no commands  52,758     0.47519     1.02017    bot hangs up after
-#                                                          authenticating
-#   no login             8,889     4.61549   119.75893    scan connect left to
-#                                                          rot until Cowrie's
-#                                                          120 s idle timeout
-#
-# That 120 s cliff IS the `session.closed` p99 of 119.33 in the pooled grid, and
-# it belongs to 8% of sessions. Keyed in `_sample_gap` via `_close_key()`.
-_GAP_QUANTILES: Dict[str, Tuple[float, ...]] = {
-    "cowrie.session.closed:login_cmd":
-        (0.000353, 0.000584, 0.000597, 0.000622, 0.000677, 0.000746, 0.000961,
-         0.002916, 0.018581, 175.007834),                        # n=52,843
-    "cowrie.session.closed:login_nocmd":
-        (0.000425, 0.043551, 0.064365, 0.144028, 0.475188, 0.595513, 1.020167,
-         1.650137, 8.633660, 300.711041),                        # n=52,758
-    "cowrie.session.closed:no_login":
-        (0.000414, 0.000608, 0.000724, 0.214339, 4.615490, 22.402634,
-         119.758932, 120.002069, 120.011182, 121.115121),        # n=8,889
-    "cowrie.session.closed":
-        (0.000353, 0.000597, 0.000616, 0.000684, 0.047005, 0.482699, 0.962759,
-         4.175927, 119.330002, 300.711041),                      # n=114,490 pooled
-    "cowrie.client.version":
-        (0.000232, 0.000313, 0.000328, 0.000357, 0.000453, 0.022544, 0.351728,
-         1.069712, 4.763479, 101.829510),                        # n=112,478
-    "cowrie.client.kex":
-        (0.000266, 0.000530, 0.000674, 0.074653, 0.182890, 0.244007, 0.322515,
-         0.889968, 3.571490, 104.030257),                        # n=110,726
-    "cowrie.login.success":
-        (0.042794, 0.196807, 0.351097, 0.581543, 1.012735, 1.495806, 2.705587,
-         5.298609, 17.241253, 117.457441),                       # n=104,385
-    "cowrie.command.input":
-        (0.000326, 0.000347, 0.000352, 0.000368, 0.000425, 0.018068, 0.068002,
-         0.078072, 0.435299, 10.102933),                         # n=84,815
-    "cowrie.session.params":
-        (0.027905, 0.655641, 0.680933, 0.738203, 0.884024, 1.181320, 2.138575,
-         5.576636, 9.874477, 262.571908),                        # n=53,466
-    "cowrie.log.closed":
-        (0.000421, 0.156672, 0.165449, 0.193481, 0.236429, 0.414681, 1.109676,
-         2.734515, 5.133222, 299.155560),                        # n=53,466
-    "cowrie.command.failed":
-        (0.006760, 0.021180, 0.021366, 0.021765, 0.022656, 0.067793, 0.073104,
-         0.074660, 0.082773, 0.735425),                          # n=2,535
-    "cowrie.client.size":
-        (0.412876, 0.916558, 1.046200, 1.292001, 1.671964, 2.766391, 4.969982,
-         6.282329, 9.419098, 19.687291),                         # n=1,269
-    "cowrie.login.failed":
-        (0.000385, 0.447903, 0.547219, 0.682244, 1.113242, 2.807672, 7.460106,
-         10.541151, 19.366091, 31.703608),                       # n=1,216
-    "cowrie.session.file_upload":
-        (0.000328, 21.485499, 25.505984, 34.549092, 59.725530, 138.085679,
-         229.443831, 282.266800, 300.004595, 300.541831),        # n=580
-    "cowrie.client.var":
-        (0.290888, 0.304808, 0.307862, 0.322764, 0.335103, 0.350973, 0.364313,
-         0.365801, 0.756231, 0.812946),                          # n=106
-    "cowrie.session.file_download":
-        (0.456054, 3.948769, 3.967697, 4.000776, 4.070902, 4.096183, 4.290676,
-         4.387669, 4.758228, 4.900435),                          # n=31
-}
+# Below this, a pool cannot support resampling and the broader fallback is used.
+_MIN_POOL = 40
 
-# Pooled grid, for an event type with no measured grid of its own.
-_GAP_QUANTILES_POOLED: Tuple[float, ...] = (
-    0.000232, 0.000355, 0.000400, 0.000650, 0.181700, 0.784000, 1.345500,
-    3.100000, 13.276000, 300.711041)                             # n=639,570
-
-# The busiest real session ran 392.42 s. A generated session that sums past this
-# is truncated by clamping its largest gap, not by rescaling every gap -- which
-# is what compressed the long pauses in the previous design.
+# The busiest real session ran 392.42 s.
 _DURATION_MAX = 400.0
 
-# ── Long pauses belong to specific sessions, not spread evenly ───────────────
-# The grids above have genuinely heavy tails (`session.closed` p99 = 119 s, the
-# idle timeout). Drawing them independently per event spreads those pauses across
-# every session, and the real capture says they are concentrated. Share of real
-# sessions containing ANY inter-arrival gap over 30 s:
-#
-#   no login                n=  8,900    23.52%   <- scan connects that hang
-#   login, 0 commands       n= 52,759     0.42%      until the idle timeout
-#   login, 1-4 commands     n= 51,569     0.24%
-#   login, 5+ commands      n=  1,273    37.31%   <- bot waiting on a payload
-#
-# A 65x spread between neighbouring buckets, so a single pooled rate is useless
-# here -- this is the same trap DATA_INTEGRITY.md section 7 records ("pooled
-# 2.3% vs 78.1% for deep sessions"). A session either qualifies for the tail or
-# has every gap capped at 30 s.
-#
-# NOTE the deep-session figure moved between captures: 78.1% on the 8-day
-# capture (507 sessions), 37.3% here on the 13-day one (1,273 sessions). These
-# constants follow the 13-day capture, because that is the data they are
-# calibrated against.
-_LONG_PAUSE_CAP = 30.0
-P_LONG_PAUSE_NO_LOGIN   = 0.235
-P_LONG_PAUSE_NO_CMDS    = 0.004
-P_LONG_PAUSE_FEW_CMDS   = 0.002      # 1-4 commands
-P_LONG_PAUSE_MANY_CMDS  = 0.373      # 5 or more
+
+def _session_bucket(did_login: bool, n_commands: int) -> str:
+    """Which gap pool a session draws from. MUST match `build_gap_pools()`."""
+    if not did_login:
+        return "no_login"
+    if n_commands == 0:
+        return "login_nocmd"
+    if n_commands <= 4:
+        return "login_shallow"
+    return "login_deep"
+
+
+def _load_gap_pools() -> Dict[str, object]:
+    global _GAP_POOLS
+    if _GAP_POOLS is None:
+        import numpy as np
+        if not _GAP_POOLS_PATH.exists():
+            raise FileNotFoundError(
+                f"{_GAP_POOLS_PATH} is missing -- it holds the real gaps this "
+                f"generator resamples. Rebuild from a capture with:\n"
+                f"  python -m src.generators.cowrie_simulator build-gaps "
+                f"--logs <dir>")
+        with np.load(_GAP_POOLS_PATH) as z:
+            _GAP_POOLS = {k: z[k] for k in z.files}
+    return _GAP_POOLS
+
+
+def _bootstrap_gap(eventid: str, bucket: str, rng: random.Random) -> float:
+    """One real gap, resampled with replacement.
+
+    Falls back (event, bucket) -> (event, any bucket) -> (any, any), so a
+    combination the capture never produced still yields a plausible gap instead
+    of raising. The fallback is explicit rather than silent: a missing pool for a
+    COMMON event type means the capture used to build the pools was too small.
+    """
+    pools = _load_gap_pools()
+    for key in (f"{eventid}|{bucket}", f"{eventid}|*", "*|*"):
+        arr = pools.get(key)
+        if arr is not None and len(arr) >= _MIN_POOL:
+            return float(arr[rng.randrange(len(arr))])
+    raise RuntimeError(f"no gap pool for {eventid!r} / {bucket!r}")
+
+
+def build_gap_pools(log_dir, out_path=None, per_pool: int = 1500,
+                    per_seq: int = 2500, seed: int = 42) -> Dict[str, int]:
+    """Extract real inter-arrival gaps from a Cowrie capture into `.npz`.
+
+    Run once per capture; commit the output so the generator does not depend on
+    the irreplaceable, gitignored logs at runtime. Returns pool sizes.
+
+    Only timestamps and event ids are read. Everything else in the capture is
+    attacker-written data and nothing from it is executed.
+    """
+    import numpy as np
+    from src.parsers.cowrie_parser import parse_cowrie_file, to_ts
+
+    out_path = Path(out_path) if out_path else _GAP_POOLS_PATH
+    raw: Dict[str, List[float]] = {}
+    sequences: Dict[str, List[List[float]]] = {}
+    for fp in sorted(Path(log_dir).glob("cowrie.json*")):
+        for events in parse_cowrie_file(fp):
+            events.sort(key=lambda e: e.get("timestamp", ""))
+            ids = [e.get("eventid", "") for e in events]
+            ts = [to_ts(e.get("timestamp", "")) for e in events]
+            bucket = _session_bucket(
+                any(i.startswith("cowrie.login") for i in ids),
+                ids.count("cowrie.command.input"))
+            this_seq: List[float] = []
+            for i in range(len(events) - 1):
+                gap = ts[i + 1] - ts[i]
+                if gap < 0.0:
+                    continue            # clock skew; the walk must stay ascending
+                for key in (f"{ids[i + 1]}|{bucket}", f"{ids[i + 1]}|*", "*|*"):
+                    raw.setdefault(key, []).append(gap)
+                this_seq.append(gap)
+            if this_seq:
+                sequences.setdefault(bucket, []).append(this_seq)
+
+    # Whole-session gap SEQUENCES, per bucket. The per-event pools above match
+    # every MARGINAL; they cannot match the JOINT distribution, because gaps
+    # inside one session are correlated and an independent per-gap draw throws
+    # that away. Measured: after per-gap bootstrapping, no single temporal
+    # feature separated real from generated better than AUC 0.626, yet the tree
+    # using all 24 together still reached 0.96 -- the signal was purely in the
+    # correlations. Copying a real session's gap vector reproduces them exactly.
+    #
+    # Aligned from the START of the session, not a random window, because real
+    # Cowrie skeletons are stereotyped (90% of sessions are one of two event
+    # orders), so gap i of a same-bucket real session is the same kind of gap.
+    seq_rng = np.random.RandomState(seed + 1)
+    for bucket, seqs in list(sequences.items()):
+        if not seqs:
+            continue
+        if len(seqs) > per_seq:
+            seqs = [seqs[i] for i in seq_rng.choice(len(seqs), per_seq, replace=False)]
+        flat = np.concatenate([np.asarray(x, dtype=np.float32) for x in seqs])
+        offs = np.cumsum([0] + [len(x) for x in seqs]).astype(np.int32)
+        raw[f"SEQ|{bucket}|flat"] = flat
+        raw[f"SEQ|{bucket}|offs"] = offs
+
+    rng = np.random.RandomState(seed)
+    pools = {}
+    for key, vals in raw.items():
+        if key.startswith("SEQ|"):
+            pools[key] = np.asarray(vals)
+            continue
+        a = np.asarray(vals, dtype=np.float32)
+        if len(a) > per_pool:
+            a = a[rng.choice(len(a), per_pool, replace=False)]
+        pools[key] = a
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(out_path, **pools)
+    return {k: len(v) for k, v in sorted(pools.items())}
+
 
 # Real capture max was 28 commands in one session and 41 events. 48 leaves the
 # deep synthetic phases a little headroom without inventing sessions the
@@ -422,7 +607,6 @@ COMMANDS_CEILING = 32
 # This is measured, not assumed: all 8,898 real RECON_IP_SCAN sessions and all
 # 52,750 real ACCESS_BRUTE_SSH sessions carry ZERO commands.
 _PREAUTH_PREFIXES = ("RECON_", "ACCESS_")
-
 
 # ── The labelled state must be the session's DEEPEST, not its first ──────────
 # `kill_chain_simulator.generate_session_sequence(force_start=label)` pins the
@@ -509,38 +693,47 @@ def _ttylog_size(cmds: Sequence[str], rng: random.Random) -> int:
     return max(0, int(round(size * rng.uniform(0.98, 1.03))))
 
 
-def _sample_gap(eventid: str, rng: random.Random) -> float:
-    """One inter-arrival gap, drawn from the real distribution for `eventid`.
 
-    Inverse-CDF sampling on the measured quantile grid, interpolated in LOG space
-    because the grids span 0.0002 s to 300 s. Log interpolation is what keeps the
-    sub-millisecond bulk sub-millisecond: linear interpolation between the 50th
-    (0.000425 s) and 75th (0.018 s) percentiles of `command.input` would put most
-    of that band two orders of magnitude too high, and `frac_sub100ms` with it.
+
+
+
+def _bootstrap_sequence(bucket: str, n_gaps: int, eventids: Sequence[str],
+                        rng: random.Random) -> List[float]:
+    """`n_gaps` gaps copied from ONE real session of the same bucket.
+
+    Preserves within-session correlation, which per-gap draws cannot: after
+    per-gap bootstrapping no single temporal feature separated real from
+    generated better than AUC 0.626, yet all 24 together still reached 0.96, so
+    the remaining signal was entirely in the correlations.
+
+    DONOR LENGTH MUST MATCH, and that is measured, not cosmetic. Gaps are copied
+    from the START (real Cowrie skeletons are stereotyped, so gap i is the same
+    kind of gap), which means truncating a long donor discards its TAIL -- and in
+    a real deep session the tail is where the 92-second implant-upload pause
+    sits. Copying the first 10 gaps of a 35-gap donor dropped the deep-session
+    long-pause rate from a measured 37.3% to 0.5%. So a donor is only used when
+    its length is close to what is needed; otherwise per-event bootstrapping
+    takes over, which reproduces the per-bucket pause rate correctly on its own.
+
+    The 36 micro-states with no real counterpart always land in the fallback.
+    That is honest rather than a gap: there is no real session of that shape to
+    copy from.
     """
-    import math
-    grid = _GAP_QUANTILES.get(eventid, _GAP_QUANTILES_POOLED)
-    u = rng.random()
-    for i in range(len(_Q_LEVELS) - 1):
-        lo, hi = _Q_LEVELS[i], _Q_LEVELS[i + 1]
-        if lo <= u <= hi:
-            v_lo, v_hi = grid[i], grid[i + 1]
-            w = (u - lo) / (hi - lo)
-            if v_lo > 0.0 and v_hi > 0.0:
-                return math.exp(math.log(v_lo) + w * (math.log(v_hi) - math.log(v_lo)))
-            return v_lo + w * (v_hi - v_lo)
-    return grid[-1]
-
-
-def _long_pause_probability(did_login: bool, n_commands: int) -> float:
-    """Chance this session contains a gap over 30 s -- see the constants above."""
-    if not did_login:
-        return P_LONG_PAUSE_NO_LOGIN
-    if n_commands == 0:
-        return P_LONG_PAUSE_NO_CMDS
-    if n_commands <= 4:
-        return P_LONG_PAUSE_FEW_CMDS
-    return P_LONG_PAUSE_MANY_CMDS
+    pools = _load_gap_pools()
+    flat = pools.get(f"SEQ|{bucket}|flat")
+    offs = pools.get(f"SEQ|{bucket}|offs")
+    if flat is not None and offs is not None and len(offs) > 2:
+        best = None
+        for _ in range(24):
+            k = rng.randrange(len(offs) - 1)
+            a, b = int(offs[k]), int(offs[k + 1])
+            if b - a >= n_gaps and (best is None or (b - a) < best[1] - best[0]):
+                best = (a, b)
+        # Only a donor within 50% of the required length preserves the tail.
+        if best is not None and (best[1] - best[0]) <= max(n_gaps + 2,
+                                                           int(n_gaps * 1.5)):
+            return [float(x) for x in flat[best[0]:best[0] + n_gaps]]
+    return [_bootstrap_gap(eventids[i + 1], bucket, rng) for i in range(n_gaps)]
 
 
 def _event_timestamps(t_start: float,
@@ -549,55 +742,26 @@ def _event_timestamps(t_start: float,
                       *,
                       did_login: bool = True,
                       n_commands: int = 0) -> List[float]:
-    """Ascending timestamps for an event stream, one gap drawn per event type.
+    """Ascending timestamps for an event stream, each gap a resampled real one.
 
-    `session_duration_s` is the sum of these gaps -- derived, never drawn. A
-    stream that sums past the longest real session (392.42 s) has its single
-    largest gap trimmed, so the long pauses that remain keep their true length
-    instead of every gap being squeezed proportionally.
+    `session_duration_s` is the SUM of these gaps -- derived, never drawn.
 
-    Whether this session is allowed a gap over 30 s is decided once, from its
-    shape, rather than per gap -- the real rate ranges from 0.24% to 37% across
-    neighbouring session types.
+    There is no long-pause gating and no 30 s cap. The previous version needed
+    both because it drew gaps from a fitted distribution and then had to bolt the
+    measured per-session-type pause rates back on. Resampling from the session's
+    own bucket brings that structure along for free: a `no_login` session draws
+    from gaps measured in real no-login sessions, 23.52% of which contain a pause
+    over 30 s, and a `login_shallow` one draws from a pool where 0.24% do.
     """
     n = len(eventids)
     if n <= 1:
         return [float(t_start)]
-    allow_pause = rng.random() < _long_pause_probability(did_login, n_commands)
-    close_key = ("cowrie.session.closed:"
-                 + ("login_cmd" if did_login and n_commands > 0
-                    else "login_nocmd" if did_login else "no_login"))
-    gaps = []
-    for i in range(n - 1):
-        nxt = eventids[i + 1]
-        g = _sample_gap(close_key if nxt == "cowrie.session.closed" else nxt, rng)
-        if not allow_pause and g > _LONG_PAUSE_CAP:
-            # Redraw once, then clamp. Redrawing first keeps the bulk of the
-            # distribution intact instead of piling probability mass onto the
-            # cap itself, which would show up as a spike at exactly 30 s.
-            g = _sample_gap(close_key if nxt == "cowrie.session.closed" else nxt, rng)
-            g = min(g, _LONG_PAUSE_CAP)
-        gaps.append(g)
-
-    # Being ALLOWED a pause is not the same as drawing one: a long gap sits in
-    # the top few percent of its grid, so an allowed session usually still came
-    # out short and the realised rate landed near 4% against a measured 37%.
-    # So the pause is placed deliberately when the session qualifies -- the
-    # probability above is the rate of sessions that HAVE one, which is what was
-    # measured.
-    if allow_pause and not any(g > _LONG_PAUSE_CAP for g in gaps):
-        # Never on a command gap: 98.1% of real `command.input` gaps are
-        # sub-100 ms, because the bot pastes its block. The pause is the
-        # honeypot waiting -- an idle timeout before `session.closed`, or a
-        # transfer mid-session.
-        spots = [i for i in range(n - 1)
-                 if eventids[i + 1] not in ("cowrie.command.input",
-                                            "cowrie.command.failed")]
-        if spots:
-            i = spots[-1] if not did_login else rng.choice(spots)
-            gaps[i] = rng.uniform(_LONG_PAUSE_CAP, 120.0)
+    bucket = _session_bucket(did_login, n_commands)
+    gaps = _bootstrap_sequence(bucket, n - 1, eventids, rng)
     total = sum(gaps)
     if total > _DURATION_MAX:
+        # Trim the single longest gap rather than rescaling everything, so the
+        # remaining pauses keep the length they were measured at.
         j = max(range(len(gaps)), key=lambda k: gaps[k])
         gaps[j] = max(1e-6, gaps[j] - (total - _DURATION_MAX))
     out = [float(t_start)]
@@ -695,10 +859,33 @@ def _build_skeleton(label: str,
     # the deep-command sessions that genuinely exist. A session-level repeat
     # factor restores that tail without inventing a new shape: it is the same
     # commands issued again, which is what the real bot does.
-    repeat = 1
-    if rng.random() < P_SCRIPTED_BOT:
-        repeat = rng.randint(2, 5)
-    per_state = _commands_for_sequence(seq, rng, repeat=repeat)
+    _boot = _bootstrap_command_seq(label, rng)
+    real_seq, real_bytes = _boot if _boot is not None else (None, None)
+    if real_seq is not None:
+        # Length comes with the sequence, so no separate count draw.
+        per_state = [real_seq]
+        target = len(real_seq)
+    else:
+        target = _real_command_target(label, rng)
+    if real_seq is not None:
+        pass
+    elif target is None:
+        repeat = 1
+        if rng.random() < P_SCRIPTED_BOT:
+            repeat = rng.randint(2, 5)
+        per_state = _commands_for_sequence(seq, rng, repeat=repeat)
+    else:
+        # Stretch or trim to EXACTLY the real count. Doubling is how the real
+        # 25/28-command sessions arise -- one bot re-running its block -- so the
+        # repetition is the mechanism, not padding.
+        flat_c = [c for st in _commands_for_sequence(seq, rng, repeat=1)
+                  for c in st]
+        if target == 0 or not flat_c:
+            per_state = [[]]
+        else:
+            while len(flat_c) < target:
+                flat_c = flat_c + flat_c
+            per_state = [flat_c[:target]]
     total_cmds = sum(len(c) for c in per_state)
 
     # Authentication. A session that issues commands MUST have logged in first:
@@ -815,7 +1002,13 @@ def _build_skeleton(label: str,
                     issued.append(cmd)
                     n_in_block += 1
                 block.append(cmd)
-            size = _ttylog_size(block, rng)
+            # Measured size for this exact command sequence when we have one;
+            # only the first block takes it, since bytes_in is its sum and the
+            # second block exists only in the rare upload case.
+            if real_bytes is not None and bi == 0:
+                size = int(real_bytes)
+            else:
+                size = _ttylog_size(block, rng)
             sha = _sha256_like(rng)
             ev.append(("cowrie.log.closed", {
                 "ttylog": f"var/lib/cowrie/tty/{sha}", "size": size,
@@ -863,7 +1056,13 @@ def generate_cowrie_events(label: str,
     if label not in LABEL_TO_IDX:
         raise ValueError(f"unknown micro-state {label!r}")
 
-    seq = _sequence_ending_at(label, rng, min_len=min_len, max_len=max_len)
+    if label in REAL_COMMAND_COUNTS:
+        # Real sessions of these classes are a single action -- see
+        # REAL_COMMAND_COUNTS. A multi-state walk here produces a session shape
+        # the honeypot has never recorded, and no gap model can hide that.
+        seq = [label]
+    else:
+        seq = _sequence_ending_at(label, rng, min_len=min_len, max_len=max_len)
     skeleton, issued, did_login = _build_skeleton(label, seq, rng)
 
     if t_start is None:
@@ -1098,6 +1297,20 @@ def write_jsonlines(out_path: Path, n_total: int, seed: int = 42,
 
 def main() -> int:
     import argparse
+    if len(sys.argv) > 1 and sys.argv[1] == "build-gaps":
+        ap = argparse.ArgumentParser(prog="cowrie_simulator build-gaps")
+        ap.add_argument("_cmd")
+        ap.add_argument("--logs", required=True, help="dir holding cowrie.json*")
+        ap.add_argument("--out", default=None)
+        ap.add_argument("--per-pool", type=int, default=1500)
+        a = ap.parse_args()
+        sizes = build_gap_pools(a.logs, a.out, a.per_pool)
+        print(f"wrote {len(sizes)} gap pools to {a.out or _GAP_POOLS_PATH}")
+        for k, v in sizes.items():
+            if v >= _MIN_POOL:
+                print(f"  {k:<48} {v:>6}")
+        return 0
+
     ap = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     ap.add_argument("--out", default="data/processed/cowrie_sim/cowrie.json",
                     help="Cowrie-format JSON log to write")

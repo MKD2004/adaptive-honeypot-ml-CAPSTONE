@@ -6,6 +6,75 @@ snapshot, not a log (that's DECISIONS.md / ERRORS.md).
 
 ---
 
+## Last updated: 2026-11-24 (Dhanya laptop)
+
+### Session summary (2026-11-24) — FIDELITY: generated sessions now match real data as well as real data matches itself
+
+**Read `DATA_INTEGRITY.md` section 9.** Section 8 (2026-11-15) fixed dataset
+INTEGRITY; this session fixed FIDELITY, and corrected how the project reads its
+own fidelity metric.
+
+**The metric was being misread.** `adversarial_auc` fails above 0.6 and both
+datasets score ~1.0, which had been taken as proof of bad fidelity. Controls on
+the real capture alone: a random half-vs-half split scores **0.476-0.516** (the
+method is sound), but **one real bot vs other real bots scores 0.93-1.00**. Real
+data is trivially separable from itself. Fidelity is now judged per feature block
+against that real-vs-real band.
+
+**Four fixes to `cowrie_simulator.py`**, each driven by a measurement:
+1. gaps bootstrapped from the real capture, keyed by (event type, session bucket)
+   — replaces the fitted quantile grid and DELETES the long-pause gate
+2. whole gap SEQUENCES copied from one real session — the residual signal was
+   entirely in between-feature correlations, which per-gap draws destroy
+3. walk pinned to a single state for the 5 real-supported classes — real sessions
+   are single-action (`DISC_ENV_PROBE` is 1 command in 45,710 of 45,712)
+4. real command sequences bootstrapped, carrying each one's measured ttylog size
+
+**Result** — every block now inside its real-vs-real band, A_temporal below it:
+
+```
+class               A_temporal   B_network   C_payload
+ACCESS_BRUTE_SSH      0.6693      0.4944      0.5000
+DISC_ENV_PROBE        0.8158      0.5352      0.5000
+RECON_IP_SCAN         0.7600      0.5897      0.5000
+EXEC_SHELL_OPEN       0.9481      0.5494      0.5751
+reference band      0.93-1.00   0.49-0.61   0.50-0.62
+```
+
+A_temporal went 0.98 -> 0.67-0.95 across the four classes; `C_payload` 1.0000 ->
+0.50-0.58; `B_network` for EXEC_SHELL_OPEN 0.9265 -> 0.5494.
+
+**Two new committed calibration artefacts** beside the module, both regenerable:
+`cowrie_gaps.npz` (450 KB) and `cowrie_commands.json.gz` (350 KB). The latter
+holds attacker-written text verbatim — DATA, never executed.
+
+**Finding worth a paper line:** 45,712 `DISC_ENV_PROBE` sessions use **eight**
+distinct command sequences. Real attacker traffic is overwhelmingly replay, which
+compounds the 29.74% train/test value-overlap problem already recorded.
+
+### IMPORTANT: the dataset on disk is stale
+
+`data/final_v2/` was built 2026-11-15 and predates all four fixes. The fidelity
+numbers above describe the GENERATOR, measured on freshly generated sessions
+against the raw capture — never on the saved arrays. **A full rebuild
+(01 -> 02 -> 05) is required before any number from `final_v2` is quoted
+alongside section 9.** That rebuild was in flight when this entry was written.
+
+### Next
+
+- **Finish and validate the rebuild**, then re-run the section 8 integrity table
+  and the section 9 fidelity table on the rebuilt arrays.
+- **Part 2 of DATA_INTEGRITY section 4** (TabSyn primitives-only) remains NOT
+  STARTED. TabSyn is currently excluded from the build (`HS_INCLUDE_TABSYN=1` to
+  opt in), which sidesteps it — the generator now supplies the volume instead.
+- **Part 0** (extractors return NaN, never fabricate) and **Part 3**
+  (`assert_valid` as a training gate) still not done.
+- `semantic_pca.pkl` has been refitted on the new corpus, so **live MT3 inference
+  is wrong until retrain**. `semantic_pca.pkl.bak-pre-rebuild-20261119` restores
+  the old axes if the demo is needed first.
+
+---
+
 ## Last updated: 2026-11-15 (Dhanya laptop)
 
 ### Session summary (2026-11-15) — REBUILD PART 1 DONE: the generator emits logs, not features

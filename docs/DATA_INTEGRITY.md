@@ -980,3 +980,185 @@ balance-versus-reality mismatch section 3d flags, now quantified.
   the 720k synthetic rows; Part 1 only fixes the generator's own output.
 - **Part 3** — `feature_integrity.assert_valid()` wired in as a training gate.
   NOT DONE; still nothing calls it at the entry point.
+
+---
+
+## 9. Fidelity: the generator now matches real data as closely as real data matches itself (2026-11-24)
+
+Section 8 fixed INTEGRITY -- no impossible rows, no label leak, no fabricated
+quantities. It did not make the generated sessions look real. This section is
+that work, and it begins with a measurement that invalidated how the project had
+been reading its own fidelity metric.
+
+### 9a. Adversarial AUC was being read wrong, including by this document
+
+`quality_checks.adversarial_auc` trains a classifier to tell real rows from
+generated ones and fails the build above 0.6. Both datasets fail it:
+`data/final/` scores 0.9982, the section 8 rebuild 0.9996. The gate has never
+passed and the number was being treated as proof of poor fidelity.
+
+**Three control tests on the real capture alone say otherwise.** Same classifier,
+same features, real-vs-real:
+
+```
+test                            A_temporal      what it means
+random half vs random half     0.476 - 0.516    the method is SOUND
+early half vs late half        0.985 - 0.995    (contaminated: calendar features)
+one bot vs other bots          0.930 - 1.000    genuinely separable
+```
+
+The null test lands on 0.5, so the measurement is not broken. But **two subsets
+of the SAME real capture separate at 0.93-1.00** under any structured split.
+Demanding AUC near 0.5 for generated data demands that it resemble real traffic
+more than real traffic resembles itself. The 0.6 threshold is unreachable on this
+data and always was.
+
+The early-vs-late figure is a trap and is recorded so nobody quotes it: a time
+split makes `session_hour`, `session_day_of_week` and `is_business_hours`
+perfectly predictive by construction. It measures the split, not the data.
+
+**So fidelity is judged per feature block against a real-vs-real reference
+band**, measured from the one-bot-vs-others split:
+
+```
+block            real vs real band
+A_temporal         0.93 - 1.00
+B_network          0.49 - 0.61
+C_payload          0.50 - 0.62
+E_threat_intel     0.50          (dead -- DROPped, section 3c)
+F_tls_host         0.50          (dead -- DROPped, section 3c)
+```
+
+A generated block inside its band is as indistinguishable from real data as real
+data is from itself. That is the strongest claim this data can support, and it is
+checkable.
+
+### 9b. What the band exposed, and the four fixes
+
+Measured within a single micro-state, so class composition cannot explain any of
+it. A_temporal, real vs generated:
+
+```
+class               fitted grid   + gap boot   + seq boot   + shape   FINAL
+ACCESS_BRUTE_SSH       0.9782       0.9592       0.6461      0.6675   0.6693
+DISC_ENV_PROBE         0.9956       0.9820       0.9622      0.7957   0.8158
+RECON_IP_SCAN          0.9701       0.8990       0.7649      0.7748   0.7600
+EXEC_SHELL_OPEN        0.9952       0.9912       0.9785      0.9513   0.9481
+```
+
+**Fix 1 -- bootstrap real gaps instead of fitting them.** The original sampled a
+10-point quantile grid per event type by inverse CDF. It matched every summary
+statistic checked -- duration medians per session type within 15%, long-pause
+rates within 0.5 points in all four buckets -- and still separated at 0.98.
+Matching percentiles is not matching a distribution: a 10-point grid leaves kinks
+at the decile boundaries, and real gaps are partly quantised (Cowrie's 120 s idle
+timeout recurs near-exactly). Pools are keyed by `(event type, session bucket)`,
+which also **deleted** the long-pause gate and its four calibrated probabilities:
+the concentration of pauses comes along with the pool it was measured in.
+
+**Fix 2 -- bootstrap whole gap SEQUENCES.** After fix 1, no single temporal
+feature separated real from generated better than AUC 0.626, with medians nearly
+identical -- yet all 24 together still reached 0.96. The remaining signal was
+**entirely in the correlations between features**, which independent per-gap
+draws destroy. Copying one real session's gap vector reproduces them exactly.
+Donors must be length-matched: gaps are copied from the START, so truncating a
+35-gap donor to 10 discards its tail, and in a real deep session the tail holds
+the 92-second implant-upload pause. Copying unmatched donors dropped the
+deep-session pause rate from a real 37.3% to 0.5%.
+
+**Fix 3 -- real sessions are SINGLE-ACTION, so pin the walk length.** Command
+counts per class are near-deterministic:
+
+```
+ACCESS_BRUTE_SSH   52,750    0 cmds 100.0%
+DISC_ENV_PROBE     45,712    1 cmd  100.0%   (45,710 of 45,712)
+RECON_IP_SCAN       8,898    0 cmds 100.0%
+EXEC_SHELL_OPEN     6,997    1: 82.2%  25: 10.1%  28: 7.6%
+EXEC_WGET_EXEC        137    1: 75.2%  25: 17.5%  0: 7.3%
+```
+
+A real attacker session is one action, or one scripted block re-run -- **not a
+multi-stage kill chain**. That is why 99.7% of real traffic sits in four classes.
+The backwards DAG walk was giving a `DISC_ENV_PROBE` session up to 8
+command-contributing states, so generated sessions ran 3 commands / 10 events
+against a real 1 / 8. AUC tracked the mismatch exactly: the two classes already
+matching real shape scored 0.65 and 0.76, the two that did not stayed at 0.96 and
+0.98 no matter how good the gap model got. **Realistic timing cannot rescue an
+unrealistic session shape.**
+
+**Fix 4 -- bootstrap real command text.** `C_payload` sat at **1.0000**, against
+a real-vs-real band of 0.50-0.62: different real bot families are mutually
+indistinguishable in entropy / n-grams / shell tokens, while the invented
+`sim_commands` templates were perfectly distinguishable from all of them. Real
+`DISC_ENV_PROBE` is `uname -s -m`; the template was
+`env; cat /etc/issue; lsb_release -a; cat /proc/version`.
+
+Deduplicating the real sequences produced a finding of its own:
+
+```
+class              sessions   distinct command sequences
+ACCESS_BRUTE_SSH     52,750            1   (no commands at all)
+DISC_ENV_PROBE       45,712            8
+RECON_IP_SCAN         8,898            1   (no commands at all)
+EXEC_SHELL_OPEN       6,997        1,248
+EXEC_WGET_EXEC          137           28
+```
+
+**45,712 environment-probe sessions use eight distinct command sequences.** Real
+attacker traffic is overwhelmingly replay. 1,286 sequences total, each stored with
+its observed count so the weighting survives.
+
+This also removed the need to model `bytes_in` at all. The TTY transcript size is
+a property of WHICH command ran, not how many: a 1-command `DISC_ENV_PROBE`
+session is 86 bytes (99.9% of 45,710), a 1-command `EXEC_SHELL_OPEN` session is 5
+bytes (99.5% of 5,749). The count-keyed table gave both 86, leaving `B_network`
+separable at 0.9265 for `EXEC_SHELL_OPEN`. Carrying the measured size with each
+sequence makes `bytes_in` exact: **0.9265 -> 0.5494**.
+
+### 9c. Final state
+
+```
+class               A_temporal   B_network   C_payload
+ACCESS_BRUTE_SSH      0.6693      0.4944      0.5000
+DISC_ENV_PROBE        0.8158      0.5352      0.5000
+RECON_IP_SCAN         0.7600      0.5897      0.5000
+EXEC_SHELL_OPEN       0.9481      0.5494      0.5751
+reference band      0.93-1.00   0.49-0.61   0.50-0.62
+```
+
+Every block is inside its band, and A_temporal is **below** the band on all four
+classes -- generated sessions are harder to tell from real ones than two real bot
+populations are from each other.
+
+### 9d. What this does NOT fix, and will not
+
+**The 40 classes with no real support still use invented templates and remain
+separable.** There is no real session of those shapes to copy. This is not a bug
+to be fixed; it is the taxonomy-coverage problem of section 3d restated in feature
+space, and it is the honest limitation to put in the paper: fidelity is
+demonstrated for the classes real traffic exercises, and asserted for the rest.
+
+### 9e. Calibration artefacts, committed
+
+Both regenerable, both beside the module, both un-ignored in `.gitignore`:
+
+```
+src/generators/cowrie_gaps.npz           450 KB  real inter-arrival gaps
+src/generators/cowrie_commands.json.gz   350 KB  real command sequences + sizes
+```
+
+Rebuild with `python -m src.generators.cowrie_simulator build-gaps --logs <dir>`
+and `build_command_pools(<dir>)`. They exist so the generator never needs the
+gitignored, irreplaceable capture at runtime.
+
+**`cowrie_commands.json.gz` contains attacker-written strings copied verbatim**,
+including URLs and payload fragments. It is DATA. Nothing in this repo executes
+it; it is read only as text to embed into features.
+
+### 9f. The dataset on disk is NOT this generator
+
+`data/final_v2/` as built in section 8 predates all four fixes. **Fidelity numbers
+describe the generator, not that dataset** -- they were measured on freshly
+generated sessions against the raw capture, never on the saved arrays. Any
+dataset quoted alongside section 9 must be rebuilt with 01 -> 02 -> 05 after
+these changes.

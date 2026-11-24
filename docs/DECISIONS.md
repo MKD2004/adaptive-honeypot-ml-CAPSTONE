@@ -5,6 +5,57 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-24 — Fidelity: bootstrap real data, and judge it against a real-vs-real band
+
+Four decisions from one session, all driven by the same measurement.
+
+**1. Judge fidelity per feature block against a real-vs-real reference band, not
+against AUC 0.5.** `quality_checks` fails any dataset scoring above 0.6
+adversarial AUC; `data/final/` scores 0.9982 and has always failed. Control tests
+settle what the number means: a random half-vs-half split of the real capture
+scores 0.476-0.516 (so the method is sound), but **one real bot versus other real
+bots scores 0.93-1.00**. Real data is trivially separable from itself under any
+structured split. The band, from the bot split: A_temporal 0.93-1.00,
+B_network 0.49-0.61, C_payload 0.50-0.62. Inside the band is the strongest claim
+this data supports. Do NOT quote the early-vs-late time split (0.985-0.995) --
+calendar features make it predictive by construction.
+
+**2. Bootstrap real gaps rather than fit them, and bootstrap whole sequences.**
+A fitted 10-point quantile grid matched every summary statistic checked and still
+separated at 0.98. After per-gap bootstrapping, no single temporal feature beat
+AUC 0.626 while all 24 together still reached 0.96 -- the signal was purely in
+the between-feature correlations, which only sequence copying reproduces. Donors
+must be length-matched: copying the first 10 gaps of a 35-gap donor discards the
+tail where the 92-second upload pause lives, and dropped the deep-session pause
+rate from 37.3% to 0.5%. Net effect on the code is a DELETION: the quantile
+tables and the four-probability long-pause gate both went, because bucketed pools
+carry that structure themselves.
+
+**3. Real sessions are single-action, so the labelled class pins the walk to one
+state.** `DISC_ENV_PROBE` is exactly 1 command in 45,710 of 45,712 real sessions;
+`ACCESS_BRUTE_SSH` and `RECON_IP_SCAN` are 0 commands in 100%. A real attacker
+session is one action or one scripted block re-run, not a multi-stage kill chain
+-- which is why 99.7% of real traffic is four classes. The backwards DAG walk was
+producing 3 commands / 10 events for a class whose real shape is 1 / 8, and no
+amount of timing realism hid it. Classes with a handful of real sessions
+(EVASION_HIST_ERASE 6, DISC_PROC_ENUM 1) are deliberately NOT pinned --
+constraining a class on six observations is overfitting.
+
+**4. Bootstrap real command text, and carry its measured ttylog size.**
+`C_payload` was at 1.0000 against a 0.50-0.62 band. Deduplicating revealed that
+45,712 environment-probe sessions use eight distinct command sequences -- real
+attacker traffic is almost entirely replay -- so the pools are tiny (1,286
+sequences, 350 KB). Storing each sequence's observed `bytes_in` removed the need
+to model transcript size at all: size depends on WHICH command ran (1-command
+DISC_ENV_PROBE 86 bytes, 1-command EXEC_SHELL_OPEN 5 bytes), which a count-keyed
+table cannot express.
+
+**Accepted limitation:** the 40 classes with no real support keep invented
+templates and stay separable. There is no real session of those shapes to copy,
+so this is the section 3d coverage problem in feature space, not a defect.
+
+---
+
 ## 2026-11-15 — Synthetic Cowrie: keep the intended label, record the parser's too
 
 `cowrie_simulator.py` generates sessions as Cowrie events and parses them with

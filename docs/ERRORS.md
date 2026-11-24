@@ -7,6 +7,50 @@ something from scratch. Newest first.
 
 ---
 
+## Sampling with `.head()` makes real data look fake (2026-11-24)
+
+**What breaks.** An adversarial-AUC check compared real Cowrie sessions against
+generated ones and reported `A_temporal` AUC = 1.0000 for `DISC_ENV_PROBE` --
+apparently perfect separability. A second run on the same data reported 0.7957.
+
+**Root cause.** The first run built its real sample with
+`df.groupby("micro_state").head(700)`. Sessions were sorted by time, so `.head()`
+returned the EARLIEST 700 -- all from one log file, inside a narrow window. The
+calendar features in A_temporal (`session_hour`, `session_day_of_week`,
+`is_business_hours`) were therefore near-constant for the real side and spread
+across 13 days on the generated side. The classifier split on the clock, not on
+the data.
+
+**Fix.** Sample randomly: `rs.choice(idx, n, replace=False)` per class. The
+0.7957 figure is the trustworthy one.
+
+**How to tell if it is happening again.** Any real-vs-generated AUC at or near
+1.0000 on A_temporal. Check whether the real sample spans the full capture
+window: `df.t_start.max() - df.t_start.min()` should be days, not minutes. The
+same contamination is why the early-vs-late real-vs-real split scores 0.985-0.995
+and must never be quoted as a fidelity result (DATA_INTEGRITY.md 9a).
+
+**Related.** This is the third time in this project that a pooled or non-random
+statistic pointed the wrong way and a stratified one corrected it. Stratify, and
+sample randomly, before concluding.
+
+---
+
+## A `scratchpad/grp.py` shadowed the stdlib and broke pandas (2026-11-24)
+
+**What breaks.** Running an analysis script produced
+`AttributeError: partially initialized module 'pandas' ... has no attribute
+'DataFrame' (most likely due to a circular import)` -- nothing to do with pandas.
+
+**Root cause.** The script was named `grp.py`. `pandas.io.common` imports
+`tarfile`, which imports the stdlib module `grp`. The script's own directory is
+first on `sys.path`, so `import grp` found the script instead, mid-import.
+
+**Fix.** Do not name scratch scripts after stdlib modules. `grp`, `io`, `code`,
+`types`, `select`, `signal`, `token` and `copy` are the easy ones to hit.
+
+---
+
 ## A generated Cowrie log reads back as `source: "cowrie_real"` (2026-11-15)
 
 **What breaks.** `cowrie_simulator.write_jsonlines()` produces a genuine Cowrie

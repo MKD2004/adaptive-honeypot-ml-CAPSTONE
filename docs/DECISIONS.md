@@ -5,6 +5,39 @@ don't re-debate or accidentally re-break it later. Newest first.
 
 ---
 
+## 2026-11-24 — donor pools are keyed by CLASS, and TSTR measures the wrong thing by default
+
+**Decision: sequence donor pools are keyed `(class, bucket)`, not `bucket`.**
+Section 12e blamed `EXEC_SHELL_OPEN`'s 0.9756 temporal AUC on missing
+length-matched donors. That was wrong: the length hit rate was already 100%. The
+pools were class-blind, and `login_shallow` is 88.6% `DISC_ENV_PROBE` whose real
+timing differs from `EXEC_SHELL_OPEN`'s by 2.9x on duration and 2.2x on the
+typical gap -- so generated sessions inherited the wrong class's rhythm. Keying by
+class took `EXEC_SHELL_OPEN` to 0.9127 and its duration to 7.241 s against a real
+7.509 s. Other classes moved within noise because they already dominated their
+buckets.
+
+**Accepted permanent limit:** overall donor hit rate is 78%, and the misses are
+the synthetic-only mid-depth classes. Real sessions have ~7 or ~34 gaps and
+nothing between 10 and 19, which is where those classes sit. There is no real
+session of that shape to copy, so they keep the per-event fallback.
+
+**Decision: TSTR must be reported per feature set, not as one number.** On the
+full 128 features TSTR is 0.9996 (class-blind) vs 0.9970 (class-aware) -- better
+fidelity scores marginally WORSE, and both are saturated, because three
+structural counts (`n_commands`, `login_attempts`, `n_events`) almost fully
+determine the 4 real-supported classes and the generator pins them to the real
+distributions by construction. Restricted to timing features the same comparison
+gives 0.7755 vs 0.9687, **+0.1932**.
+
+So the answer to "does better temporal fidelity improve real-data predictive
+performance" is conditional and must be written that way: yes by ~0.19 where
+timing carries the signal, and unmeasurable where structural counts already
+saturate the task. Quoting 0.9996 as evidence the synthetic data is good would be
+wrong -- it is evidence the task is trivial.
+
+---
+
 ## 2026-11-24 — group D is quarantined, and gen_<split>.npy ships
 
 **Decision 1: no `D_semantic` result is usable until text is deduplicated before

@@ -1658,3 +1658,114 @@ consistent with TSTR at 0.035. The defensible claim is narrow and checkable:
 
 Do not write "the synthetic data is statistically indistinguishable from real
 traffic". Write the sentence above, and report the per-block table.
+
+---
+
+## 13. Donor pools are class-aware, and what TSTR does and does not show (2026-11-24)
+
+### 13a. Donor LENGTH was never the binding constraint -- class was
+
+Section 12e left `EXEC_SHELL_OPEN` at `A_temporal` 0.9756 and blamed a shortage
+of length-matched donors for its deep 25-command variant. **That diagnosis was
+wrong.** Measured hit rate for `_bootstrap_sequence` finding a length-matched
+donor:
+
+```
+EXEC_SHELL_OPEN   login_shallow 100.0%   login_deep 100.0%
+```
+
+The pools were **class-blind**. A bucket mixes classes whose real timing
+genuinely differs:
+
+```
+login_shallow pool composition      real timing in that same bucket
+  DISC_ENV_PROBE    45,711 (88.6%)    dur p50 2.123 s   gap p50 0.16874 s
+  EXEC_SHELL_OPEN    5,749 (11.1%)    dur p50 6.240 s   gap p50 0.37917 s
+  EXEC_WGET_EXEC       103 ( 0.2%)
+```
+
+2.9x on duration and 2.2x on the typical gap, so a generated `EXEC_SHELL_OPEN`
+session inherited `DISC_ENV_PROBE`'s rhythm 88.6% of the time. Sequence pools are
+now keyed `(class, bucket)` with bucket-level fallback:
+
+```
+class                 A_temporal before    after      delta
+EXEC_SHELL_OPEN              0.9756        0.9127    -0.0629
+DISC_ENV_PROBE               0.8860        0.8835    -0.0025
+ACCESS_BRUTE_SSH             0.7396        0.7492    +0.0096
+RECON_IP_SCAN                0.7714        0.7853    +0.0139
+```
+
+Generated `EXEC_SHELL_OPEN` duration now lands at 7.241 s against a real
+7.509 s. The other three barely move: they already had dominant class-specific
+pools (`RECON_IP_SCAN` owns `no_login`, `ACCESS_BRUTE_SSH` owns `login_nocmd`,
+`DISC_ENV_PROBE` is 88.6% of `login_shallow`).
+
+### 13b. A coverage hole that cannot be fixed
+
+Overall donor hit rate is **78%**, and the misses concentrate in the
+synthetic-only classes -- `PRIVESC_KERNEL_XPLOIT` 49.7%, `PERSIST_SSH_KEY_ADD`
+50.3%, `PRIVESC_CONTAINER_ESC` 51.7%. The cause is the shape of real traffic:
+
+```
+donor gap-counts available   no_login 1-4   login_nocmd 1-4
+                             login_shallow 7-9   login_deep 20-40
+```
+
+Real Cowrie sessions have either about 7 gaps or about 34. **Nothing between 10
+and 19 exists**, and that is exactly where the generated mid-depth classes sit,
+so they fall back to independent per-event draws and lose within-session
+correlation. No real session of that shape exists to copy, so this is a
+permanent limit of donor bootstrapping, not a bug.
+
+### 13c. TSTR: the honest answer is conditional
+
+Train on synthetic, test on real, restricted to the 4 classes with real support
+(macro-F1 over 45 classes when the real test set holds 4 is a division, not a
+measurement):
+
+```
+donors            all 128   without D
+class-blind        0.9996      0.9996
+class-aware        0.9970      0.9970
+```
+
+**Saturated, and marginally LOWER with the better generator.** The reason is
+structural:
+
+```
+                  n_commands  login_attempts  n_events
+ACCESS_BRUTE_SSH           0               1         5
+RECON_IP_SCAN              0               0         4
+DISC_ENV_PROBE             1               1         8
+EXEC_SHELL_OPEN            1               1         8
+```
+
+Three counts almost fully determine the class, and the generator pins them to
+the real distributions by construction (`REAL_COMMAND_COUNTS`). The task is
+solved before timing is consulted, so TSTR on the full feature set **cannot
+detect temporal fidelity at all.**
+
+Restrict TSTR to timing, and fidelity becomes the whole signal:
+
+```
+feature set                        class-blind   class-aware     delta
+A_temporal (24)                       0.7755        0.9687      +0.1932
+pure timing (15, no counts/calendar)  0.7752        0.9564      +0.1811
+structure only (3)                    0.7449        0.8924      +0.1475
+```
+
+**So: better temporal fidelity DOES improve real-data predictive performance,
+but only where timing is load-bearing.** +0.19 macro-F1 on timing-only features
+is large and unambiguous. On the full feature set the gain is invisible because
+the structural counts already saturate the 4-class task.
+
+### 13d. Two numbers not to quote carelessly
+
+**0.9996 is not evidence the synthetic data is good.** It is evidence the 4-class
+real-supported task is trivial -- `n_commands` and `login_attempts` separate those
+classes without any temporal information.
+
+**0.035 (the dataset card) is the 45-class figure against a 16-class real test
+set** -- a different and much harder question. Neither number means anything
+without saying which task it describes.

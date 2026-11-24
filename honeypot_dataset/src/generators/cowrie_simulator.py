@@ -543,11 +543,13 @@ def build_gap_pools(log_dir, out_path=None, per_pool: int = 1500,
     out_path = Path(out_path) if out_path else _GAP_POOLS_PATH
     raw: Dict[str, List[float]] = {}
     sequences: Dict[str, List[List[float]]] = {}
+    from src.parsers.cowrie_parser import build_record as _br
     for fp in sorted(Path(log_dir).glob("cowrie.json*")):
         for events in parse_cowrie_file(fp):
             events.sort(key=lambda e: e.get("timestamp", ""))
             ids = [e.get("eventid", "") for e in events]
             ts = [to_ts(e.get("timestamp", "")) for e in events]
+            rec = _br(list(events)) or {}
             bucket = _session_bucket(
                 any(i.startswith("cowrie.login") for i in ids),
                 ids.count("cowrie.command.input"))
@@ -560,7 +562,19 @@ def build_gap_pools(log_dir, out_path=None, per_pool: int = 1500,
                     raw.setdefault(key, []).append(gap)
                 this_seq.append(gap)
             if this_seq:
+                # Keyed by CLASS as well as bucket. A bucket mixes classes whose
+                # timing genuinely differs: `login_shallow` is 88.6%
+                # DISC_ENV_PROBE and 11.1% EXEC_SHELL_OPEN, and their real
+                # medians are 2.123 s / 0.16874 s against 6.240 s / 0.37917 s --
+                # 2.9x on duration, 2.2x on the typical gap. A class-blind pool
+                # therefore hands a generated EXEC_SHELL_OPEN session
+                # DISC_ENV_PROBE's rhythm 88.6% of the time, which is why its
+                # A_temporal AUC stayed at 0.9756 while donor LENGTH matching was
+                # already 100%. Length was never the binding constraint; class was.
                 sequences.setdefault(bucket, []).append(this_seq)
+                cls = rec.get("micro_state")
+                if cls:
+                    sequences.setdefault(f"{cls}|{bucket}", []).append(this_seq)
 
     # Whole-session gap SEQUENCES, per bucket. The per-event pools above match
     # every MARGINAL; they cannot match the JOINT distribution, because gaps
@@ -700,7 +714,8 @@ def _ttylog_size(cmds: Sequence[str], rng: random.Random) -> int:
 
 
 def _bootstrap_sequence(bucket: str, n_gaps: int, eventids: Sequence[str],
-                        rng: random.Random) -> List[float]:
+                        rng: random.Random,
+                        label: Optional[str] = None) -> List[float]:
     """`n_gaps` gaps copied from ONE real session of the same bucket.
 
     Preserves within-session correlation, which per-gap draws cannot: after
@@ -722,9 +737,15 @@ def _bootstrap_sequence(bucket: str, n_gaps: int, eventids: Sequence[str],
     copy from.
     """
     pools = _load_gap_pools()
-    flat = pools.get(f"SEQ|{bucket}|flat")
-    offs = pools.get(f"SEQ|{bucket}|offs")
-    if flat is not None and offs is not None and len(offs) > 2:
+    # The class's OWN donors first, then the bucket's. Timing differs by class
+    # inside a bucket (see build_gap_pools), so a bucket-level donor imports
+    # whichever class dominates the bucket.
+    keys = ([f"SEQ|{label}|{bucket}"] if label else []) + [f"SEQ|{bucket}"]
+    for key in keys:
+        flat = pools.get(f"{key}|flat")
+        offs = pools.get(f"{key}|offs")
+        if flat is None or offs is None or len(offs) <= 2:
+            continue
         best = None
         for _ in range(24):
             k = rng.randrange(len(offs) - 1)
@@ -743,7 +764,8 @@ def _event_timestamps(t_start: float,
                       rng: random.Random,
                       *,
                       did_login: bool = True,
-                      n_commands: int = 0) -> List[float]:
+                      n_commands: int = 0,
+                      label: Optional[str] = None) -> List[float]:
     """Ascending timestamps for an event stream, each gap a resampled real one.
 
     `session_duration_s` is the SUM of these gaps -- derived, never drawn.
@@ -759,7 +781,7 @@ def _event_timestamps(t_start: float,
     if n <= 1:
         return [float(t_start)]
     bucket = _session_bucket(did_login, n_commands)
-    gaps = _bootstrap_sequence(bucket, n - 1, eventids, rng)
+    gaps = _bootstrap_sequence(bucket, n - 1, eventids, rng, label)
     total = sum(gaps)
     if total > _DURATION_MAX:
         # Trim the single longest gap rather than rescaling everything, so the
@@ -1077,7 +1099,8 @@ def generate_cowrie_events(label: str,
 
     eventids = [e[0] for e in skeleton]
     ts = _event_timestamps(t_start, eventids, rng,
-                           did_login=did_login, n_commands=len(issued))
+                           did_login=did_login, n_commands=len(issued),
+                           label=label)
     duration = ts[-1] - ts[0]            # DERIVED from the event stream
 
     sid = session_id or f"{rng.getrandbits(48):012x}"

@@ -19,6 +19,13 @@ cve_intelligence/data/live/
 honeypot_dataset/venv/
 *.npy
 *.npz
+# EXCEPT the generator's gap calibration: real inter-arrival gaps resampled
+# by cowrie_simulator. 450 KB, and without it the generator cannot run on a
+# machine that lacks the (gitignored) capture.
+!honeypot_dataset/src/generators/cowrie_gaps.npz
+# Real command sequences the generator resamples. Attacker-written text,
+# deduplicated and weighted; DATA only, never executed.
+!honeypot_dataset/src/generators/cowrie_commands.json.gz
 *.pkl
 *.parquet
 tabsyn/
@@ -50,6 +57,10 @@ pulse-engineering-metrics-and-incident-response-console.zip
 # Real honeypot captures: 180 MB+ of raw logs. Irreplaceable, but raw data
 # does not belong in git -- back it up outside the repo.
 cowrie_logs_*/
+# The 13-day capture lands in `cowrie_logs/` with no suffix, which the
+# pattern above does NOT match -- it was written for cowrie_logs_20261109/.
+# 440 MB of attacker-written logs was committable until 2026-11-15.
+cowrie_logs/
 
 # Gateway runtime state, not source. These are written by gateway_logger and
 # session_tracker as the gateway runs, and demo/reset_demo.py deletes them, so

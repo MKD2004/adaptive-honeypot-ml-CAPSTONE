@@ -7,6 +7,209 @@ something from scratch. Newest first.
 
 ---
 
+## Rounding does not reliably remove a small systematic offset (2026-11-24)
+
+**What breaks.** Group D carried a ~3.0e-6 provenance watermark (real and
+generated rows are encoded in different DistilBERT batches). Rounding the 30
+dimensions to 4 decimals looked like a clean way to destroy it while keeping 3+
+significant digits of real signal. It scored 0.8980 on the raw feature matrix --
+seemingly fixed -- and **0.9701 on the scaled arrays**, with identical rows and
+identical content.
+
+**Root cause, two of them.**
+
+1. **It is space-dependent.** Group D's `scaler.scale_` runs 0.1236 to 2.5828, so
+   a 4dp grid in SCALED space corresponds to 1.24e-05 - 2.58e-04 in raw units --
+   only 4-86x the watermark, against ~33x when rounding raw values. The same
+   line of code is ~8x weaker on the scaled arrays.
+2. **Grid boundaries.** Rounding maps values onto a lattice, and two values
+   separated by less than the grid step still land in DIFFERENT bins when they
+   straddle a boundary. Across 30 dimensions, at least one straddle is
+   near-certain, so a tree recovers the distinction anyway.
+
+**Fix.** Do not quantise to hide a systematic difference -- remove its cause. Here
+that means encoding each DISTINCT command text once and mapping the result back,
+so identical text yields a bit-identical vector by construction.
+
+**How to tell it is happening again.** A mitigation whose effect changes when the
+data is rescaled is not a mitigation. Compare the metric before and after an
+affine transform of the affected columns: if it moves, the control is not doing
+what it claims.
+
+---
+
+## A pandas record reports absence as NaN, not None (2026-11-24)
+
+**What breaks, and it would have been worse than the bug it was fixing.** The new
+`temporal_provenance()` decides what a session can support by checking which keys
+are present:
+
+```python
+have = [k for k in ("iat_mean_s", "iat_std_s", ...) if session.get(k) is not None]
+```
+
+Records reach the extractors as `df.to_dict("records")`. pandas fills a missing
+column with float **NaN**, and `float("nan") is not None` is **True** -- so every
+netflow row would have been declared to carry flow statistics it does not have.
+That labels fabricated absence as genuine measurement, which is strictly worse
+than the original fabrication because it is self-certifying.
+
+A second form of the same thing: `len(v)` on a missing list column raises
+`TypeError: object of type 'float' has no len()`, because the absent
+`event_timestamps` is NaN rather than None.
+
+**Fix.** `_present(v)` (None-safe AND NaN-safe) and `_n_timestamps(v)` (returns 0
+for anything that is not a sequence) in `src/extractors/temporal.py`. Guarded by
+`test_a_pandas_missing_value_is_absent_not_present`.
+
+**How to tell if it is happening again.** Cross-tabulate
+`real_meta.temporal_provenance` against `source`: CIC rows must be `flow_stats`,
+UNSW `flow_mean_only`, Cowrie and generated `event_stream`. Any netflow row
+claiming `event_stream`, or any Cowrie row claiming less, means the presence
+checks have regressed.
+
+---
+
+## `nan_to_num(nan=0.0)` hid the same defect in THREE places (2026-11-24)
+
+**What breaks.** After removing the fabricated inter-arrival time from
+`extract_temporal` and confirming it returned NaN, the built matrix still
+contained **zero NaN**. Two more zero-fills were downstream:
+
+```
+extractors/temporal.py                 return np.nan_to_num(feat, nan=0.0, ...)
+extractors/pipeline.py extract_all     return np.nan_to_num(buf,  nan=0.0, ...)
+notebooks/02 cell 7                    X_real = np.nan_to_num(X_real, nan=0.0, ...)
+```
+
+The third was found only because the first two were already fixed and the count
+was *still* zero. Any one of them silently converts "this session cannot support
+me" into a measured-looking zero.
+
+**Fix.** All three now clamp infinities only -- `np.isposinf` / `np.isneginf` --
+and let NaN through. Infinity comes from division by a near-zero duration and is
+a real computation; NaN means missing input and must stay visible.
+
+**How to tell.** After any extraction, assert that the NaN count is non-zero when
+the corpus contains netflow rows, and that it matches
+`unavailable_features(provenance)` per row. `print(np.isnan(X).sum())` returning 0
+on a mixed corpus is the symptom, not a clean bill of health.
+
+---
+
+## Sampling with `.head()` makes real data look fake (2026-11-24)
+
+**What breaks.** An adversarial-AUC check compared real Cowrie sessions against
+generated ones and reported `A_temporal` AUC = 1.0000 for `DISC_ENV_PROBE` --
+apparently perfect separability. A second run on the same data reported 0.7957.
+
+**Root cause.** The first run built its real sample with
+`df.groupby("micro_state").head(700)`. Sessions were sorted by time, so `.head()`
+returned the EARLIEST 700 -- all from one log file, inside a narrow window. The
+calendar features in A_temporal (`session_hour`, `session_day_of_week`,
+`is_business_hours`) were therefore near-constant for the real side and spread
+across 13 days on the generated side. The classifier split on the clock, not on
+the data.
+
+**Fix.** Sample randomly: `rs.choice(idx, n, replace=False)` per class. The
+0.7957 figure is the trustworthy one.
+
+**How to tell if it is happening again.** Any real-vs-generated AUC at or near
+1.0000 on A_temporal. Check whether the real sample spans the full capture
+window: `df.t_start.max() - df.t_start.min()` should be days, not minutes. The
+same contamination is why the early-vs-late real-vs-real split scores 0.985-0.995
+and must never be quoted as a fidelity result (DATA_INTEGRITY.md 9a).
+
+**Related.** This is the third time in this project that a pooled or non-random
+statistic pointed the wrong way and a stratified one corrected it. Stratify, and
+sample randomly, before concluding.
+
+---
+
+## A `scratchpad/grp.py` shadowed the stdlib and broke pandas (2026-11-24)
+
+**What breaks.** Running an analysis script produced
+`AttributeError: partially initialized module 'pandas' ... has no attribute
+'DataFrame' (most likely due to a circular import)` -- nothing to do with pandas.
+
+**Root cause.** The script was named `grp.py`. `pandas.io.common` imports
+`tarfile`, which imports the stdlib module `grp`. The script's own directory is
+first on `sys.path`, so `import grp` found the script instead, mid-import.
+
+**Fix.** Do not name scratch scripts after stdlib modules. `grp`, `io`, `code`,
+`types`, `select`, `signal`, `token` and `copy` are the easy ones to hit.
+
+---
+
+## A generated Cowrie log reads back as `source: "cowrie_real"` (2026-11-15)
+
+**What breaks.** `cowrie_simulator.write_jsonlines()` produces a genuine Cowrie
+JSON log — by design, so it goes through the same parser as real traffic. But
+`cowrie_parser.build_record()` hard-codes `"source": "cowrie_real"`, because
+until now it only ever saw real logs. So:
+
+```python
+parse_closed_sessions("data/processed/cowrie_sim/cowrie.json")
+# -> every record claims source == "cowrie_real"
+```
+
+**Why it matters more here than it looks.** This project has already spent
+months describing 15,000 teammate-generated Cowrie sessions as real data; that
+is the whole of the provenance correction in CLAUDE.md and DECISIONS.md. A
+generator that can produce logs indistinguishable from the real capture is
+exactly how it happens again, and the failure is silent — nothing raises, the
+rows just lie about where they came from.
+
+**Fix.** Read generated logs with `cowrie_simulator.parse_generated_log()`, never
+`parse_closed_sessions()`. It parses with the same `build_record`, then rewrites
+`source` to `"simulated_cowrie_events"` and sets `seen_before`. It also **raises**
+if any event in the file carries a sensor id other than `synthetic-cowrie-01`,
+so a file that mixes generated and real sessions cannot be stamped as either.
+
+**How to tell if it is happening again.** Two independent markers, and they
+disagree only if something is wrong:
+
+```
+real capture      sensor == "7b0b4b6a20d0"      source == "cowrie_real"
+generated         sensor == "synthetic-cowrie-01"  source == "simulated_cowrie_events"
+```
+
+Count sessions by `sensor` before trusting any corpus that might be mixed.
+Guarded by `test_parse_generated_log_stamps_the_synthetic_source` and
+`test_a_log_mixing_real_sessions_is_refused`.
+
+---
+
+## `MIN_SAMPLES_PER_CLASS` silently inflates a small corpus to 90,000 (2026-11-15)
+
+**What breaks.** `generate_balanced_sessions(n_total)` in both generators does:
+
+```python
+per_cls = max(MIN_SAMPLES_PER_CLASS, n_total // N_CLASSES)
+```
+
+`MIN_SAMPLES_PER_CLASS` is 2,000, so **any `n_total` below 90,000 returns 90,000
+sessions**, not the number asked for. `generate_balanced_sessions(45*20)` looks
+like it builds 900 rows and builds 90,000.
+
+**How it showed up.** A test corpus and an end-to-end check with DistilBERT. The
+test run looked like a hang (it was generating 90,000 sessions); the DistilBERT
+run was embedding 90,000 command strings on CPU and would have taken hours. Both
+were read as "something is broken" before the cause was found — the floor is
+correct behaviour for a training corpus and a trap for everything else.
+
+**Fix.** `cowrie_simulator.generate_sessions()`,
+`generate_balanced_sessions()` and `write_jsonlines()` take `per_class=`, which
+overrides the floor. Use it for tests and smoke runs ONLY: a corpus below the
+floor is not a training corpus, which is why the floor exists.
+`kill_chain_simulator.generate_balanced_sessions()` is deliberately NOT changed
+(the frozen build called it; it stays byte-compatible).
+
+**How to tell.** If a "small" generation is slow, print `len(df)` before blaming
+anything else.
+
+---
+
 ## A feature that cannot be computed must be MISSING, not zero (2026-11-11)
 
 The costliest bug in the project so far, and the cheapest to have prevented.

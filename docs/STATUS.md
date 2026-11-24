@@ -6,6 +6,321 @@ snapshot, not a log (that's DECISIONS.md / ERRORS.md).
 
 ---
 
+## Last updated: 2026-11-25 (Dhanya laptop) — GROUP D DEDUPLICATED, DATASET REBUILT
+
+### Session summary (2026-11-25) — the group-D leak is closed and final_v2 is rebuilt on it
+
+**Read `DATA_INTEGRITY.md` section 16.** `extract_semantic_batch` encodes each
+DISTINCT command text once (761,108 of 1,749,809 rows) and scatters the result
+back, so identical text yields a bit-identical embedding. The watermark is
+removed at its cause, not quantised over -- the rounding attempt failed and is
+in `ERRORS.md`.
+
+**Verified.** 850 texts appear in both a real and a generated row; group-D maxabs
+difference between them went 2.999e-06 -> **0.000e+00**. Within class the block
+is now at chance -- 0.5000 / 0.5000 / 0.4998 / 0.4722 on the four
+real-supported classes, against 0.9701 pooled before. Pooled is 0.8948 and
+should stay high: class identity alone is worth 0.9702 (section 12d).
+
+**So section 12e's claim is now fully supported** -- the synthetic data is
+indistinguishable from real in network, payload AND semantic features within a
+micro-state, and distinguishable by inter-arrival structure.
+
+**`data/final_v2/` was rebuilt** (notebooks 02 then 05, in place). Row counts per
+split, per generator and per `donor_origin` are identical to the 2026-11-24
+build, `NaN count: 10,185,865` came back exactly, and the Part 3 gate PASSES all
+four splits with 0 NaN. Two pooled numbers moved and neither is a fidelity
+measure (sections 9a, 13d): adversarial AUC 0.9981 -> 0.9921, 45-class TSTR
+0.036 -> 0.0278.
+
+**The quality report was validating arrays that never shipped.** It claimed
+`NaN values: 281635`, failed its shape check and gave `A_temporal mean_W=nan`
+for a dataset whose four splits carry zero NaN -- notebook 05 cell 16 passed the
+PRE-pool arrays, which `np.vstack` had copied before cell 10 imputed in place.
+Now validates the imputed, unscaled `X_train`: shape check PASSES, and
+`A_temporal` reports a real Wasserstein distance (618.694) that FAILS its
+threshold. That failure is a true finding -- timing is the block that does not
+match -- and it had been hidden behind a NaN.
+
+**The pipeline is 2.7x faster:** notebook 02 went 66.2 -> 24.5 min. Cell 5
+54.6 -> 17.0 (dedup); cell 3 11.4 -> 7.4 (chunked `to_dict("records")` instead
+of `iterrows`, verified value-identical on 6,000 rows). Notebook 05 is 30 s.
+
+**A profiling lesson, recorded because it cost real time:** a timing taken while
+notebook 02 was running reported `iterrows` at 1.000 ms/row against a true
+0.391, and pointed at the wrong bottleneck entirely. The notebooks store
+per-cell `execution` metadata -- read that instead.
+
+**CLAUDE.md Current Status was rewritten.** It still described `data/final/`:
+the model table, the "~83 informative features" count and the 29.74%
+duplication figure were all measured on the retired build and are now marked
+retired.
+
+### Next
+
+- **Retrain on `final_v2`** -- now unblocked, the last reason not to is gone. As
+  an ablation, reported per class AND per `donor_origin`, on the DGX (this
+  laptop is the 15 GB / RTX 3050 machine).
+- **Open the PR** for `rebuild/part1-cowrie-event-generator` (15 commits). Body
+  drafted; `gh` is not installed on this machine, so it needs doing from the web
+  UI or a machine that has it.
+- **The A/B intelligence-yield study** (ROADMAP section 5) is still the paper.
+- Not incorporated: the 23-day capture (`cowrie_logs_20261124/`). Section 15 --
+  it must REPLACE the 13-day capture, not join it, and every measured constant
+  would need re-deriving.
+
+---
+
+## Last updated: 2026-11-24 (Dhanya laptop) — ADVERSARIAL EVALUATION
+
+### Session summary (2026-11-24, latest) — six adversarial experiments on the shipped dataset
+
+**Read `DATA_INTEGRITY.md` section 12.** Six controlled experiments on
+`data/final_v2/`, equal n per side, random sampling, fixed seed.
+
+**Headline: the synthetic data preserves network, payload and TLS
+characteristics, and does NOT preserve timing.** Within class, `B_network`
+0.515-0.575, `C_payload` 0.496-0.555, `F_tls_host` 0.500-0.553 -- chance.
+`A_temporal` 0.74-0.98 against a strict standard of 0.50.
+
+**Two findings that change how earlier numbers must be read:**
+
+1. **Pooled AUC measures protocol and class, not provenance.** Two REAL netflow
+   datasets separate at 1.0000; class identity alone is worth 0.9702 inside the
+   synthetic data. Only same-protocol, within-class figures mean anything.
+2. **Group D is quarantined.** It carries a provenance watermark (~3.0e-6 from
+   DistilBERT batch padding), not content, and my rounding mitigation FAILED --
+   0.8980 on raw, 0.9701 on scaled, identical rows. Rounding is space-dependent
+   and is not a valid control. Worse than a measurement issue: **any model
+   trained on these 128 features can learn provenance from those 30 columns.**
+   Fix is deduplicating text before encoding (761,142 distinct of 1,749,809 rows,
+   also 2.3x less encoding work). NOT DONE.
+
+**A reproducibility gap closed:** `final_v2` could not say which rows were
+synthetic, because `cowrie_real` and `simulated_cowrie_events` are both
+`event_stream` in `prov_*.npy`. Notebook 05 now saves `gen_<split>.npy`, split
+with identical seeds so `X_*`/`y_*` are byte-unchanged.
+
+**A correction to my own earlier framing** (section 9g): the real-vs-real
+reference band of 0.93-1.00 came from STRUCTURED splits and is the lenient
+standard. A random half-split gives 0.4942-0.5100. Under the strict standard
+`A_temporal` fails; B, C and F still pass.
+
+### Next
+
+- **Deduplicate text before encoding** -- closes the group-D leakage channel and
+  speeds notebook 02. Highest-value remaining dataset item.
+- **Retrain as an ablation** (DATA_INTEGRITY 11a), reporting per class AND per
+  provenance. Note group D leaks provenance until the item above is done.
+- **The A/B intelligence-yield study** (ROADMAP section 5) is still the paper.
+
+---
+
+## Last updated: 2026-11-24 (Dhanya laptop) — PART 0
+
+### Session summary (2026-11-24, later) — PART 0 DONE: no more fabricated temporal features
+
+**Read `DATA_INTEGRITY.md` section 10.** Part 0 was listed first in section 4 and
+skipped through two rebuilds. The audit forced it: **915,320 of 1,749,809 rows
+(52.3%)** of the rebuilt corpus carried a fabricated inter-arrival time -- every
+CIC and UNSW row, because a netflow record has no event stream.
+
+**Why it survived:** the fabricated row is ARITHMETICALLY CONSISTENT. `min <=
+mean <= max` holds with equality, `cv == std/mean` holds at 0/x. Every invariant
+passed. The validator was asking "is this self-consistent?", never "could this
+have been measured?".
+
+**The good news from inspecting the raw files:** CIC-IDS2017 ships genuine
+`Flow IAT Mean/Std/Max/Min` (microseconds; min<=mean<=max coherent in 100.00% of
+225,745 rows), so 657,646 rows now get REAL statistics instead of a constant.
+UNSW gives a real mean via `sinpkt` (milliseconds, confirmed). `sjit` is NOT
+mapped to `iat_std` -- Argus jitter is a mean deviation, and mapping it would
+launder one statistic as another.
+
+**What changed:**
+- `extractors/temporal.py` -- four provenance levels, NaN for anything
+  unmeasurable, NaN-safe presence checks for pandas records
+- `extractors/pipeline.py` -- NaN preserved; `verify_schema` allows it only in
+  the temporal block
+- `validators/feature_integrity.py` -- `fabricated_iat_mask`,
+  `validate_provenance` (new violation kind `fabricated`), `provenance_from_nan`
+- `notebooks/01` -- passes CIC/UNSW real timing through, records
+  `temporal_provenance` per row; `notebooks/02` -- carries it into real_meta
+- zero-fill removed in THREE places, the third found only because the first two
+  were fixed and the NaN count was still zero
+- `extractors/semantic.py` -- chunked encode+project; the unchunked version
+  peaked at 10.75 GB on a 15 GB machine and was OS-killing notebook 02
+
+**Tests:** 14 new in `tests/test_temporal_provenance.py`, 98 in the suite. The
+one that matters is `test_a_consistent_fabrication_is_still_rejected` -- it builds
+a row passing every arithmetic invariant and asserts refusal.
+
+### Open decision this creates
+
+`data/final_v2/` now carries NaN by design. `StandardScaler` handles it natively,
+but **the imputation strategy is deliberately undecided** (DATA_INTEGRITY 10e):
+impute with a documented mask, restrict training to `event_stream` rows, or train
+the temporal branch only where it has evidence. The point of Part 0 is that this
+is now an explicit choice rather than a `nan_to_num` side effect.
+
+### Next
+
+- Rebuild in flight at the time of writing; the provenance audit (by source,
+  class and split) runs against it. `data/final/` stays frozen.
+- **Then assess Part 2** -- retrain, evaluate, or further experiments -- only
+  once the temporal representation is defensible.
+- Part 3 (`assert_valid` / `assert_temporal_provenance` at the training entry
+  point) still not wired.
+
+---
+
+## Last updated: 2026-11-24 (Dhanya laptop)
+
+### Session summary (2026-11-24) — FIDELITY: generated sessions now match real data as well as real data matches itself
+
+**Read `DATA_INTEGRITY.md` section 9.** Section 8 (2026-11-15) fixed dataset
+INTEGRITY; this session fixed FIDELITY, and corrected how the project reads its
+own fidelity metric.
+
+**The metric was being misread.** `adversarial_auc` fails above 0.6 and both
+datasets score ~1.0, which had been taken as proof of bad fidelity. Controls on
+the real capture alone: a random half-vs-half split scores **0.476-0.516** (the
+method is sound), but **one real bot vs other real bots scores 0.93-1.00**. Real
+data is trivially separable from itself. Fidelity is now judged per feature block
+against that real-vs-real band.
+
+**Four fixes to `cowrie_simulator.py`**, each driven by a measurement:
+1. gaps bootstrapped from the real capture, keyed by (event type, session bucket)
+   — replaces the fitted quantile grid and DELETES the long-pause gate
+2. whole gap SEQUENCES copied from one real session — the residual signal was
+   entirely in between-feature correlations, which per-gap draws destroy
+3. walk pinned to a single state for the 5 real-supported classes — real sessions
+   are single-action (`DISC_ENV_PROBE` is 1 command in 45,710 of 45,712)
+4. real command sequences bootstrapped, carrying each one's measured ttylog size
+
+**Result** — every block now inside its real-vs-real band, A_temporal below it:
+
+```
+class               A_temporal   B_network   C_payload
+ACCESS_BRUTE_SSH      0.6693      0.4944      0.5000
+DISC_ENV_PROBE        0.8158      0.5352      0.5000
+RECON_IP_SCAN         0.7600      0.5897      0.5000
+EXEC_SHELL_OPEN       0.9481      0.5494      0.5751
+reference band      0.93-1.00   0.49-0.61   0.50-0.62
+```
+
+A_temporal went 0.98 -> 0.67-0.95 across the four classes; `C_payload` 1.0000 ->
+0.50-0.58; `B_network` for EXEC_SHELL_OPEN 0.9265 -> 0.5494.
+
+**Two new committed calibration artefacts** beside the module, both regenerable:
+`cowrie_gaps.npz` (450 KB) and `cowrie_commands.json.gz` (350 KB). The latter
+holds attacker-written text verbatim — DATA, never executed.
+
+**Finding worth a paper line:** 45,712 `DISC_ENV_PROBE` sessions use **eight**
+distinct command sequences. Real attacker traffic is overwhelmingly replay, which
+compounds the 29.74% train/test value-overlap problem already recorded.
+
+### IMPORTANT: the dataset on disk is stale
+
+`data/final_v2/` was built 2026-11-15 and predates all four fixes. The fidelity
+numbers above describe the GENERATOR, measured on freshly generated sessions
+against the raw capture — never on the saved arrays. **A full rebuild
+(01 -> 02 -> 05) is required before any number from `final_v2` is quoted
+alongside section 9.** That rebuild was in flight when this entry was written.
+
+### Next
+
+- **Finish and validate the rebuild**, then re-run the section 8 integrity table
+  and the section 9 fidelity table on the rebuilt arrays.
+- **Part 2 of DATA_INTEGRITY section 4** (TabSyn primitives-only) remains NOT
+  STARTED. TabSyn is currently excluded from the build (`HS_INCLUDE_TABSYN=1` to
+  opt in), which sidesteps it — the generator now supplies the volume instead.
+- **Part 0** (extractors return NaN, never fabricate) and **Part 3**
+  (`assert_valid` as a training gate) still not done.
+- `semantic_pca.pkl` has been refitted on the new corpus, so **live MT3 inference
+  is wrong until retrain**. `semantic_pca.pkl.bak-pre-rebuild-20261119` restores
+  the old axes if the demo is needed first.
+
+---
+
+## Last updated: 2026-11-15 (Dhanya laptop)
+
+### Session summary (2026-11-15) — REBUILD PART 1 DONE: the generator emits logs, not features
+
+**Read `DATA_INTEGRITY.md` section 8 for the full write-up.** This entry is the
+snapshot.
+
+**What was built.** `honeypot_dataset/src/generators/cowrie_simulator.py` — a new
+generator that emits synthetic sessions as **Cowrie log events** and runs them
+through `cowrie_parser.build_record()` and `pipeline.extract_all()`, the same
+path real traffic takes. 32 tests in `tests/test_cowrie_simulator.py`; full suite
+84 tests, all passing. This is Part 1 of the three-part fix in
+`DATA_INTEGRITY.md` section 4.
+
+**`data/final/` is untouched** — `X_train.npy` still carries its 2026-08-27
+timestamp. `kill_chain_simulator.py` is unmodified, so notebooks 01 and 03b still
+reproduce the frozen build. Every number in `CLAUDE.md` still describes the OLD
+data; do not quote the two side by side without saying which is which.
+
+**Calibrated against the 13-day capture** in `cowrie_logs/` (114,490 sessions,
+754,063 events, 0 unparseable lines) — not the 8-day one. Note
+`DATA_INTEGRITY.md` section 6 names the older `cowrie_logs_20261109/`; both
+captures exist, both are gitignored and irreplaceable, back up both.
+
+**Measured result — finding two is structurally gone:**
+
+```
+                           impossible-row checks failed    constant columns
+X_train      (frozen)                13 of 97                  50 / 128
+X_val        (frozen)                16 of 97                  50 / 128
+X_test_synth (frozen)                14 of 97                  50 / 128
+generated corpus (18,000 rows)        0 of 97                  39 / 128
+```
+
+13 of the 14 FIX features from the section 3c triage are alive. The specific
+shape skews that put real sessions 226x outside training are closed:
+`login_attempts` max 1 (was 552), `bytes_out` always 0, `bytes_in` 86 for a
+one-command session, and duration/long-pause rates matching real within a few
+percent in every stratum.
+
+**Four assumptions the real data killed**, all in section 8: commands are the
+*fastest* events in a Cowrie session (98.1% sub-100 ms — scripted bots, not
+humans typing); the generated label must be the walk's *deepest* state, not its
+first; 74% of a deep session's time is the implant-upload gap; and
+`attacker_repeat_visitor` is 99.06% constant in the **real** capture too, so
+section 3c's FIX verdict for it is wrong.
+
+### Three decisions now waiting on the owner
+
+1. **Label agreement is 24.0%, with 29 of 45 classes at 0.0%.** `cowrie_parser`
+   can only emit 18 of the 45 micro-states. Decided this session: keep the
+   intended label, record the parser's alongside, report the gap per class
+   (`agreement_report()`). The consequence to accept or revisit: those 29 classes
+   rest entirely on our own assertion, and MT3 agreeing with the rule labeller is
+   not evidence of correctness. See DECISIONS.md.
+2. **12 newly UNTRIAGED constant columns** need DROP/ALLOW verdicts in
+   `feature_integrity.TRIAGE` — `bytes_out`, `log_bytes_out`, `bytes_ratio`,
+   `packets_*`, `dst_port_norm`, `is_ssh_port`, `is_http_port`, `protocol_enc`.
+   Most went constant *because* the generator stopped fabricating them. Honest
+   count is now **89 informative of 128** for an SSH-only corpus.
+3. **Balanced-corpus vs real-marginal mismatch, quantified.** 91% of generated
+   sessions issue commands against 46% of real ones — unavoidable when 39 of 45
+   classes are post-access states. Only conditional distributions transfer.
+
+### Next
+
+- **Part 2 — TabSyn generates primitives only, derived features recomputed.** NOT
+  STARTED, and it is the one that matters most: without it a rebuild reproduces
+  the 47% incoherence across the 720k synthetic rows. Part 1 only fixes the
+  generator's own output.
+- **Part 0** — extractors return NaN or raise instead of fabricating. Not done.
+  The new generator never takes the `temporal.py` fallback, but it is still there.
+- **Part 3** — wire `feature_integrity.assert_valid()` in as a training gate.
+  Still nothing calls it at the entry point.
+- Heralding collection continues on the Oracle VM (live since 2026-11-14, planned
+  stop on or after 2026-11-29) — wall-clock bound, unaffected by this work.
+
+---
 ## Last updated: 2026-11-11 (ASUS TUF)
 
 ### Session summary (2026-11-09 → 11) — FIRST REAL DATA, AND A DATASET INTEGRITY PROBLEM

@@ -59,7 +59,17 @@ def extract_all(session: dict,
     # Group F  [120:128] TLS / host
     buf[120:128] = extract_tls_host(session)
 
-    return np.nan_to_num(buf, nan=0.0, posinf=1e6, neginf=0.0)
+    # NaN SURVIVES, deliberately. `extract_temporal` returns NaN for anything the
+    # session cannot support (see its provenance block), and zero-filling here is
+    # precisely what hid a fabricated inter-arrival time across 52.3% of the
+    # corpus for three months. Infinities ARE clamped: they come from division by
+    # a near-zero duration, not from missing input.
+    #
+    # Callers therefore get NaN and must decide explicitly. `feature_integrity`
+    # rejects it, so the decision cannot be made by accident.
+    buf = np.where(np.isposinf(buf), np.float32(1e6), buf)
+    buf = np.where(np.isneginf(buf), np.float32(0.0), buf)
+    return buf.astype(np.float32)
 
 
 def build_feature_matrix(df: pd.DataFrame,
@@ -96,18 +106,33 @@ def build_feature_matrix(df: pd.DataFrame,
 
     y = df["micro_state"].map(LABEL_TO_IDX).fillna(0).values.astype(np.int64)
 
-    # Clip extreme values
+    # Clip extreme values. np.clip propagates NaN, which is what we want.
     X = np.clip(X, -100.0, 1e6)
-    log.info("Feature matrix: X=%s  y=%s  NaN=%d  Inf=%d",
-             X.shape, y.shape, np.isnan(X).sum(), np.isinf(X).sum())
+    n_nan = int(np.isnan(X).sum())
+    rows_nan = int(np.isnan(X).any(axis=1).sum())
+    log.info("Feature matrix: X=%s  y=%s  NaN=%d (%d rows)  Inf=%d",
+             X.shape, y.shape, n_nan, rows_nan, int(np.isinf(X).sum()))
+    if rows_nan:
+        log.warning(
+            "%d of %d rows (%.1f%%) carry NaN -- features their session cannot "
+            "support. Resolve explicitly before training; do NOT zero-fill. "
+            "See extractors/temporal.temporal_provenance.",
+            rows_nan, len(X), 100.0 * rows_nan / max(len(X), 1))
     return X, y
 
 
 def verify_schema(X: np.ndarray) -> None:
     """Assert feature matrix matches the 128-feature schema."""
     assert X.shape[1] == N_FEATURES, f"Expected 128 features, got {X.shape[1]}"
-    assert not np.any(np.isnan(X)), "NaN values found in feature matrix"
     assert not np.any(np.isinf(X)), "Inf values found in feature matrix"
+    # NaN is NOT an error here any more -- it is how a feature says "this session
+    # cannot support me". It must be confined to the temporal block, though:
+    # NaN anywhere else means an extractor broke rather than abstained.
+    nan_cols = np.where(np.isnan(X).any(axis=0))[0]
+    outside = [int(c) for c in nan_cols if not (0 <= c < 24)]
+    assert not outside, (
+        f"NaN outside A_temporal at columns {outside} -- only the temporal "
+        f"extractor is allowed to abstain")
     for grp, info in FEATURE_GROUPS.items():
         slice_ = X[:, info["start"]:info["end"]]
         assert slice_.shape[1] == info["size"], \

@@ -44,6 +44,8 @@ __all__ = [
     "validate", "assert_valid", "format_report", "tolerance_from_scaler",
     "FEATURE_INDEX", "INVARIANTS", "EXPECTED_CONSTANT", "TRIAGE",
     "triage_summary",
+    "degenerate_iat_mask", "fabricated_iat_mask",
+    "validate_provenance", "assert_temporal_provenance", "provenance_from_nan",
 ]
 
 
@@ -558,6 +560,152 @@ def check_finite(X: np.ndarray) -> List[Violation]:
     return out
 
 
+# ── Provenance: arithmetic consistency is NOT evidence of measurement ────────
+# The defect that survived longest in this project was not an impossible row --
+# it was a PERFECTLY CONSISTENT one. `extract_temporal` used to invent a single
+# inter-arrival time when a session had no event stream:
+#
+#     iat = [duration / (n_events - 1)]
+#
+# Every arithmetic invariant in this module passes on that row: min <= mean <=
+# max holds with equality, cv == std/mean holds at 0/x = 0, every fraction is in
+# [0, 1]. It passed because it was consistent, and it was fabricated. 915,320 of
+# 1,749,809 rows (52.3%) of the 2026-11-24 rebuild carried it.
+#
+# So integrity needs a second axis. These checks ask "could this value have been
+# MEASURED?", not "is this value self-consistent?".
+_IAT_STAT_KEYS = ("iat_min", "iat_mean", "iat_median", "iat_max")
+
+
+def degenerate_iat_mask(X: np.ndarray, rtol: float = 1e-4) -> np.ndarray:
+    """Rows whose four IAT order statistics are all equal.
+
+    That is the fingerprint of a one-value IAT array. It is LEGITIMATE for a
+    session with exactly two events (one gap, so min == mean == median == max)
+    and FABRICATED for anything else, which is why this returns a mask for the
+    caller to interpret against `n_events` rather than a verdict.
+
+    RELATIVE tolerance, and it has to be. An array that was standardised, stored
+    as float32 and un-scaled no longer holds exact equality: measured on
+    `data/final/X_train`, degenerate rows come back with a relative spread around
+    3e-6. A 1e-9 absolute threshold therefore found ZERO fabricated rows in a
+    dataset that is full of them -- the detector silently cleared the data it was
+    written to indict.
+
+    1e-4 is not a fudge, it sits in an empty gap. The share of frozen rows
+    flagged is 60.41% at rtol 1e-4 and 60.44% at 1e-2, while at 1e-6 it is 0.00%:
+    the fabricated rows cluster near 3e-6 and the genuine ones have a p90 spread
+    of 0.19, two decades clear.
+    """
+    X = np.asarray(X, dtype=np.float64)
+    cols = [FEATURE_INDEX[k] for k in _IAT_STAT_KEYS]
+    vals = X[:, cols]
+    finite = np.isfinite(vals).all(axis=1)
+    spread = np.nanmax(vals, axis=1) - np.nanmin(vals, axis=1)
+    scale = np.maximum(np.abs(vals).max(axis=1), 1e-12)
+    return finite & ((spread / scale) <= rtol)
+
+
+def fabricated_iat_mask(X: np.ndarray, rtol: float = 1e-4) -> np.ndarray:
+    """Degenerate IAT rows that CANNOT be explained by a two-event session.
+
+    A real one-gap session has `n_events == 2`. Anything with more events and a
+    single distinct IAT value never measured its gaps.
+    """
+    X = np.asarray(X, dtype=np.float64)
+    deg = degenerate_iat_mask(X, rtol)
+    # `n_events` is a record field, not one of the 128, but it is recoverable:
+    # events_per_sec == n_events / session_duration_s, both of which ARE features.
+    n_ev = (X[:, FEATURE_INDEX["events_per_sec"]]
+            * X[:, FEATURE_INDEX["session_duration_s"]])
+    # Round-trip through float32 and a scaler leaves this slightly off an
+    # integer, so allow generous slack before calling a row fabricated.
+    return deg & (n_ev > 2.5)
+
+
+def provenance_from_nan(X: np.ndarray) -> np.ndarray:
+    """Recover each row's temporal provenance from its NaN signature.
+
+    The count of NaN in the 24-feature temporal block is unique per level, so no
+    extra column has to be threaded through the split/shuffle to audit a saved
+    array:
+
+        0 NaN  -> event_stream     all 24 measurable
+       10 NaN  -> flow_stats       mean/std/min/max/cv real, sequence absent
+       14 NaN  -> flow_mean_only   mean real, nothing else
+       15 NaN  -> none             no temporal evidence at all
+
+    Scaling preserves NaN, so this works on `data/final*/X_*.npy` as saved. An
+    unrecognised count returns "unknown" rather than guessing -- that would mean
+    the extractor's contract changed and the mapping needs revisiting.
+    """
+    from src.extractors.temporal import (PROV_EVENT_STREAM, PROV_FLOW_MEAN,
+                                         PROV_FLOW_STATS, PROV_NONE,
+                                         TEMPORAL_FEATURE_NAMES)
+    n_t = len(TEMPORAL_FEATURE_NAMES)
+    counts = np.isnan(np.asarray(X, dtype=np.float64)[:, :n_t]).sum(axis=1)
+    lut = {0: PROV_EVENT_STREAM, 10: PROV_FLOW_STATS,
+           14: PROV_FLOW_MEAN, 15: PROV_NONE}
+    return np.array([lut.get(int(c), "unknown") for c in counts])
+
+
+def validate_provenance(X: np.ndarray, provenance) -> Report:
+    """Check the NaN pattern of every row against what its provenance permits.
+
+    Two directions, and BOTH matter:
+
+      - a row claiming `event_stream` must have NO NaN in the temporal block;
+        if it does, the stream was not actually used.
+      - a row at any weaker level must have NaN in EXACTLY the features that
+        level cannot support. A number there is a fabricated value presented as
+        a measurement, which is the failure this whole module now exists to
+        catch.
+    """
+    from src.extractors.temporal import (TEMPORAL_FEATURE_NAMES,
+                                         unavailable_features)
+    X = np.asarray(X, dtype=np.float64)
+    prov = np.asarray(provenance)
+    if len(prov) != len(X):
+        raise ValueError(f"provenance has {len(prov)} rows, X has {len(X)}")
+
+    rep = Report(n_rows=len(X), n_cols=X.shape[1])
+    tcols = {n: FEATURE_INDEX[n] for n in TEMPORAL_FEATURE_NAMES
+             if n in FEATURE_INDEX}
+    for level in np.unique(prov):
+        sel = prov == level
+        level = str(level)          # np.str_ renders badly in reports
+        must_nan = unavailable_features(level)
+        for name, col in tcols.items():
+            is_nan = np.isnan(X[sel, col])
+            if name in must_nan:
+                bad = int((~is_nan).sum())
+                if bad:
+                    rep.violations.append(Violation(
+                        kind="fabricated", n_rows=bad,
+                        frac=bad / max(int(sel.sum()), 1),
+                        detail=(f"{name}: {bad} rows at provenance {level!r} "
+                                f"carry a NUMBER where the session cannot "
+                                f"support one"),
+                        why="a value that could not be measured was supplied"))
+            else:
+                bad = int(is_nan.sum())
+                if bad:
+                    rep.violations.append(Violation(
+                        kind="not_finite", n_rows=bad,
+                        frac=bad / max(int(sel.sum()), 1),
+                        detail=(f"{name}: {bad} rows at provenance {level!r} "
+                                f"are NaN although this level supports them"),
+                        why="measurable feature left unmeasured"))
+    return rep
+
+
+def assert_temporal_provenance(X: np.ndarray, provenance) -> None:
+    """Raise unless every row's temporal block matches its provenance."""
+    rep = validate_provenance(X, provenance)
+    if not rep.ok:
+        raise IntegrityError(format_report(rep))
+
+
 def tolerance_from_scaler(scaler, n_cols: int = 128,
                           storage_dtype=np.float32,
                           safety: float = 8.0) -> np.ndarray:
@@ -621,6 +769,7 @@ def format_report(rep: Report) -> str:
         return "\n".join(lines)
 
     for kind, title in (("not_finite", "NON-FINITE VALUES"),
+                        ("fabricated", "FABRICATED VALUES (consistent but unmeasurable)"),
                         ("arithmetic", "IMPOSSIBLE ROWS"),
                         ("dead_column", "CONSTANT COLUMNS")):
         group = [v for v in rep.violations if v.kind == kind]

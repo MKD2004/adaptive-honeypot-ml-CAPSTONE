@@ -1871,3 +1871,53 @@ sampling, which has the same defect class-blind donors had. Timing-dependent
 tasks on the 39 synthetic-only classes should therefore be expected to behave
 like the class-blind column -- near chance -- and results must be reported split
 by `donor_origin`. That is what `donor_<split>.npy` exists for.
+
+---
+
+## 15. Third capture triaged, NOT incorporated (2026-11-24)
+
+A 23-day capture arrived as `cowrie_logs_24-11-2006/` (687 MB, 24 files; note the
+year typo -- it is 2026 data, and it IS gitignored by `cowrie_logs_*/`). It is a
+STRICT SUPERSET of `cowrie_logs/`: 100.0% of the old session ids reappear in it.
+
+```
+                    OLD (cowrie_logs)    NEW (24-11-2006)
+sessions                   114,501            178,738    +56%
+distinct src IPs             1,071              2,623   +145%
+span                   11-01..11-14       11-01..11-24    13.0 -> 22.9 d
+events                     754,063          1,238,268    +64%
+distinct cmd texts           1,287              2,842   +121%
+micro-states                     7                  7     +0
+max login_attempts               1                  2
+max n_commands                  28                 28
+```
+
+**Third independent confirmation that collecting Cowrie for longer does not
+broaden the taxonomy.** 8-day -> 8 classes, 13-day -> 8, 23-day -> 8. Section 3d
+said this after two captures; it now holds across three, and 76% more sessions
+added zero classes.
+
+The donor-length desert is also unmoved -- sessions with 10-19 gaps go from 4 to
+**9** out of 178,738:
+
+```
+gaps per session     old       new
+1-4               61,641    82,238
+7-9               51,564    93,637
+10-19 <- desert        4         9
+20-40              1,273     2,822
+```
+
+**Verdict: worth a rebuild for ONE reason only -- the command pools.** Distinct
+command texts more than doubled (1,287 -> 2,842), and command vocabulary is the
+thing the generator reproduces well (`C_payload` sits at chance precisely because
+it bootstraps real text). `donor_exact` pools also roughly double. It will NOT
+fix the 28 synthetic-only classes, the 54.5% per-event fallback rate, or the
+desert, because those are properties of what SSH bots do.
+
+**If it is incorporated, use it INSTEAD OF `cowrie_logs/`, never alongside** --
+the two overlap completely and pooling would double-count 114,490 sessions.
+Every measured constant would need re-deriving: the gap pools, the command
+pools, `REAL_COMMAND_COUNTS`, the ttylog table, and the session-shape
+percentiles in section 9. Not done; `data/final_v2/` is built from the 13-day
+capture.

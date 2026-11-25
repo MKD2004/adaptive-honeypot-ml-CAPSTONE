@@ -2572,3 +2572,147 @@ attackers skip phases (84.9% of transitions) and occasionally move backwards
 through them (2.0%).
 
 Do not say the real data is invalid, and do not quote the generated 100%.
+
+---
+
+## 21. The split leaked by VALUE, and three different things caused it (2026-11-25)
+
+Found while answering "is the data still linearly separable". `test_real` was
+**33.42% byte-identical to a row in `X_train`** -- worse than the 29.74%
+recorded for `data/final/` and retired with it. It survived the entire rebuild
+because the figure was never re-measured after `final_v2` was built.
+
+Notebook 05 split disjointly by INDEX. Three independent mechanisms then made
+distinct sessions identical, and each had to be fixed separately:
+
+```
+pass     mechanism                                        test_real leak
+start    index-based split                                    33.42%
+cell 9   group by post-imputation identity                     0.36%
+cell 10  median fill coinciding with a measured value          0.36%
+cell 14  float32 scaling collapsing distinct rows               0.00%
+```
+
+### 21a. Imputation manufactures the duplicates
+
+The RAW feature matrix is **99.8% distinct**. After filling 10-11 temporal
+columns with a per-column constant, only **82.5%** is -- 306,017 rows (17.5%)
+become a byte-copy of another row:
+
+```
+rows that become a copy of another row, by source
+  unsw_transfer   53.6%     supplies only iat_mean; 23 of 24 columns filled
+  cic_transfer    33.0%
+  simulated        0.8%
+  cowrie_real      0.2%
+```
+
+So this is a second-order cost of the Part 0 imputation decision (10g), and it
+lands hardest exactly where `test_real` draws most of its rows. Cell 9 now
+groups rows by the identity they will have AFTER imputation -- same NaN mask and
+same measured values, which is precisely the equivalence class a per-column fill
+produces -- and gives each group exactly one split.
+
+**One global pass, not one per subset.** Splitting the real and synthetic halves
+separately let a group holding both a real and a generated row be claimed twice:
+29 groups, 27 leaked rows. A group spanning that boundary now goes to TRAIN,
+since the test splits must be source-pure anyway.
+
+**`np.unique(X, axis=0)` is the obvious grouping and it OOM-killed the kernel** --
+it copies the full 1.75M x 128 matrix and sorts it. Replaced with a chunked
+64-bit row hash: 2 seconds, negligible memory. A hash collision only MERGES two
+groups, which makes the split more conservative rather than leaky.
+
+### 21b. An imputed median is a real number
+
+A row whose NaN cell is filled with the column median can become identical to a
+different row that MEASURED that same value. Different pre-imputation groups,
+identical outcome. This cannot be grouped away -- the medians depend on the train
+split, which would then depend on the medians -- so cell 10 measures it after
+imputation and drops the offenders from the held-out splits.
+
+### 21c. Scaling collapses rows too, and this was the stubborn one
+
+Cells 9 and 10 both honestly reported zero while the shipped arrays still leaked
+216 `test_real` rows. `scaler.scale_` reaches **879,385**, so dividing by it
+crushes values that differ by ~1 onto the same float32. Distinct sessions,
+indistinguishable features.
+
+Not leaked information in the usual sense -- nothing could tell those rows apart
+at that precision -- but a memorised train row still scores the test row, which
+is what the 33.42% did at scale. Cell 14 drops them, because the scaled arrays
+are the last point where it can be settled.
+
+**Each pass now asserts its own guarantee**, so none of this can regress in
+silence. Cost: 404 of ~283,000 held-out rows (0.1%), and split sizes are
+approximate because a group is indivisible.
+
+```
+train 1,466,849   val 162,767   test_real 59,784   test_synth 60,005
+duplication with train: 0 / 0 / 0   (verified on the shipped arrays)
+```
+
+`test_real` holds **16** labels, down from 17: grouping constrains which rows can
+be held out and a class that previously had a support of 1 there no longer
+appears. No earlier `test_real` figure is comparable row-for-row.
+
+### 21d. Three-way comparison on the clean split
+
+All three trained under one protocol -- same splits, frozen scaler,
+`weighted_ce` + `balanced`, same metrics, same seed -- so the only difference is
+the model. `train_baseline.py --model linear|cnn_lstm` exists so the two
+baselines cannot drift apart from each other.
+
+```
+model          params   | test_real  exclB  BENIGN    acc | test_synth    acc
+linear probe    5,934   |   0.3835  0.3853  0.7114  0.7463 |    0.6007  0.6177
+CNN-LSTM      189,710   |   0.4413  0.4416  0.8625  0.8186 |    0.6576  0.6869
+MT3         3,759,767   |   0.5507  0.5636  0.9149  0.8908 |    0.7186  0.7285
+```
+
+MT3: best val macro-F1 0.7566 @ epoch 34/40; `test_real` phase F1 0.6692;
+`macro_f1_all45` 0.1916 over 46 labels.
+
+**The architecture gap is real now, which it was not on `data/final/`:**
+
+```
+floor-to-ceiling spread on test_real
+data/final/ (clean col)   0.7551 -> 0.8187    0.064    MT3 vs CNN-LSTM p=0.617, a tie
+final_v2 (clean split)    0.3835 -> 0.5507    0.167    2.6x wider
+final_v2, excl BENIGN     0.3853 -> 0.5636    0.178
+```
+
+Three separated tiers: CNN-LSTM beats the probe by **+0.058** and MT3 beats
+CNN-LSTM by **+0.109** (excl BENIGN: +0.056 and +0.122). On the old build a
+5,805-parameter linear layer reached macro-F1 0.7681 at **0.9930 accuracy** and
+MT3 beat it by 0.06 -- the benchmark could not tell architectures apart because
+the task was close to linearly separable. Removing the fabricated temporal block
+and the group-D watermark removed that shortcut.
+
+**BENIGN behaves exactly as section 19a warned.** It is every model's easiest
+class (0.711 / 0.863 / 0.915) and all 193,000 benign rows are netflow, which
+separates from Cowrie at AUC 1.0000 on source alone. Quote the `exclB` column
+for any claim about the attack taxonomy.
+
+### 21e. What the leak was actually worth, and a wrong prediction of mine
+
+```
+test_real macro-F1    leaking split -> clean split
+linear probe             0.3515    ->   0.3835    +0.032
+CNN-LSTM                 0.4202    ->   0.4413    +0.021
+MT3                      0.5704    ->   0.5507    -0.020
+```
+
+**Small, and not in one direction.** The two weak models improved and MT3 fell
+slightly. So the 33.42% was not inflating the headline -- it was adding easy but
+oddly-distributed rows that helped a weak model and marginally hurt a strong one.
+Every qualitative conclusion above survives it.
+
+**A prediction I got wrong, recorded because the reasoning was the error.** From
+the leaking run I filtered the duplicate rows out of `test_real` post hoc and
+estimated MT3 would retrain to 0.6175. It came back 0.5507 -- below even its
+leaking-split score. Filtering the TEST set cannot estimate a retrain, because
+the fix also changes the TRAINING distribution: duplicate groups are now
+concentrated in train, which makes train more redundant and the held-out rows
+genuinely harder. A post-hoc subset answers "how would this model score on
+cleaner rows", not "what happens if the split is fixed".

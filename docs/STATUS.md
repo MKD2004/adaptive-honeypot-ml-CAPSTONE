@@ -6,6 +6,61 @@ snapshot, not a log (that's DECISIONS.md / ERRORS.md).
 
 ---
 
+## Last updated: 2026-11-25 (Dhanya laptop) — SPLIT LEAK FIXED, THREE MODELS RETRAINED
+
+### Session summary (2026-11-25, later) — the split leaked by value; architecture now matters
+
+**Read `DATA_INTEGRITY.md` sections 20 and 21.**
+
+**The DAG is prescriptive and observed transitions are recorded beside it**
+(section 20, `python -m src.validators.transition_agreement`). Real traffic uses
+16 transitions; the DAG permits 3 of them (12.9% of instances). The mirror
+statistic is stronger: **3 of its 102 edges are ever observed** against 101 of
+102 exercised by the generator. The DAG is 97% hypothetical.
+
+**`test_real` was 33.42% byte-identical to `X_train`** -- worse than the retired
+29.74%, never re-measured after `final_v2`. Three separate mechanisms caused it:
+imputation collapsing netflow rows (UNSW 53.6%, CIC 33.0%), a median fill
+coinciding with a measured value, and float32 scaling crushing distinct rows.
+Fixed in three passes, each asserting its own guarantee. Now **0 / 0 / 0**.
+
+**All three models retrained on the clean split, one protocol:**
+
+```
+model          params   | test_real  exclB  BENIGN | test_synth
+linear probe    5,934   |   0.3835  0.3853  0.7114 |    0.6007
+CNN-LSTM      189,710   |   0.4413  0.4416  0.8625 |    0.6576
+MT3         3,759,767   |   0.5507  0.5636  0.9149 |    0.7186
+```
+
+**The benchmark discriminates between architectures now.** Floor-to-ceiling
+spread on `test_real` went 0.064 (data/final, where MT3 vs CNN-LSTM was a tie at
+p=0.617) to **0.167**, and on the old build a linear probe hit 0.9930 accuracy.
+MT3's fusion earns its 20x parameters on this data; it did not before.
+
+**BENIGN is every model's easiest class** (0.711 / 0.863 / 0.915) and is 100%
+netflow. Quote the `exclB` column for taxonomy claims.
+
+**A wrong prediction of mine, recorded in 21e:** I estimated MT3 would retrain to
+0.6175 by filtering duplicates from the test set post hoc. It came back 0.5507.
+Filtering the test set cannot estimate a retrain -- the fix changes the training
+distribution too.
+
+### Next
+
+- **Report per `donor_origin`**, which 11a requires and no trainer does yet. The
+  arrays ship; it is a post-hoc script over the saved predictions.
+- **The live path is still 45-output.** `feature_bridge.MT3Inference`, the
+  checkpoint it loads, `configurator.py` and the dashboard label maps all assume
+  45 classes. A 46-label model needs all four updated together.
+- **The A/B intelligence-yield study** (ROADMAP section 5) is still the paper.
+- Reconfiguration latency is measured: 16 ms p50 against an 18.4 s median
+  attacker return gap, so the adaptive loop closes comfortably -- but
+  `post_session_pipeline` keeps a 30 s poll floor, and if watchdog ever fails to
+  register, 51.8% of returns beat the reconfiguration.
+
+---
+
 ## Last updated: 2026-11-25 (Dhanya laptop) — GROUP D DEDUPLICATED, DATASET REBUILT
 
 ### Session summary (2026-11-25) — the group-D leak is closed and final_v2 is rebuilt on it

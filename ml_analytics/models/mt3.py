@@ -61,6 +61,38 @@ DEFAULT_IDX_TO_PHASE: List[int] = (
 )
 assert len(DEFAULT_IDX_TO_PHASE) == N_CLASSES
 
+# ─── BENIGN is label 45 and has NO kill-chain phase ──────────────────────────
+# The phase head is supervised from the micro-state label, so a 46-label dataset
+# needs a 46th entry here -- and benign traffic has no phase, no MITRE technique
+# and no DAG edges (honeypot_dataset/configs/schema.py).
+#
+# It maps to -100, which is `CrossEntropyLoss`'s own default `ignore_index`, so
+# benign rows train the micro-state head and are SKIPPED by the phase head with
+# no change to either loss. The alternatives were both worse: a 10th phase makes
+# `phase >= MT3_AUTO_BLACKLIST_MIN_PHASE` true for benign traffic and would
+# blacklist it, and mapping benign to phase 0 reports it as Reconnaissance
+# everywhere. Decided 2026-11-25; see DATA_INTEGRITY.md section 19.
+#
+# Anything reading a predicted phase must therefore check the LABEL first:
+# `micro_state == "BENIGN"` means no phase was predicted, not phase 0.
+BENIGN_IDX = 45
+N_LABELS = N_CLASSES + 1
+PHASE_IGNORE_INDEX = -100
+
+IDX_TO_PHASE_WITH_BENIGN: List[int] = DEFAULT_IDX_TO_PHASE + [PHASE_IGNORE_INDEX]
+
+
+def idx_to_phase_for(n_classes: int) -> List[int]:
+    """The phase map for a 45-class (attack-only) or 46-label (+BENIGN) model."""
+    if n_classes == N_CLASSES:
+        return list(DEFAULT_IDX_TO_PHASE)
+    if n_classes == N_LABELS:
+        return list(IDX_TO_PHASE_WITH_BENIGN)
+    raise ValueError(
+        f"no phase map for n_classes={n_classes}; expected {N_CLASSES} "
+        f"(attack states only) or {N_LABELS} (+ BENIGN)"
+    )
+
 
 class _LSTMBranch(nn.Module):
     """Each scalar feature is one timestep; final hidden state is the branch embedding."""
@@ -190,7 +222,13 @@ class MT3(nn.Module):
         loss = None
         if labels is not None:
             state_loss = F.cross_entropy(emissions, labels)
-            phase_loss = F.cross_entropy(hp_logits, self.idx_to_phase[labels])
+            phase_target = self.idx_to_phase[labels]
+            # every BENIGN batch would otherwise be a mean over zero valid
+            # targets, i.e. NaN, and a NaN loss poisons training in silence
+            if bool((phase_target != PHASE_IGNORE_INDEX).any()):
+                phase_loss = F.cross_entropy(hp_logits, phase_target)
+            else:
+                phase_loss = emissions.new_zeros(())
             loss = state_loss + self.aux_loss_weight * phase_loss
 
         return emissions, hp_logits, loss

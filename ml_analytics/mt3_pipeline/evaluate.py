@@ -83,7 +83,11 @@ def predict(
     n = len(X)
     preds = np.empty(n, dtype=np.int64)
     phase_preds = np.empty(n, dtype=np.int64)
-    probs = np.empty((n, N_CLASSES), dtype=np.float16) if return_probs else None
+    # Allocated from the FIRST batch's actual output width, not from N_CLASSES
+    # and not from a named head. N_CLASSES=45 broadcast a 46-label model's
+    # output into an (n, 45) buffer; `model.emission_head` then excluded any
+    # model that is not MT3 -- the linear probe is a bare nn.Linear.
+    probs = None
 
     amp_dtype = torch.bfloat16 if (amp and device.startswith("cuda")) else torch.float16
     use_amp = amp and device.startswith("cuda")
@@ -93,13 +97,34 @@ def predict(
             xb = torch.from_numpy(np.ascontiguousarray(X[start : start + batch_size])).to(device)
             if use_amp:
                 with torch.autocast(device_type="cuda", dtype=amp_dtype):
-                    emissions, hp_logits, _ = model(xb)
+                    raw = model(xb)
             else:
-                emissions, hp_logits, _ = model(xb)
+                raw = model(xb)
+            # Three shapes reach this line and they must not be confused:
+            #   MT3       -> (emissions, hp_logits, loss)
+            #   CNN-LSTM  -> (logits, loss)          <- raw[1] is a SCALAR LOSS
+            #   probe     -> logits
+            # Reading raw[1] blindly made the CNN-LSTM's loss the phase
+            # prediction, which argmaxes a 0-d tensor into nonsense rather than
+            # failing. A second element counts as phase logits only if it is a
+            # 2-D tensor batched like the emissions.
+            if isinstance(raw, (tuple, list)):
+                emissions = raw[0]
+                hp_logits = raw[1] if len(raw) > 1 else None
+                if not (torch.is_tensor(hp_logits) and hp_logits.dim() == 2
+                        and hp_logits.shape[0] == emissions.shape[0]):
+                    hp_logits = None
+            else:
+                emissions, hp_logits = raw, None
             emissions = emissions.float()
             preds[start : start + len(xb)] = emissions.argmax(dim=1).cpu().numpy()
-            phase_preds[start : start + len(xb)] = hp_logits.float().argmax(dim=1).cpu().numpy()
+            phase_preds[start : start + len(xb)] = (
+                hp_logits.float().argmax(dim=1).cpu().numpy() if hp_logits is not None
+                else -1  # no phase head: -1 marks "not predicted", never phase 0
+            )
             if return_probs:
+                if probs is None:
+                    probs = np.empty((n, emissions.shape[1]), dtype=np.float16)
                 probs[start : start + len(xb)] = (
                     torch.softmax(emissions, dim=1).cpu().numpy().astype(np.float16)
                 )

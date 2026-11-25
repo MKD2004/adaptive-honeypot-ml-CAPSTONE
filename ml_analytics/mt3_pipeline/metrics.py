@@ -10,7 +10,9 @@ Two macro-F1 numbers are reported and they are not interchangeable:
                   headline number. X_test_real contains only 21 of the 45
                   micro-states, so averaging over all 45 would divide by 45 and
                   score every model against 24 classes it was never asked about.
-  macro_f1_all45  averaged over all 45 classes (absent classes score 0).
+  macro_f1_all45  averaged over EVERY label in the head, absent classes scoring
+                  0. The name is kept for continuity with the committed
+                  artifacts and compare.py; on a 46-label dataset it spans 46.
                   Reported for completeness / comparability with X_test_synth.
 
 Both models must quote the SAME one when compared; compare.py prints both.
@@ -28,19 +30,29 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
 )
 
-from .data import IDX_TO_PHASE, N_CLASSES, N_PHASES, PHASE_NAMES
+from .data import IDX_TO_PHASE, N_CLASSES, N_LABELS, N_PHASES, PHASE_NAMES
+
+BENIGN_IDX = N_CLASSES          # label 45: no phase, no DAG edges
 
 
 def _phase_of(y: np.ndarray) -> np.ndarray:
-    lut = np.asarray(IDX_TO_PHASE, dtype=np.int64)
-    return lut[np.asarray(y, dtype=np.int64)]
+    """Micro-state label -> kill-chain phase, with BENIGN mapped to -1.
+
+    BENIGN has no phase (see ml_analytics/models/mt3.py), so it cannot index
+    IDX_TO_PHASE -- an unguarded lookup raised IndexError the moment a 46-label
+    dataset reached here. -1 marks "no phase" and the phase metrics drop those
+    rows rather than inventing a phase for them.
+    """
+    y = np.asarray(y, dtype=np.int64)
+    lut = np.asarray(list(IDX_TO_PHASE) + [-1], dtype=np.int64)
+    return lut[np.clip(y, 0, len(lut) - 1)]
 
 
 def classification_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     label_names: Optional[Sequence[str]] = None,
-    n_classes: int = N_CLASSES,
+    n_classes: int = N_LABELS,
     include_confusion: bool = True,
 ) -> Dict[str, object]:
     """Full metric bundle for one split."""
@@ -56,6 +68,7 @@ def classification_metrics(
     out: Dict[str, object] = {
         "n_samples": int(len(y_true)),
         "n_classes_present": int(len(present)),
+        "n_classes_scored": int(n_classes),
         "classes_present": present.tolist(),
         "accuracy": float(accuracy_score(y_true, y_pred)),
         "balanced_accuracy": float(balanced_accuracy_score(y_true, y_pred)),
@@ -80,8 +93,13 @@ def classification_metrics(
         for i in range(n_classes)
     }
 
-    # kill-chain phase level (9-way), derived from the micro-state predictions
+    # kill-chain phase level (9-way), derived from the micro-state predictions.
+    # Rows whose TRUE label has no phase (BENIGN) are dropped -- scoring them
+    # would require inventing a phase for traffic that has none.
     pt, pp = _phase_of(y_true), _phase_of(y_pred)
+    _scored = pt >= 0
+    out["phase_rows_without_phase"] = int((~_scored).sum())
+    pt, pp = pt[_scored], pp[_scored]
     phase_present = np.unique(pt)
     out["phase"] = {
         "accuracy": float(accuracy_score(pt, pp)),

@@ -22,6 +22,8 @@ from __future__ import annotations
 from typing import Optional, Sequence
 
 import numpy as np
+
+from ml_analytics.models.mt3 import PHASE_IGNORE_INDEX
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -188,6 +190,12 @@ class MT3Objective(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         state_loss = self.state_criterion(emissions, labels)
         phase_target = self.idx_to_phase.to(labels.device)[labels]
-        phase_loss = self.phase_criterion(hp_logits, phase_target)
+        # BENIGN maps to -100 (CrossEntropyLoss's default ignore_index), so the
+        # phase head skips benign rows. An all-benign batch would be a mean over
+        # zero valid targets -- NaN -- so it contributes no phase loss at all.
+        if bool((phase_target != PHASE_IGNORE_INDEX).any()):
+            phase_loss = self.phase_criterion(hp_logits, phase_target)
+        else:
+            phase_loss = emissions.new_zeros(())
         total = state_loss + self.aux_loss_weight * phase_loss
         return total, state_loss.detach(), phase_loss.detach()

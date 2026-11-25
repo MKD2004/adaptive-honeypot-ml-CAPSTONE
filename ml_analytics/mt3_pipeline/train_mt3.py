@@ -69,6 +69,10 @@ DEFAULT_OUT_DIR = REPO_ROOT / "ml_analytics" / "artifacts" / "mt3"
 class TrainConfig:
     data_dir: str = str(DEFAULT_DATA_DIR)
     out_dir: str = str(DEFAULT_OUT_DIR)
+    # 0 = detect from the data. A 46-label dataset (45 attack states + BENIGN)
+    # needs a 46-way head; the old 45-class checkpoints do not record n_classes
+    # in model_kwargs, so they keep rebuilding at the 45 default and still load.
+    n_classes: int = 0
     epochs: int = 30
     batch_size: int = 1024
     eval_batch_size: int = 4096
@@ -149,7 +153,14 @@ def build_scheduler(optimizer, total_steps: int, warmup_frac: float, min_lr_frac
 
 
 def _model_kwargs(cfg: TrainConfig) -> Dict[str, object]:
+    from ml_analytics.models.mt3 import idx_to_phase_for
+
     return {
+        "n_classes": cfg.n_classes,
+        # BENIGN (label 45) maps to -100 here, CrossEntropyLoss's ignore_index,
+        # so benign rows train the micro-state head and are skipped by the
+        # phase head. It has no kill-chain phase. See mt3.py.
+        "idx_to_phase": idx_to_phase_for(cfg.n_classes),
         "d_model": cfg.d_model,
         "nhead": cfg.nhead,
         "num_fusion_layers": cfg.num_fusion_layers,
@@ -313,9 +324,18 @@ def train(cfg: TrainConfig) -> Dict[str, object]:
     train_sp, val_sp = splits["train"], splits["val"]
     label_names = load_label_names()
 
+    # The head size comes from the DATA, not a constant: final_v2 ships 46
+    # labels (45 attack states + BENIGN at 45) and older builds ship 45. Getting
+    # this from N_CLASSES would silently train a 45-way head on 46-way labels.
+    if not cfg.n_classes:
+        cfg.n_classes = int(max(train_sp.y.max(), val_sp.y.max())) + 1
+    print(f"[model] head size {cfg.n_classes} labels "
+          f"(detected from the data; {N_CLASSES} attack states"
+          + (" + BENIGN)" if cfg.n_classes > N_CLASSES else ")"))
+
     # ---- objective -------------------------------------------------------- #
     weights = build_class_weights(
-        train_sp.y, N_CLASSES, scheme=cfg.class_weight, clip=cfg.weight_clip
+        train_sp.y, cfg.n_classes, scheme=cfg.class_weight, clip=cfg.weight_clip
     )
     state_criterion = build_state_criterion(
         cfg.loss, weights, focal_gamma=cfg.focal_gamma,

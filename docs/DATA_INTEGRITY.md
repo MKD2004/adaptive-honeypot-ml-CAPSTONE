@@ -2716,3 +2716,103 @@ the fix also changes the TRAINING distribution: duplicate groups are now
 concentrated in train, which makes train more redundant and the held-out rows
 genuinely harder. A post-hoc subset answers "how would this model score on
 cleaner rows", not "what happens if the split is fixed".
+
+---
+
+## 22. Results per `donor_origin`, which 11a required and nothing did (2026-11-25)
+
+`python -m ml_analytics.mt3_pipeline.report_donor`, writing
+`data/final_v2/donor_origin_report.json`. 4 tests.
+
+Only `test_synth` carries donor origins -- `test_real` rows were measured, not
+generated, so its column is `measured` throughout and the tool says so rather
+than inventing a breakdown.
+
+### 22a. The pooled table is confounded, and inverted
+
+```
+pooled on test_synth        exact    bucket   per_event
+linear probe               0.6965    0.6881     0.5520
+CNN-LSTM                   0.6562    0.6916     0.6328
+MT3                        0.7402    0.7176     0.6924
+
+rows / classes             6,907/6  20,412/43  32,686/44
+MT3 accuracy               0.6990    0.4353     0.9179   <- inverted vs macro-F1
+```
+
+Whether an exact donor exists is a property of the CLASS (14b), so the three
+groups hold different classes by construction -- 6 against 43 against 44. A
+pooled score therefore measures class composition, the same trap section 12d
+documents for adversarial AUC. The inversion makes it obvious: `per_event` has
+MT3's best accuracy (0.9179) and its worst macro-F1 (0.6924), because the
+`per_event` classes are the balanced synthetic-only ones with ~1,100 rows each.
+
+**Do not quote the pooled row.** It is printed only with its composition beside
+it, so the confound is visible rather than hidden.
+
+### 22b. Paired within class: `per_event` timing is measurably worse
+
+For each class holding at least 100 rows under both origins, the model's RECALL
+on that class under each. The class is held fixed, so the difference is about
+how the timing was produced and nothing else. Recall rather than F1 because it
+is defined per row and does not shift when the subset changes the negative set.
+28 of 45 classes qualify.
+
+```
+model          mean delta  median  bucket wins  per_event wins  wilcoxon p
+linear probe      +0.1969  +0.1876      27            1          ~0
+CNN-LSTM          +0.0933  +0.0621      23            5          3e-06
+MT3               +0.0355  +0.0207      23            5          3.7e-05
+```
+
+**`donor_bucket` beats `per_event` for every model, significantly.** This is
+section 14e's prediction confirmed on a trained model rather than on an
+adversarial classifier: `per_event` draws each gap independently, so the
+marginals are right and the within-session joint structure is gone, and that
+costs real classification accuracy.
+
+Worst affected classes are the deep ones, consistently across models:
+
+```
+MT3, largest paired gaps      bucket   per_event    delta
+EXFIL_CURL_C2                 0.9536     0.8079    +0.1457
+EXFIL_TUNNEL_NGROK            0.9124     0.8035    +0.1089
+EVASION_CHMOD_HIDE            0.9769     0.8775    +0.0994
+EXFIL_DNS_TUNNEL              0.9403     0.8455    +0.0948
+LATERAL_SSH_SPREAD            0.9670     0.8743    +0.0926
+```
+
+### 22c. The gap shrinks as the model gets stronger, and that is the real finding
+
+```
+linear probe   +0.1969
+CNN-LSTM       +0.0933      47% of the probe's gap
+MT3            +0.0355      18% of the probe's gap
+```
+
+A stronger model recovers most of what the broken timing costs. Two things
+follow, and they pull in opposite directions:
+
+- **The 54.5% `per_event` fallback is a real defect with a measurable price**,
+  and it is not hypothetical: it costs the probe ~0.20 recall on the affected
+  classes.
+- **It is not the binding constraint on MT3.** 0.036 mean recall is small next to
+  the 0.24 that separates MT3 from the probe. Fixing the donor desert -- which
+  14b says is impossible anyway, since no real session of that shape exists --
+  would buy MT3 very little.
+
+So the honest framing for the paper: temporal fidelity measurably affects
+classification, the effect is strongest for weak models, and `donor_origin` must
+ship with the dataset so anyone can check it. It does.
+
+### 22d. What this does NOT show
+
+The comparison is `donor_bucket` against `per_event`. **`donor_exact` cannot be
+paired broadly** -- it exists for only 6 classes, and only `RECON_IP_SCAN` holds
+enough rows under both exact and bucket to compare. So the question "does a
+same-class donor beat a wrong-class donor on a trained model" is still open; 13a
+answered it for adversarial AUC (0.9756 -> 0.9127) but not for classification.
+
+Nothing here touches `test_real`. The donor column is a property of generated
+sessions, so the real-data headline cannot be split this way, and the 28
+synthetic-only classes remain unevaluable against real traffic.

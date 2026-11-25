@@ -46,10 +46,16 @@ netflow. Quote the `exclB` column for taxonomy claims.
 Filtering the test set cannot estimate a retrain -- the fix changes the training
 distribution too.
 
-### Next
+**Results per `donor_origin` now exist** (section 22,
+`python -m ml_analytics.mt3_pipeline.report_donor`). Paired within class,
+`donor_bucket` beats `per_event` for all three models -- probe +0.1969,
+CNN-LSTM +0.0933, MT3 +0.0355 mean recall, wilcoxon p <= 3.7e-05 -- so the 54.5%
+per-event fallback has a measurable price, strongest for weak models and small
+for MT3. The POOLED per-origin table is confounded by class composition and is
+printed only beside it; MT3's `per_event` accuracy is its HIGHEST (0.9179) and
+its macro-F1 its lowest, which makes the confound plain.
 
-- **Report per `donor_origin`**, which 11a requires and no trainer does yet. The
-  arrays ship; it is a post-hoc script over the saved predictions.
+### Next
 - **The live path is still 45-output.** `feature_bridge.MT3Inference`, the
   checkpoint it loads, `configurator.py` and the dashboard label maps all assume
   45 classes. A 46-label model needs all four updated together.

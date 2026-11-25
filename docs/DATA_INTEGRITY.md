@@ -2447,3 +2447,128 @@ fidelity measure (9a, 13d). The `A_temporal` Wasserstein check still FAILS
 - **KCVR on real data wants a decision**: loosen `KILL_CHAIN_DAG` to match
   observed transitions, or keep it tight and state that it is prescriptive. Do
   not quietly report 0.0000.
+
+---
+
+## 20. The DAG is prescriptive, and observed transitions are recorded beside it (2026-11-25)
+
+Section 19c found that real multi-state sessions violate `KILL_CHAIN_DAG`.
+This is the decision taken on it, and the artifact that implements it.
+
+**Decided with the owner, 2026-11-25:**
+
+1. **Keep the existing DAG as a prescriptive kill-chain reference.** It is a
+   MITRE-derived taxonomy artifact, not a model of behaviour.
+2. **Do not reject a real session for violating its edges.** Already true in
+   practice -- `kill_chain_simulator.filter_invalid_sequences` exists and is
+   called by nothing. It must never be pointed at real data.
+3. **Do not claim DAG compliance as realism** for generated sessions.
+4. **Record observed transitions separately and measure their agreement with
+   the DAG** -- the same pattern section 8a uses for labels: keep the intended
+   value, record what was observed, report the gap.
+
+Item 4 is now `src/validators/transition_agreement.py`, run as
+`python -m src.validators.transition_agreement`, writing
+`data/final_v2/transition_agreement.json`. 9 tests.
+
+### 20a. What real attackers actually do: 16 transitions, 3 of them in the DAG
+
+52,848 of 114,490 real Cowrie sessions (46.2%) carry a multi-state walk. They
+contain **16 distinct transitions**, self-loops excluded:
+
+```
+transition                                   n      phases  in DAG?
+ACCESS_BRUTE_SSH  -> DISC_ENV_PROBE       45,711    1->3    NO (forward_skip)
+ACCESS_BRUTE_SSH  -> EXEC_SHELL_OPEN       7,016    1->2    yes
+EXEC_SHELL_OPEN   -> EXFIL_SCP_DATA          556    2->8    NO (forward_skip)
+EXFIL_SCP_DATA    -> PRIVESC_SUDO_ABUSE      532    8->4    NO (backward)
+PRIVESC_SUDO_ABUSE-> EXEC_SHELL_OPEN         532    4->2    NO (backward)
+ACCESS_BRUTE_SSH  -> EXEC_WGET_EXEC          100    1->2    NO (forward_adjacent)
+ACCESS_BRUTE_SSH  -> EXFIL_SCP_DATA           16    1->8    NO (forward_skip)
+EXEC_SHELL_OPEN   -> DISC_NETSTAT_SCAN        11    2->3    yes
+DISC_NETSTAT_SCAN -> DISC_ENV_PROBE           11    3->3    NO (same_phase)
+DISC_ENV_PROBE    -> DISC_PROC_ENUM           11    3->3    yes
+DISC_PROC_ENUM    -> EXEC_SHELL_OPEN          10    3->2    NO (backward)
+EXFIL_SCP_DATA    -> EXEC_SHELL_OPEN           5    8->2    NO (backward)
+ACCESS_BRUTE_SSH  -> EVASION_HIST_ERASE        5    1->6    NO (forward_skip)
+DISC_ENV_PROBE    -> EXEC_WGET_EXEC            1    3->2    NO (backward)
+(+2 more edge types)
+```
+
+```
+agreement           12.9% of instances;  3 of 16 edge types
+instances by kind   forward_skip 46,290   permitted 7,038   backward 1,080
+                    forward_adjacent 100   same_phase 11
+```
+
+**One transition is 83.8% of all real transitions and the DAG forbids it:**
+`ACCESS_BRUTE_SSH -> DISC_ENV_PROBE`, brute force straight into environment
+discovery with Execution skipped.
+
+Three kinds of disagreement, and they are not the same defect:
+
+- **forward skips** (46,290 instances) -- a gap in the DAG's adjacency list.
+- **backward steps** (1,080) -- exfiltration back to privilege escalation, then
+  to execution, 532 instances each. This contradicts phase MONOTONICITY, not
+  just an edge, and it is ordinary attacker behaviour.
+- **same-phase and forward-adjacent edges that are simply absent** (111). Note
+  `ACCESS_BRUTE_SSH -> EXEC_WGET_EXEC` is phase 1->2, intuitively sensible, and
+  still not in the DAG -- so the gaps are not only about skipping.
+
+### 20b. The mirror statistic, which is the stronger one
+
+```
+                              DAG edge types exercised
+real honeypot traffic              3 of 102   ( 2.9%)
+generated sessions               101 of 102   (99.0%)
+```
+
+**The DAG is 97% hypothetical.** 99 of its 102 edges have never been observed in
+13 days and 114,490 real sessions, and the only thing that exercises them is our
+own generator. That is the 28-synthetic-only-classes problem restated as
+transitions, and it is a cleaner way to say it than any class count.
+
+### 20c. Agreement on GENERATED sequences is a tautology, not a result
+
+```
+generated   100.0% of instances, 101 of 101 edge types in the DAG
+```
+
+`cowrie_simulator` walks `KILL_CHAIN_DAG` backwards from the intended label, so
+it **cannot** emit a forbidden edge. The 100% measures the generator obeying a
+rule it was built from. Report it only as a build check, never as fidelity --
+same reading as KCVR 0.0000 in section 19c.
+
+### 20d. Why the DAG is NOT simply loosened to fit
+
+Tempting, and wrong for two reasons.
+
+**The DAG is load-bearing for label coherence, not for realism.** The generator
+walks it backwards from the intended label so the labelled state is the
+session's DEEPEST state. Section 8's finding 2 is what happens otherwise:
+pinning the label to the START of the walk made 57.5% of RECON-labelled sessions
+escalate into phases 2-4 and issue shell commands, which no real reconnaissance
+session does. Removing the constraint does not buy realism, it buys
+unconstrained invention.
+
+**There is nothing to replace it with for most of the taxonomy.** 16 observed
+transitions exist, across 8 classes. For the 28 synthetic-only classes there are
+zero observed transitions, so a DAG-free generator would be inventing structure
+with no evidence at all -- strictly worse than a documented, citable assumption.
+
+**The upgrade path, if the generator is revisited:** stamp each generated
+session with `transition_source = observed | dag`, the `donor_origin` pattern
+(14a). Sample the 16 observed transitions where the class supports it, fall back
+to the DAG where it does not, and let realism claims attach only to the
+`observed` rows. Not done.
+
+### 20e. How to write this up
+
+Say: the taxonomy's transition model is prescriptive, derived from MITRE
+ATT&CK's kill-chain ordering; measured against 13 days of real SSH honeypot
+traffic it accounts for 12.9% of observed transition instances and 3 of 16
+observed edge types, while 99 of its 102 edges are never observed. Real
+attackers skip phases (84.9% of transitions) and occasionally move backwards
+through them (2.0%).
+
+Do not say the real data is invalid, and do not quote the generated 100%.

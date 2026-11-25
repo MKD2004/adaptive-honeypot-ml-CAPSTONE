@@ -151,7 +151,15 @@ def compute_kcvr(df: pd.DataFrame,
 
 def filter_invalid_sequences(df: pd.DataFrame,
                               seq_col: str = "micro_state_sequence") -> pd.DataFrame:
-    """Remove rows whose micro-state sequence violates the kill-chain DAG."""
+    """Remove rows whose micro-state sequence violates the kill-chain DAG.
+
+    NEVER point this at real capture data. The DAG is prescriptive and real
+    attackers disagree with it: 87.1% of observed transition instances are
+    outside it, so this would discard 46,290 genuine transitions as invalid.
+    Measure the disagreement instead --
+    `src/validators/transition_agreement.py` (DATA_INTEGRITY.md section 20).
+    Called by nothing as of 2026-11-25.
+    """
     if seq_col not in df.columns:
         log.warning("No sequence column '%s' — skipping filter", seq_col)
         return df

@@ -157,17 +157,23 @@ Every command takes `--help`.
 ### A pilot number is not a headline number
 
 200,000 balanced training rows is not the 1,466,849-row build. Your MT3 will
-score **below** the published 0.5507 macro-F1, and that is expected rather than
+score **below** the published 0.5628 mean macro-F1, and that is expected rather than
 a setup problem. Label pilot results as pilot results.
 
 Published numbers for reference (`CLAUDE.md` Current Status):
 
 ```
-model          params      macro-F1   macro-F1@n>=97   accuracy   phase acc
-linear probe    5,934        0.3835       0.5339        0.7482        —
-CNN-LSTM      189,710        0.4413       0.6118        0.8194        —
-MT3         3,759,767        0.5507       0.7387        0.8908       0.9366
+mean +/- sd over 3 seeds (42/43/44), on test_real
+model          params      macro-F1            accuracy
+linear probe    5,934   0.3852 +/- 0.0015   0.7459 +/- 0.0003
+CNN-LSTM      189,710   0.4363 +/- 0.0141   0.8179 +/- 0.0083
+MT3         3,759,767   0.5628 +/- 0.0442   0.8872 +/- 0.0147
+
+MT3 phase accuracy 0.9422 +/- 0.0011   macro-F1 @n>=97 0.7332 +/- 0.0206
 ```
+
+MT3 spans 0.5259-0.6119 across seeds, so **one run of your own landing anywhere
+in that band is normal**. Compare against the mean, not a single number.
 
 ---
 
@@ -176,10 +182,10 @@ MT3         3,759,767        0.5507       0.7387        0.8908       0.9366
 In this order:
 
 ```
-phase accuracy                       0.9366     what the system acts on
-weighted F1                          0.9082
-macro-F1 over 10 classes with n>=97  0.7387     covers 99.6% of real sessions
-macro-F1 over all 16 classes         0.5507     the strict number
+phase accuracy                       0.9422 +/- 0.0011   what the system acts on
+weighted F1                          0.9047 +/- 0.0124
+macro-F1 over 10 classes with n>=97  0.7332 +/- 0.0206   99.6% coverage
+macro-F1 over all 16 classes         0.5628 +/- 0.0442   the strict number
 ```
 
 Plain macro-F1 looks low because 9 of the 16 classes hold just 652 of 59,784
@@ -255,7 +261,7 @@ the reason every time.
 
 | question | file |
 |---|---|
-| what was wrong with the data, and what is fixed | `DATA_INTEGRITY.md` §§8-23 |
+| what was wrong with the data, and what is fixed | `DATA_INTEGRITY.md` §§8-26 |
 | which numbers to quote, which are retired | `CLAUDE.md` Current Status; §21d, §23 |
 | why something was built this way | `DECISIONS.md` |
 | this crash has happened before | `ERRORS.md` |

@@ -135,6 +135,25 @@ permitted routes are in 25e: execute the techniques ourselves through our own
 extractor (Atomic Red Team, correct shape, labelled by construction), a
 higher-interaction honeypot, or state the gap.
 
+**Error bars exist now (section 26).** Three seeds per model, ~3.5 h:
+
+```
+linear probe   0.3852 +/- 0.0015
+CNN-LSTM       0.4363 +/- 0.0141
+MT3            0.5628 +/- 0.0442
+```
+
+Both gaps clear the noise -- MT3 - CNN-LSTM +0.1266 against a pooled sd of
+0.0328, CNN-LSTM - probe +0.0511 against 0.0100 -- so 21d's three-tier ordering
+is a real effect. On `data/final/` the three sat inside 0.064 and MT3 vs
+CNN-LSTM was a tie at p=0.617, which could not have survived this test.
+
+**MT3 is the seed-sensitive one, 29x the probe's spread** (0.5259-0.6119),
+because macro-F1 over 16 classes is unweighted and 9 of them hold 1.1% of the
+rows. Its phase accuracy is 0.9422 +/- 0.0011 -- the most reproducible number in
+the project and the one the honeypot acts on. Report means, never seed 42 alone;
+CLAUDE.md and TEAMMATE_SETUP.md now carry bars instead of single runs.
+
 ### Next
 - **Pre-existing failure, not ours:** `test_router.py::test_honeypot_round_robin`
   fails at HEAD too (verified in a clean worktree). One honeypot target is

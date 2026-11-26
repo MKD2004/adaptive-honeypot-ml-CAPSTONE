@@ -3183,3 +3183,82 @@ measurable (section 23), and the reason in one sentence.
 
 Do not write "we combine N public datasets for broad coverage". With `gen_*`
 shipped, that claim is checkable and it does not hold.
+
+---
+
+## 26. Error bars: three seeds, and MT3 is the seed-sensitive one (2026-11-26)
+
+Every model number before today came from a single run. Three seeds (42, 43,
+44) per model, identical protocol, ~3.5 hours unattended.
+
+**These are TRAINING-variance bars** -- model initialisation and batch
+shuffling. The split is fixed in `final_v2`, so all three seeds see identical
+rows. Data-resampling bars would need the whole pipeline re-run per seed and are
+NOT what is reported here.
+
+### 26a. test_real, 3 seeds
+
+```
+model          params      macro-F1            accuracy
+linear probe    5,934   0.3852 +/- 0.0015   0.7459 +/- 0.0003
+CNN-LSTM      189,710   0.4363 +/- 0.0141   0.8179 +/- 0.0083
+MT3         3,759,767   0.5628 +/- 0.0442   0.8872 +/- 0.0147
+
+per seed (42 / 43 / 44)
+linear probe   0.3835  0.3863  0.3858
+CNN-LSTM       0.4413  0.4472  0.4204
+MT3            0.5507  0.5259  0.6119
+```
+
+### 26b. Both gaps clear the noise
+
+```
+MT3 - CNN-LSTM   = +0.1266   pooled sd 0.0328   ~3.9x
+CNN-LSTM - probe = +0.0511   pooled sd 0.0100   ~5.1x
+```
+
+So the three-tier ordering of 21d is a real effect, not a seed artefact. On
+`data/final/` all three models sat inside 0.064 of each other and MT3 vs
+CNN-LSTM was a tie at p=0.617, so that comparison could not have survived this
+test.
+
+### 26c. MT3's headline numbers, with bars
+
+```
+phase accuracy        0.9422 +/- 0.0011     <- 40x tighter than macro-F1
+weighted F1           0.9047 +/- 0.0124
+macro-F1 @n>=97       0.7332 +/- 0.0206
+macro-F1 (16 classes) 0.5628 +/- 0.0442
+macro-F1 over 46      0.1958 +/- 0.0154
+accuracy              0.8872 +/- 0.0147
+```
+
+**Report the mean, not seed 42.** `0.5507` is the MIDDLE seed, not the best
+(0.6119) nor the worst (0.5259), so quoting it was neither cherry-picking nor
+representative -- but a single run cannot be either.
+
+### 26d. The seed sensitivity is itself a finding
+
+```
+linear probe   +/- 0.0015       5,934 parameters
+CNN-LSTM       +/- 0.0141     189,710
+MT3            +/- 0.0442   3,759,767
+```
+
+MT3 varies **29x more than the probe** across seeds, spanning 0.5259 to 0.6119.
+That is section 23's problem showing up as variance: macro-F1 over 16 classes is
+unweighted, 9 of those classes hold 652 of 59,784 rows, so a few hundred rows
+changing hands between seeds moves the average a long way. The same model's
+ACCURACY varies only +/- 0.0147 and its PHASE accuracy +/- 0.0011.
+
+**Phase accuracy at 0.9422 +/- 0.0011 is the most reproducible number in the
+project**, and it is also the one the honeypot acts on. Another reason to lead
+with it (23's headline order).
+
+### 26e. What this does not settle
+
+Three seeds is the minimum for a standard deviation to mean anything. With MT3
+at +/- 0.0442 a reviewer could reasonably ask for 5-10, which at ~55 minutes a
+run is an overnight job. `n>=97` for seed 42 (0.7387) was computed post hoc from
+its saved predictions because the metric did not exist when it ran; seeds 43 and
+44 emit it directly. The three agree, but they come from two code paths.

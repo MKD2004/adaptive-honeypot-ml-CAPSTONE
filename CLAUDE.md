@@ -279,15 +279,29 @@ count were all measured on `data/final/`. Do not quote them. `final_v2` has
 **Models trained on `final_v2`** (2026-11-25, one protocol, value-disjoint
 split, 46 labels). `test_real` = 59,784 real sessions, 16 labels present:
 
-| model | params | macro-F1 | macro-F1 @n>=97 | weighted F1 | accuracy | phase acc |
-|---|---|---|---|---|---|---|
-| linear probe | 5,934 | 0.3835 | 0.5339 | — | 0.7482 | — |
-| CNN-LSTM | 189,710 | 0.4413 | 0.6118 | — | 0.8194 | — |
-| **MT3** | 3,759,767 | **0.5507** | **0.7387** | **0.9082** | **0.8908** | **0.9366** |
+**Mean ± sd over 3 seeds (42/43/44), §26** — single-run numbers are retired:
 
-**Quote these four, in this order: phase accuracy 0.9366, weighted F1 0.9082,
-macro-F1 over the 10 classes with n>=97 real sessions 0.7387 (99.6% coverage),
-macro-F1 over all 16 observed classes 0.5507.** Plain macro-F1 is dominated by
+| model | params | macro-F1 | accuracy |
+|---|---|---|---|
+| linear probe | 5,934 | 0.3852 ± 0.0015 | 0.7459 ± 0.0003 |
+| CNN-LSTM | 189,710 | 0.4363 ± 0.0141 | 0.8179 ± 0.0083 |
+| **MT3** | 3,759,767 | **0.5628 ± 0.0442** | **0.8872 ± 0.0147** |
+
+Both gaps clear the noise: MT3 − CNN-LSTM = **+0.1266** against a pooled sd of
+0.0328 (~3.9×); CNN-LSTM − probe = **+0.0511** against 0.0100 (~5.1×).
+
+**Quote these four, in this order:**
+
+| | MT3, 3 seeds |
+|---|---|
+| phase accuracy | **0.9422 ± 0.0011** ← most reproducible, and what the system acts on |
+| weighted F1 | 0.9047 ± 0.0124 |
+| macro-F1 @n≥97 (10 classes, 99.6% coverage) | 0.7332 ± 0.0206 |
+| macro-F1, all 16 observed classes | 0.5628 ± 0.0442 |
+
+**Report the mean, never seed 42 alone.** MT3 spans 0.5259–0.6119 across seeds —
+it varies 29× more than the probe, because macro-F1 over 16 classes is unweighted
+and 9 of them hold 1.1% of the rows (§26d). Plain macro-F1 is dominated by
 9 classes holding 1.1% of rows — see `DATA_INTEGRITY.md` §23 for the threshold's
 derivation and the four rules for reporting it.
 
@@ -298,7 +312,7 @@ statistical tie (p=0.617) because that data was close to linearly separable — 
 per `donor_origin` (§22): `per_event` timing costs the probe 0.197 mean recall
 and MT3 only 0.036.
 
-**Read `DATA_INTEGRITY.md` §§8-23 before quoting any dataset number.** It is the
+**Read `DATA_INTEGRITY.md` §§8-26 before quoting any dataset number.** It is the
 self-contained handoff: what was wrong, what is fixed (synthetic sessions are now
 generated as Cowrie log events and parsed by the real extractors; a feature that
 cannot be measured is NaN, not zero; donor pools are class-aware; the integrity

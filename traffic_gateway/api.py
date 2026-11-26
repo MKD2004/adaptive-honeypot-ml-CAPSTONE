@@ -298,6 +298,43 @@ def config_changes():
     return jsonify({"changes": _configurator().recent_changes(limit=limit)})
 
 
+# ── Response mitigation (what was decided, and why) ─────────────────────────
+# The layer has written `response_mitigation/logs/mitigation_audit.jsonl` since
+# it was built, and nothing read it -- so the dashboard showed blacklisted IPs
+# (the OUTCOME) but never the decision behind them: which rule fired, what the
+# reason was, and whether it was applied, skipped or vetoed. That is the part a
+# reviewer asks about.
+@app.get("/api/mitigation")
+def mitigation():
+    limit = request.args.get("limit", default=50, type=int)
+    ip = request.args.get("ip", default=None, type=str)
+    ensure_paths()
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from response_mitigation.audit import AuditLog       # type: ignore
+        from response_mitigation.config import load_config   # type: ignore
+    except Exception as exc:
+        return jsonify({"decisions": [], "available": False, "reason": str(exc)})
+
+    cfg = load_config()
+    log = AuditLog(cfg.audit_path)
+    # AuditLog.tail reads from the END in blocks, so a long log stays cheap.
+    rows = log.tail(max(0, min(limit, 500)), ip=ip or "")
+    counts = {"action": {}, "outcome": {}, "mode": {}}
+    for r in rows:
+        for k in counts:
+            v = str(r.get(k, ""))
+            counts[k][v] = counts[k].get(v, 0) + 1
+    return jsonify({
+        "decisions": rows,
+        "available": True,
+        "audit_path": str(cfg.audit_path),
+        "mode": getattr(cfg.mode, "value", str(cfg.mode)),
+        "counts": counts,
+    })
+
+
 # ── Threat intelligence (background refresher for the CVE overlay) ──────────
 def _intel():
     ensure_paths()

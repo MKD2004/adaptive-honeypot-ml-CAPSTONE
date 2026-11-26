@@ -5,6 +5,7 @@ import LiveSessionsPage from './pages/LiveSessionsPage'
 import SessionDetailsPage from './pages/SessionDetailsPage'
 import HoneypotConfigPage from './pages/HoneypotConfigPage'
 import GatewayLogsPage from './pages/GatewayLogsPage'
+import MitigationPage from './pages/MitigationPage'
 import ThreatAnalyticsPage from './pages/ThreatAnalyticsPage'
 import MitreAnalysisPage from './pages/MitreAnalysisPage'
 import CveIntelligencePage from './pages/CveIntelligencePage'
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/sessions" element={<LiveSessionsPage />} />
         <Route path="/sessions/:sessionId" element={<SessionDetailsPage />} />
         <Route path="/adaptive" element={<HoneypotConfigPage />} />
+        <Route path="/mitigation" element={<MitigationPage />} />
         <Route path="/analytics" element={<ThreatAnalyticsPage />} />
         <Route path="/mitre" element={<MitreAnalysisPage />} />
         <Route path="/cve" element={<CveIntelligencePage />} />

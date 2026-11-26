@@ -87,6 +87,11 @@ export const getConfigChanges = ({ limit } = {}) => getJSON(withQuery('/api/conf
 export const getLiveAccess = ({ limit } = {}) => getJSON(withQuery('/api/live-access', { limit }))
 export const getFootprints = ({ limit, ip } = {}) => getJSON(withQuery('/api/footprints', { limit, ip }))
 export const getStats = () => getJSON('/api/stats')
+// Response-mitigation decisions: what the layer DECIDED and why, not just
+// which IPs ended up blocked. /api/blacklist shows the outcome; this shows
+// the rule, the reason and whether it was applied, skipped or vetoed.
+export const getMitigation = ({ limit, ip } = {}) =>
+  getJSON(withQuery('/api/mitigation', { limit, ip }))
 
 // Defined per Stage 5A Part 5, but deliberately NOT called from
 // LiveSessionsPage/SessionDetailsPage yet — the MT3 checkpoint/scaler/PCA

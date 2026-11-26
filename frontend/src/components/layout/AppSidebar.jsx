@@ -41,6 +41,7 @@ const PIPELINE = [
   { to: '/mitre', label: 'MITRE Analysis', icon: Crosshair },
   { to: '/analytics', label: 'Threat Analytics', icon: BarChart3 },
   { to: '/adaptive', label: 'Honeypot Config', icon: SlidersHorizontal },
+  { to: '/mitigation', label: 'Mitigation', icon: ShieldAlert },
   { to: '/logs', label: 'Gateway Logs', icon: ScrollText },
 ]
 

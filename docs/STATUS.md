@@ -104,6 +104,26 @@ gate by 0.017. Calibration luck, not understanding: all 193,000 BENIGN training
 rows are netflow and none are honeypot sessions, so the model has never seen a
 benign SSH session (19a).
 
+**Heralding read and measured, NOT incorporated** (section 24). 11 days,
+40,565 attacker sessions, 3,078 source IPs, still running. It was **not
+gitignored** -- 32 MB of attacker logs plus a private key, one `git add -A` from
+GitHub, the `cowrie_logs/` near-miss repeating. Fixed in `f5c0cb0`.
+
+The gain is real and narrow: `ACCESS_DEFAULT_CRED` (4,800 sessions) and
+`ACCESS_CRED_STUFF` (234) go from **zero** real evidence to above the n>=97 bar,
+and they are two of the three classes MT3 confuses `ACCESS_BRUTE_SSH` with
+(1,328 of its 1,657 misses). Anchoring 18 of 46 -> **20 of 46**.
+
+Not merged, for two reasons: a Heralding session fills only **43 of 128
+features**, so its rows are identifiable by their constant signature and a
+Heralding-only class would be learnable from its source (19a's trap); and 24,083
+telnet/VNC sessions would be labelled `ACCESS_BRUTE_SSH` as "nearest available",
+which needs a naming decision. `ACCESS_BRUTE_HTTP` is NOT rescued -- 54 rows,
+because HTTP scanners connect without submitting credentials.
+
+**Decide before 29 Nov:** the capture is due to stop then and
+`ACCESS_DEFAULT_CRED` is the one thing accruing that the dataset lacks.
+
 ### Next
 - **Pre-existing failure, not ours:** `test_router.py::test_honeypot_round_robin`
   fails at HEAD too (verified in a clean worktree). One honeypot target is

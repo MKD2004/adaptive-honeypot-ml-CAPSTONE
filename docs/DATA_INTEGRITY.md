@@ -2929,3 +2929,150 @@ macro-F1, all 16 observed classes    0.5507     the strict number
 Do not reach back for the retired 0.8276. It was measured on a build with a
 fabricated temporal block in 60.3% of train rows, a group-D provenance
 watermark readable at AUC 0.97, and 29.74% train/test duplication.
+
+---
+
+## 24. Heralding anchors two classes that had no real evidence at all (2026-11-26)
+
+`heralding_logs_20261126/` arrived: 11 days of the credential honeypot Anusha
+deployed on 2026-11-14, running alongside Cowrie on the same Oracle VM. **Read
+and measured, NOT incorporated** -- the same status section 15 gave the 23-day
+Cowrie capture, and for a related reason.
+
+**It was not gitignored.** 32 MB of attacker-written logs, plus `https.pem`
+-- a private key. The `cowrie_logs/` near-miss (section 8) repeating: that
+pattern was written `cowrie_logs_*/` and missed the unsuffixed name, leaving
+440 MB one `git add -A` from GitHub. Fixed in `f5c0cb0` with all three forms.
+
+### 24a. The capture
+
+```
+40,565 attacker sessions    3,078 source IPs    11 days, still running
+71.9% attempted a login     38,965 auth attempts    672 distinct credential pairs
+4 own test sessions excluded per CAPTURE_NOTES (source 171.76.81.68)
+
+telnet 30,340   vnc 3,195   http 2,600   https 2,503
+pop3 577   smtp 543   imap 438   ftp 369
+```
+
+The credentials are an IoT botnet dictionary, not human guessing:
+`enable/linuxshell` 4,302, `system/shell` 2,700, `admin/admin` 1,036,
+`root/xc3511` 822 -- the last straight off the Mirai list.
+
+`duration` is 30.00 s at the median AND the maximum. That is Heralding's
+timeout, not attacker behaviour, and nothing temporal should be read from it.
+
+### 24b. What the rule labeller assigns
+
+`src/parsers/heralding_parser.label_session`, which already existed
+(MULTI_HONEYPOT 7.6). It is a HEURISTIC -- agreement with it is agreement with
+our own rules, never accuracy.
+
+```
+ACCESS_BRUTE_SSH      24,083  (59.4%)    all telnet and vnc, see 24d
+RECON_IP_SCAN         11,394  (28.1%)    bare connects, no credentials
+ACCESS_DEFAULT_CRED    4,800  (11.8%)
+ACCESS_CRED_STUFF        234   (0.6%)
+ACCESS_BRUTE_HTTP         54   (0.1%)
+```
+
+### 24c. The real gain: two classes go from ZERO real evidence
+
+Measured against `final_v2` (train + val + test_real, by `gen_*`):
+
+```
+class                 real rows BEFORE   Heralding adds
+ACCESS_DEFAULT_CRED            0              4,800
+ACCESS_CRED_STUFF              0                234
+ACCESS_BRUTE_HTTP          1,507 (cic)           54
+ACCESS_AUTH_BYPASS             0                  0
+```
+
+**`ACCESS_DEFAULT_CRED` and `ACCESS_CRED_STUFF` had no real evidence of any
+kind** -- 14,661 and 14,675 rows each, all `simulated_cowrie_events`. They now
+have 4,800 and 234 real sessions, both above the n>=97 measurability bar of
+section 23.
+
+**And they are exactly where the model fails.** MT3 loses 1,657 of 3,872
+`ACCESS_BRUTE_SSH` sessions (recall 0.5721), and 1,328 of those misses go to
+these two classes plus `ACCESS_AUTH_BYPASS`:
+
+```
+ACCESS_CRED_STUFF      887
+ACCESS_DEFAULT_CRED    441
+ACCESS_AUTH_BYPASS     242
+```
+
+The model was being asked to separate credential-access variants it had never
+seen a real example of. This capture is the first real evidence for two of the
+three.
+
+**Class anchoring therefore moves from 18 of 46 to 20 of 46**, and
+synthetic-only from 28 to 26. That is a scope claim that costs no pipeline work
+and should go in the paper.
+
+### 24d. Two things it does NOT fix, one of them a prediction of mine
+
+**`ACCESS_BRUTE_HTTP` is not rescued, and it never needed rescuing.** I expected
+http+https (5,103 sessions) to anchor it with thousands of rows. It yields
+**54**: 5,072 of those 5,103 are bare connects with no credentials submitted, so
+they label `RECON_IP_SCAN`. Scanners knock and leave. Separately, the class was
+never starved in the dataset -- it holds 1,507 real CIC rows. The 96 I quoted
+earlier was its support in `test_real` alone, which is a property of the split,
+not of the corpus.
+
+**`ACCESS_AUTH_BYPASS` gains nothing.** It is not in the labeller's output at
+all, so the third confusion target stays synthetic-only.
+
+### 24e. Why it is not merged: 43 of 128 features
+
+200 credential-bearing sessions through `build_record` -> `extract_all`:
+
+```
+group             cols   constant   usable
+A_temporal          24          5       19
+B_network           28         23        5
+C_payload           24          6       18
+D_semantic          30         30        0
+E_threat_intel      14         14        0
+F_tls_host           8          7        1
+TOTAL              128         85       43
+```
+
+No shell, no commands, no byte counts, a fixed 30 s duration. **So a Heralding
+row is identifiable from its constant signature alone**, and any class anchored
+only by Heralding becomes learnable from "is this a Heralding row" rather than
+from behaviour.
+
+That is section 19a's trap exactly: all 193,000 BENIGN rows are netflow,
+netflow separates from Cowrie at AUC 1.0000 on source alone, and BENIGN scores
+F1 0.9149 without the model understanding anything about benign traffic.
+Merging 4,800 Heralding-only `ACCESS_DEFAULT_CRED` rows would reproduce it on a
+class the paper would then claim as real-anchored.
+
+### 24f. Two decisions this forces, neither taken here
+
+**1. 24,083 telnet and VNC sessions would be labelled `ACCESS_BRUTE_SSH.`** The
+parser comments this as "nearest available". MITRE T1110.001 (Password
+Guessing) genuinely covers both protocols, but the class NAME says SSH and the
+traffic is telnet. Three options: rename the class protocol-neutral, add
+`ACCESS_BRUTE_TELNET` (a 47th label, with everything that follows), or conflate
+and state it in the paper. Doing nothing silently inflates the biggest
+real-anchored class by 24k rows of a different protocol.
+
+**2. How Heralding joins the feature matrix, if it does.** Keep it as a separate
+credential-access evaluation set; restrict it to the two classes it uniquely
+anchors; or merge it with the mask and report by provenance -- which is what
+Part 0 built, but which does not stop the source being learnable (24e).
+
+`MT3_TRUSTED_SOURCES` remains `{"cowrie_real"}`. Nothing here changes that:
+HONEYPOT_AUDIT PART 7 measured MT3 agreeing with the rule labeller on 0 of 6
+Heralding scenarios and being confidently wrong -- a bare connect returning
+`DISC_NETSTAT_SCAN` at confidence 1.000.
+
+### 24g. The capture is still running
+
+Last session 2026-11-26 10:39 UTC. `Heralding_deployment_update.md` planned a
+stop on or after 2026-11-29. `ACCESS_DEFAULT_CRED` is the one thing accruing
+that the dataset genuinely lacks, so there is a reason to let it run past that
+date -- decide before it is stopped, because restarting loses continuity.

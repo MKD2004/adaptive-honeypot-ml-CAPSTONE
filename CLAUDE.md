@@ -99,6 +99,21 @@ Class anchoring, 46 labels (45 micro-states + BENIGN):
 | real netflow only | 10 |
 | **synthetic only, no real evidence** | **28** |
 
+**Heralding adds two (2026-11-26, measured but NOT incorporated — §24).** An
+11-day credential-honeypot capture (40,565 attacker sessions, 3,078 IPs) gives
+`ACCESS_DEFAULT_CRED` 4,800 and `ACCESS_CRED_STUFF` 234 real sessions. Both had
+**zero** real rows of any kind, and both are classes MT3 confuses
+`ACCESS_BRUTE_SSH` with — 1,328 of its 1,657 missed sessions. So anchoring is
+**20 of 46 with some real evidence, 26 synthetic-only**, once it is used.
+
+It is not merged, for two reasons in §24e/24f: a Heralding session populates
+only **43 of 128 features** (no shell, no commands, no byte counts, duration
+fixed at Heralding's 30 s timeout), so its rows are identifiable by their
+constant signature and a Heralding-only class would be learnable from its source
+— §19a's BENIGN-is-netflow trap again. And 24,083 telnet/VNC sessions would be
+labelled `ACCESS_BRUTE_SSH` as "nearest available", which needs a naming
+decision first.
+
 So **18 of 46 classes have some real evidence and only 4 have enough honeypot
 data to train on**, not the 13 stated previously. Four classes hold 99.87% of the
 honeypot capture. Collecting longer does not help: 2.5x more capture added zero

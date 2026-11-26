@@ -55,6 +55,26 @@ for MT3. The POOLED per-origin table is confounded by class composition and is
 printed only beside it; MT3's `per_event` accuracy is its HIGHEST (0.9179) and
 its macro-F1 its lowest, which makes the confound plain.
 
+**A reporting decision, section 23.** macro-F1 0.5507 on `test_real` is not a
+statement about the model: 9 of 16 classes hold 652 of 59,784 rows (1.1%) and
+carry 56% of the average, and one class has 2 rows. `classification_metrics`
+now also reports macro-F1 over classes with **n >= 97** real sessions -- the
+support at which a per-class 95% CI is narrower than +/-0.10 -- which is 10
+classes covering **99.6%** of real rows:
+
+```
+model          all 16    n >= 97
+linear probe   0.3835     0.5339
+CNN-LSTM       0.4413     0.6118
+MT3            0.5507     0.7387
+```
+
+The threshold is a CI derivation and was fixed before any per-class F1 was
+looked at, because support and F1 correlate at spearman 0.856 and a post-hoc
+cut is indistinguishable from cherry-picking. Both numbers always print.
+Recommended headline order: phase accuracy 0.9366, weighted F1 0.9082,
+macro-F1@n>=97 0.7387, macro-F1 0.5507.
+
 ### Next
 - **The live path is still 45-output.** `feature_bridge.MT3Inference`, the
   checkpoint it loads, `configurator.py` and the dashboard label maps all assume

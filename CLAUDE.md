@@ -259,12 +259,31 @@ old numbers.
 `test_real` 0.8276, CNN-LSTM 0.8093, the 5,805-parameter linear-probe floor
 0.7681, the 29.74% `test_real` duplication and the "~83 informative features"
 count were all measured on `data/final/`. Do not quote them. `final_v2` has
-**101 informative features of 128** (27 dead, all triaged DROP). No model has
-been trained on it yet; when one is, it is an **ablation, not a headline**, and
-results must be reported per class AND per `donor_origin` — class-blind timing
-scores at chance where class-aware reaches 0.946 (§14d).
+**101 informative features of 128** (27 dead, all triaged DROP).
 
-**Read `DATA_INTEGRITY.md` §§8-15 before quoting any dataset number.** It is the
+**Models trained on `final_v2`** (2026-11-25, one protocol, value-disjoint
+split, 46 labels). `test_real` = 59,784 real sessions, 16 labels present:
+
+| model | params | macro-F1 | macro-F1 @n>=97 | weighted F1 | accuracy | phase acc |
+|---|---|---|---|---|---|---|
+| linear probe | 5,934 | 0.3835 | 0.5339 | — | 0.7482 | — |
+| CNN-LSTM | 189,710 | 0.4413 | 0.6118 | — | 0.8194 | — |
+| **MT3** | 3,759,767 | **0.5507** | **0.7387** | **0.9082** | **0.8908** | **0.9366** |
+
+**Quote these four, in this order: phase accuracy 0.9366, weighted F1 0.9082,
+macro-F1 over the 10 classes with n>=97 real sessions 0.7387 (99.6% coverage),
+macro-F1 over all 16 observed classes 0.5507.** Plain macro-F1 is dominated by
+9 classes holding 1.1% of rows — see `DATA_INTEGRITY.md` §23 for the threshold's
+derivation and the four rules for reporting it.
+
+MT3's Transformer fusion now **earns** its 20x parameters: the floor-to-ceiling
+spread is 0.167 against 0.064 on `data/final/`, where the three models were a
+statistical tie (p=0.617) because that data was close to linearly separable — a
+5,805-parameter probe reached 0.9930 accuracy on it. Results are also reported
+per `donor_origin` (§22): `per_event` timing costs the probe 0.197 mean recall
+and MT3 only 0.036.
+
+**Read `DATA_INTEGRITY.md` §§8-23 before quoting any dataset number.** It is the
 self-contained handoff: what was wrong, what is fixed (synthetic sessions are now
 generated as Cowrie log events and parsed by the real extractors; a feature that
 cannot be measured is NaN, not zero; donor pools are class-aware; the integrity

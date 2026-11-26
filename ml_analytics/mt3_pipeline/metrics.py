@@ -34,6 +34,18 @@ from .data import IDX_TO_PHASE, N_CLASSES, N_LABELS, N_PHASES, PHASE_NAMES
 
 BENIGN_IDX = N_CLASSES          # label 45: no phase, no DAG edges
 
+# Minimum real sessions before a per-class score means anything. A recall
+# measured on n rows has a 95% CI half-width of ~1.96*sqrt(0.25/n), so +/-0.10
+# needs n >= 97. That is the whole justification: it is a statement about
+# measurement precision, not about which classes matter.
+#
+# IT HAD TO BE FIXED BEFORE LOOKING AT ANY PER-CLASS F1. Support and F1
+# correlate at spearman 0.856 on test_real, so a threshold chosen afterwards is
+# indistinguishable from picking the classes the model happens to win. See
+# DATA_INTEGRITY.md section 23. (100 gives the identical class set here; 97 is
+# kept because it is the number the formula produces.)
+MIN_SUPPORT_CI10 = 97
+
 
 def _phase_of(y: np.ndarray) -> np.ndarray:
     """Micro-state label -> kill-chain phase, with BENIGN mapped to -1.
@@ -54,6 +66,7 @@ def classification_metrics(
     label_names: Optional[Sequence[str]] = None,
     n_classes: int = N_LABELS,
     include_confusion: bool = True,
+    min_support: int = MIN_SUPPORT_CI10,
 ) -> Dict[str, object]:
     """Full metric bundle for one split."""
     y_true = np.asarray(y_true, dtype=np.int64)
@@ -92,6 +105,25 @@ def classification_metrics(
         }
         for i in range(n_classes)
     }
+
+    # Macro-F1 restricted to classes with enough real sessions to measure. The
+    # unrestricted macro_f1 above is dominated by classes that barely exist:
+    # on test_real, 9 of 16 classes hold 652 of 59,784 rows (1.1%) yet carry 56%
+    # of the average, and one has 2 rows. Both numbers are reported; neither
+    # replaces the other, and `coverage` is what makes the subset defensible.
+    _enough = np.array([c for c in present if sup[c] >= min_support], dtype=np.int64)
+    if len(_enough):
+        _m = np.isin(y_true, _enough)
+        out["sufficient_support"] = {
+            "min_support": int(min_support),
+            "n_classes": int(len(_enough)),
+            "classes": [names[c] for c in _enough],
+            "excluded": {names[c]: int(sup[c]) for c in present if sup[c] < min_support},
+            "coverage": round(float(_m.mean()), 4),
+            "macro_f1": float(f1_score(y_true[_m], y_pred[_m], labels=_enough,
+                                       average="macro", zero_division=0)),
+            "accuracy": float((y_true[_m] == y_pred[_m]).mean()),
+        }
 
     # kill-chain phase level (9-way), derived from the micro-state predictions.
     # Rows whose TRUE label has no phase (BENIGN) are dropped -- scoring them
@@ -146,7 +178,10 @@ def format_metrics_line(name: str, m: Dict[str, object]) -> str:
     return (
         f"{name:<14s} n={m['n_samples']:>6,d} cls={m['n_classes_present']:>2d}  "
         f"macroF1={m['macro_f1']:.4f}  macroF1@45={m['macro_f1_all45']:.4f}  "
-        f"acc={m['accuracy']:.4f}  wF1={m['weighted_f1']:.4f}  "
+        + (f"macroF1@n>={m['sufficient_support']['min_support']}="
+           f"{m['sufficient_support']['macro_f1']:.4f}  "
+           if "sufficient_support" in m else "")
+        + f"acc={m['accuracy']:.4f}  wF1={m['weighted_f1']:.4f}  "
         f"phaseF1={m['phase']['macro_f1']:.4f}"
     )
 

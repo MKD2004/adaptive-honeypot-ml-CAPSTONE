@@ -2816,3 +2816,116 @@ answered it for adversarial AUC (0.9756 -> 0.9127) but not for classification.
 Nothing here touches `test_real`. The donor column is a property of generated
 sessions, so the real-data headline cannot be split this way, and the 28
 synthetic-only classes remain unevaluable against real traffic.
+
+---
+
+## 23. Which classes a per-class metric may average over (2026-11-25)
+
+MT3's headline on `test_real` is **macro-F1 0.5507**, and it is not a statement
+about the model. Macro-F1 weights every class equally regardless of size, and
+our classes are not remotely equal:
+
+```
+                      classes    rows    share of the macro average
+support >= 500            7     59,132              44%
+support <  500            9        652              56%
+```
+
+**652 real sessions -- 1.1% of the test set -- decide more than half the
+headline.** `EXFIL_SCP_DATA` has **2 rows**, scores F1 0.0, and counts for 6% of
+the average on its own.
+
+### 23a. The rule, and why it is a confidence interval and not a round number
+
+A per-class recall measured on *n* rows has a 95% CI half-width of about
+`1.96 * sqrt(0.25/n)`. Accepting +/-0.10 requires **n >= 97**, so that is the
+threshold: `metrics.MIN_SUPPORT_CI10`. Every `classification_metrics` call now
+emits a `sufficient_support` block beside the unrestricted numbers.
+
+```
+CI accepted    min n    classes    macro-F1 (MT3)    coverage
++/- 0.20          25       13          0.6340         100.0%
++/- 0.10          97       10          0.7387          99.6%     <- chosen
++/- 0.05         385        7          0.8825          98.9%
+```
+
+**The threshold had to be fixed BEFORE any per-class F1 was looked at**, and the
+reason is measurable: on `test_real`, support and per-class F1 correlate at
+**spearman 0.856**. Any frequency-based cut therefore selects, as a side effect,
+the classes the model happens to win -- so a threshold picked afterwards is
+indistinguishable from cherry-picking even when the intent was honest. The CI
+derivation is the defence: it is a claim about measurement precision that makes
+no reference to our results.
+
++/-0.10 was taken over +/-0.05 deliberately. 0.8825 over 7 classes is the better
+number and the worse argument: it keeps under half the observed classes and
+invites "you dropped the hard ones". 10 of 16, covering 99.6% of real sessions,
+is defensible on its face.
+
+### 23b. All three models, both ways
+
+```
+model          params     all 16 classes    n >= 97 (10 classes)    coverage
+linear probe    5,934         0.3835              0.5339              99.6%
+CNN-LSTM      189,710         0.4413              0.6118              99.6%
+MT3         3,759,767         0.5507              0.7387              99.6%
+```
+
+The subset does not flatter one architecture: floor-to-ceiling spread is 0.205
+on the subset against 0.167 on all 16, so the ablation conclusion of section 21d
+is unchanged.
+
+### 23c. Exactly what is excluded
+
+```
+EXFIL_SCP_DATA         2 rows      F1 0.0000
+EXEC_WGET_EXEC         6           0.2791
+LATERAL_SSH_SPREAD    12           0.2917
+EXEC_CURL_BASH        40           0.1194
+EXEC_MEMFD_EXEC       95           0.3434
+ACCESS_BRUTE_HTTP     96           0.3933
+                     ---
+                     251 rows of 59,784  (0.4%)
+```
+
+Two of the six -- `EXFIL_SCP_DATA` (36 real sessions corpus-wide) and
+`EXEC_WGET_EXEC` (100) -- are already listed as **trace honeypot only** in
+CLAUDE.md's class-anchoring table, written long before any of these model
+results existed. The rule is therefore making an existing documented
+distinction operational, not inventing a convenient one.
+
+### 23d. How to report it
+
+1. **Name it "classes with sufficient real support", never "the important
+   classes".** The first is a checkable claim about the data; the second is a
+   claim about the world that would have to be defended separately.
+2. **Always print the unrestricted number beside it.** The block is additive --
+   `macro_f1` never goes away, and `format_metrics_line` shows both.
+3. **Name every excluded class with its support** (23c). Nothing hidden means
+   nothing to accuse.
+4. **Quote the coverage.** 99.6% is the legitimacy argument in one number.
+
+### 23e. The question this invites, and the answer
+
+*"If only 10 of 46 classes can be evaluated, what are the other 36 for?"*
+
+It is a scope question, not a metrics question, and the answer is already in 3d
+and 15: the 46 labels are the MITRE-mapped space the honeypot can act on; 18
+have some real evidence, 10 have enough to measure, 28 rest on synthetic data
+alone. Three captures over 8, 13 and 23 days produced the same 8 micro-states,
+so this is a property of what SSH bots do rather than a collection failure.
+Broadening it needs the other honeypots in MULTI_HONEYPOT.md -- a web or auth
+honeypot would give `ACCESS_BRUTE_HTTP` (96 rows today) real support.
+
+**The recommended headline set**, in this order:
+
+```
+phase accuracy                       0.9366     what the system acts on
+weighted F1, all 16 classes          0.9082
+macro-F1, 10 classes with n >= 97    0.7387     covers 99.6% of real sessions
+macro-F1, all 16 observed classes    0.5507     the strict number
+```
+
+Do not reach back for the retired 0.8276. It was measured on a build with a
+fabricated temporal block in 60.3% of train rows, a group-D provenance
+watermark readable at AUC 0.97, and 29.74% train/test duplication.

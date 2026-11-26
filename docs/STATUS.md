@@ -124,6 +124,17 @@ because HTTP scanners connect without submitting credentials.
 **Decide before 29 Nov:** the capture is due to stop then and
 `ACCESS_DEFAULT_CRED` is the one thing accruing that the dataset lacks.
 
+**Decision recorded (section 25): no more public datasets to anchor classes.**
+Each source carries a measurement fingerprint -- cowrie 24/24 temporal features
+measured, cic 14/24, unsw 10/24, heralding 43 of 128 -- so a class anchored by
+one source is learnable from the source. Two REAL netflow datasets already
+separate at AUC 1.0000 (12b), and `gen_*` ships, so the claim is checkable by
+anyone. The 26 empty classes are empty because a low-interaction honeypot never
+lets an attacker reach those phases, not because data is unavailable. The
+permitted routes are in 25e: execute the techniques ourselves through our own
+extractor (Atomic Red Team, correct shape, labelled by construction), a
+higher-interaction honeypot, or state the gap.
+
 ### Next
 - **Pre-existing failure, not ours:** `test_router.py::test_honeypot_round_robin`
   fails at HEAD too (verified in a clean worktree). One honeypot target is

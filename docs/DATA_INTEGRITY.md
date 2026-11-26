@@ -3076,3 +3076,110 @@ Last session 2026-11-26 10:39 UTC. `Heralding_deployment_update.md` planned a
 stop on or after 2026-11-29. `ACCESS_DEFAULT_CRED` is the one thing accruing
 that the dataset genuinely lacks, so there is a reason to let it run past that
 date -- decide before it is stopped, because restarting loses continuity.
+
+---
+
+## 25. No more sources to anchor classes — the shape test (2026-11-26)
+
+**Decision.** We do NOT add further public datasets to give the 26
+synthetic-only classes a real anchor. The question was reasonable -- CIC-IDS2017
+and UNSW-NB15 are already in the build, so why not CSE-CIC-IDS2018, CTU-13,
+ToN-IoT, NSL-KDD? The answer is that the binding constraint is not availability.
+It is **feature shape**, and adding sources makes the dataset look better while
+being less defensible.
+
+### 25a. Every source arrives with a measurement fingerprint
+
+Of the 24 temporal features, how many each source actually MEASURED (from
+`M_train.npy`, which ships for exactly this purpose):
+
+```
+source                      rows      measured   provenance
+cowrie_real               95,710        24/24     event_stream 100%
+simulated_cowrie_events  592,615        24/24     event_stream 100%
+cic_transfer             557,232        14/24     flow_stats 100%
+unsw_transfer            221,292        10/24     flow_mean_only 100%
+heralding (not merged)      ~40k      43 of 128   no shell, commands or bytes
+```
+
+A source is identifiable from that pattern alone, so **a class anchored by
+exactly one source is learnable from its source rather than from behaviour.**
+
+### 25b. This is measured three times over, not a worry
+
+```
+12b control   cic_transfer vs unsw_transfer   AUC 1.0000   BOTH REAL netflow
+19a           BENIGN is 100% netflow          F1  0.9149   understands nothing
+24e           heralding fills 43 of 128       identifiable by its constants
+```
+
+The first is decisive on its own. **Two real netflow datasets separate from each
+other perfectly**, because one fills 14 temporal features and the other 10. A
+third flow dataset would be just as separable from both, and `gen_<split>.npy`
+ships with the dataset, so any reviewer can run that classifier in an afternoon
+-- we would be handing them the tool.
+
+A gap that is admitted is more defensible than an anchor that is not real.
+
+### 25c. The test for any dataset anyone proposes
+
+> Can it produce a COMMAND SEQUENCE WITH TIMESTAMPS -- the same shape
+> `cowrie_parser` produces?
+
+If no, it can only anchor a class by its own fingerprint.
+
+```
+flow / packet datasets          FAIL   same shape as what we have; 12b applies
+more SSH honeypot captures      pass shape, FAIL class: section 15 showed three
+                                       captures over 8, 13 and 23 days produce
+                                       the same 8 micro-states
+host / process telemetry        partial: covers privesc, persistence and lateral
+(DARPA OpTC, Sysmon corpora)    movement, but process-event-shaped -- a new
+                                       extractor and contract, still fingerprinted
+```
+
+### 25d. Why the 26 classes are empty, which is the real point
+
+Not missing datasets. **A low-interaction honeypot never lets an attacker reach
+those phases.** Cowrie emulates a shell; nobody runs a real privilege
+escalation in it. So no quantity of Cowrie-shaped public data contains
+`PRIVESC_*`, `PERSIST_*`, `EVASION_*`, `LATERAL_*` or `EXFIL_*` behaviour,
+because that behaviour was never produced.
+
+This is section 3d's conclusion restated with a mechanism: the taxonomy is wider
+than anything observable from the sensor we have.
+
+### 25e. What IS permitted, in order of value for effort
+
+**1. Execute the techniques ourselves through our own extractor.** Atomic Red
+Team provides MITRE-mapped command sequences for most of the missing techniques.
+Run them in a lab, capture through `cowrie_parser` -> `extract_all`, and the
+rows have the RIGHT SHAPE (24/24 temporal measured, real command text for group
+D), correct labels by construction, and a provenance tier of their own. Describe
+them as **"real execution traces of scripted attack techniques"** -- never as
+captured attacker behaviour. Cheapest defensible route to coverage, and a better
+anchor than another netflow source precisely because it fills the same features
+Cowrie fills.
+
+**2. A higher-interaction honeypot.** Cowrie in proxy mode to a sandboxed
+backend, so attackers get a real shell and the post-access phases appear in
+genuine attacker data. The only route to REAL attacker evidence for those
+classes. Weeks of work and a real safety problem -- a live shell on the
+internet. See MULTI_HONEYPOT.md.
+
+**3. Nothing.** State the gap. 20 of 46 classes with real evidence, 10
+measurable (section 23), and the reason in one sentence.
+
+### 25f. What to write
+
+> The taxonomy covers 46 MITRE-mapped labels. 20 have some real evidence and 10
+> have enough real sessions to measure; the remainder rest on calibrated
+> synthetic sessions. We deliberately did not anchor the remaining classes with
+> additional public datasets: each source in this build is separable from the
+> others by its measurement fingerprint -- two real netflow datasets already
+> separate at AUC 1.0000 -- so a class anchored by a single source is
+> identifiable from that source rather than from attacker behaviour. The gap is
+> a property of a low-interaction sensor, not of data availability.
+
+Do not write "we combine N public datasets for broad coverage". With `gen_*`
+shipped, that claim is checkable and it does not hold.

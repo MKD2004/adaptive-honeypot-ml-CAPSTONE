@@ -75,6 +75,15 @@ cowrie_logs/
 traffic_gateway/data/ip_records.json
 traffic_gateway/data/sessions.jsonl
 
+# Heralding captures. Attacker-written data, 32 MB and growing, and it includes
+# https.pem -- a private key. The cowrie_logs/ near-miss (DATA_INTEGRITY.md 8)
+# was one `git add -A` from pushing 440 MB of this to GitHub; the pattern there
+# was `cowrie_logs_*/` and missed the unsuffixed `cowrie_logs/`, so both forms
+# are listed here.
+heralding_logs/
+heralding_logs_*/
+heralding/
+
 # ── Exceptions. These must stay LAST: in .gitignore the final matching rule
 # wins, and these files are caught by both `honeypot_dataset/data/**` above
 # and `*.pkl`.

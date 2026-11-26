@@ -96,6 +96,15 @@ export const N_FEATURES = 128
 export const N_MICRO_STATES = 45
 export const N_PHASES = 9
 
+// BENIGN is label 45 -- the model's 46th output since 2026-11-25. It is NOT in
+// MICRO_STATES on purpose: it has no MITRE technique and no kill-chain phase,
+// and every component here groups MICRO_STATES by phase, so an entry with no
+// phase would land in a bucket it does not belong to. Only the label lookup
+// needs to know about it.
+export const BENIGN_ID = 45
+export const BENIGN_LABEL = 'BENIGN'
+export const N_LABELS = 46
+
 // Documented model comparison — README.md "Model Results" / STATUS.md session 3.
 // macro-F1 over the 21 classes present in test_real. Do not editorialize which
 // model is "better" — the headline finding is a statistical tie on test_real.
@@ -150,5 +159,12 @@ export function phaseName(id) {
 }
 
 export function microStateLabel(id) {
+  if (id === BENIGN_ID) return BENIGN_LABEL
   return MICRO_STATES.find((m) => m.id === id)?.label ?? `STATE_${id}`
+}
+
+// A BENIGN prediction carries phase -1, not 0. Phase 0 is Reconnaissance, so
+// rendering it as a phase would show benign traffic as an early-stage attack.
+export function isBenignPrediction(pred) {
+  return pred?.is_benign === true || pred?.micro_state === BENIGN_LABEL
 }

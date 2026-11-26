@@ -28,7 +28,11 @@ log = logging.getLogger("traffic_gateway.feature_bridge")
 for _noisy in ("transformers", "httpx", "httpcore", "huggingface_hub", "filelock"):
     logging.getLogger(_noisy).setLevel(logging.ERROR)
 
-MT3_CKPT = REPO_ROOT / "ml_analytics" / "artifacts" / "mt3_full_d256" / "best.pt"
+# mt3_final_v2_d256, not mt3_full_d256: the latter is the 45-class model trained
+# on the retired data/final/, whose every published number is withdrawn
+# (DATA_INTEGRITY.md 21d). This checkpoint has 46 outputs -- 45 attack states
+# plus BENIGN -- and MUST be paired with final_v2's scaler; see `load()`.
+MT3_CKPT = REPO_ROOT / "ml_analytics" / "artifacts" / "mt3_final_v2_d256" / "best.pt"
 SEMANTIC_PCA = DATA_PROCESSED / "semantic_pca.pkl"
 
 TI_CACHE_TTL_SEC = 3600.0   # KEV + EPSS refresh interval (Step 3c: "cache for 1 hour")
@@ -248,6 +252,24 @@ class MT3Inference:
         # RAW live features must go through the frozen scaler (ERRORS.md: the
         # data/final/ arrays are already scaled, live sessions are not).
         self._scaler = mt3_data.load_scaler(DATA_FINAL)
+
+        # A checkpoint and a scaler are a MATCHED PAIR. The old 45-class model
+        # loaded against final_v2's scaler, or this one against data/final/'s,
+        # produces plausible nonsense and raises nothing -- the same failure
+        # family as "the arrays are already scaled" (ERRORS.md). Checked here so
+        # it cannot be silent, because the gateway acts on these predictions.
+        n_out = int(self.model.emission_head.out_features)
+        n_feat = int(getattr(self._scaler, "n_features_in_", mt3_data.N_FEATURES))
+        if n_out != len(self.label_names):
+            raise ValueError(
+                f"checkpoint {self.ckpt_path.name} has {n_out} outputs but "
+                f"{len(self.label_names)} labels are defined -- a 45-class "
+                f"checkpoint cannot be used with the 46-label schema. Point "
+                f"MT3_CKPT at a model trained on {DATA_FINAL.name}.")
+        if n_feat != mt3_data.N_FEATURES:
+            raise ValueError(
+                f"scaler from {DATA_FINAL} expects {n_feat} features, "
+                f"not {mt3_data.N_FEATURES}")
         self.meta = {
             "checkpoint": str(self.ckpt_path),
             "device": self.device,
@@ -284,13 +306,26 @@ class MT3Inference:
         # auxiliary head is reported alongside as a consistency signal only.
         from ml_analytics.mt3_pipeline.data import IDX_TO_PHASE
 
-        phase = int(IDX_TO_PHASE[idx])
+        # BENIGN (label 45) has no kill-chain phase -- no MITRE technique, no DAG
+        # edges (configs/schema.py). `IDX_TO_PHASE[45]` is an IndexError, and a
+        # phase invented for it would be worse than a crash: every downstream
+        # rule is `phase >= threshold`, so phase 0 would read as Reconnaissance
+        # and a 10th phase would CLEAR the blacklist threshold.
+        #
+        # -1 is safe by construction: it clears no threshold anywhere
+        # (response_mitigation/policy.py, MT3_AUTO_BLACKLIST_MIN_PHASE), so a
+        # benign verdict cannot trigger a block even if a caller forgets to
+        # check the label. 02-11-2026 FINDINGS.md finding #1 is what happens
+        # when it can.
+        is_benign = idx >= len(IDX_TO_PHASE)
+        phase = -1 if is_benign else int(IDX_TO_PHASE[idx])
         top3 = np.argsort(probs)[::-1][:3]
         return {
             "micro_state": label,
             "micro_state_id": idx,
+            "is_benign": bool(is_benign),
             "phase": phase,
-            "phase_name": PHASE_NAMES[phase],
+            "phase_name": "Benign (no kill-chain phase)" if is_benign else PHASE_NAMES[phase],
             "confidence": round(float(probs[idx]), 4),
             "aux_phase_head": int(phase_probs.argmax()),
             "aux_phase_agrees": bool(int(phase_probs.argmax()) == phase),

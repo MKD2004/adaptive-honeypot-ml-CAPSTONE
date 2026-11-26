@@ -558,6 +558,10 @@ class PostSessionPipeline:
             "ood_p95_train": self.train_dist.p95,
             "mt3_prediction": {
                 "micro_state": pred["micro_state"],
+                # carried through so a consumer can tell "not an attack" from
+                # "attack at phase 0": BENIGN reports phase -1, and anything
+                # comparing `phase >= threshold` needs to know which it has.
+                "is_benign": pred.get("is_benign", False),
                 "phase": pred["phase"],
                 "phase_name": pred["phase_name"],
                 "honeypot_target": pred["honeypot_target"],

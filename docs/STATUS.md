@@ -75,8 +75,39 @@ cut is indistinguishable from cherry-picking. Both numbers always print.
 Recommended headline order: phase accuracy 0.9366, weighted F1 0.9082,
 macro-F1@n>=97 0.7387, macro-F1 0.5507.
 
+**The live path runs the 46-label model now, and teammates can get started.**
+`docs/TEAMMATE_SETUP.md` is the new entry point. Four things done:
+
+- `MT3_CKPT` -> `mt3_final_v2_d256` and `DATA_FINAL` -> `final_v2`. Both pointed
+  at the RETIRED build, so the gateway was loading the 45-class model whose
+  numbers are withdrawn and reading its scaler from the dataset `load_split()`
+  refuses. `MT3Inference.load()` now refuses a checkpoint whose output count
+  disagrees with the label schema -- verified, it rejects the old one by name.
+- **BENIGN reaches the live path safely.** `IDX_TO_PHASE[45]` was an IndexError;
+  `predict()` reports `phase: -1` and `is_benign`, carried through
+  `post_session_pipeline`. -1 is the safety property: every rule is
+  `phase >= threshold`, so a benign verdict cannot blacklist anyone even if a
+  caller forgets to check the label. 190 of 200 true-BENIGN rows predict BENIGN.
+- `make_pilot` carries `M_/prov_/gen_/donor_/seq_` and ranges over **46** labels
+  -- it was building a train set with no BENIGN while copying test splits that
+  contain 11,011 benign rows. `smoke_test` asserted `data/final/`'s shape
+  (756,000 rows, 21 classes in test_real) and failed on every current dataset;
+  it now asserts invariants and reports counts. **10/10 on a fresh pilot.**
+- `semantic_pca.pkl` (95 KB) is committed. Without it 30 of 128 features
+  silently zero-fill at inference.
+
+**FINDINGS #1 is still NOT closed, and `test_benign_corroboration.py` now says
+why.** A benign session the gateway also finds suspicious is no longer blocked
+-- but the model still calls it `PRIVESC_SUID_EXPLOIT` at phase 4. The block is
+prevented only by confidence falling from 0.995 to 0.4828, which clears the 0.5
+gate by 0.017. Calibration luck, not understanding: all 193,000 BENIGN training
+rows are netflow and none are honeypot sessions, so the model has never seen a
+benign SSH session (19a).
+
 ### Next
-- **The live path is still 45-output.** `feature_bridge.MT3Inference`, the
+- **Pre-existing failure, not ours:** `test_router.py::test_honeypot_round_robin`
+  fails at HEAD too (verified in a clean worktree). One honeypot target is
+  configured and the test wants more than one. `feature_bridge.MT3Inference`, the
   checkpoint it loads, `configurator.py` and the dashboard label maps all assume
   45 classes. A 46-label model needs all four updated together.
 - **The A/B intelligence-yield study** (ROADMAP section 5) is still the paper.

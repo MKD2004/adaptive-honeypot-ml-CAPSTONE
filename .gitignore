@@ -5,7 +5,12 @@ venv/
 .idea/
 .vscode/
 logs/
-honeypot_dataset/data/
+honeypot_dataset/data/**
+# ...except the fitted semantic PCA. 97 KB, and WITHOUT IT the 30 group-D
+# features silently zero-fill at inference -- 30 of 128 dead and only a log
+# line to say so. A teammate cloning the repo must not have to ask for it.
+# (git cannot re-include a file under an excluded DIRECTORY, so the pattern
+# has to be data/** plus these negations, not data/.)
 
 # Pipeline runtime state (regenerated on every run)
 adaptive_honeypot/active_config.json
@@ -69,3 +74,21 @@ cowrie_logs/
 # checkout. The directory is recreated by GatewayConfig.__post_init__.
 traffic_gateway/data/ip_records.json
 traffic_gateway/data/sessions.jsonl
+
+# ── Exceptions. These must stay LAST: in .gitignore the final matching rule
+# wins, and these files are caught by both `honeypot_dataset/data/**` above
+# and `*.pkl`.
+#
+# semantic_pca.pkl is 97 KB and WITHOUT IT the 30 group-D features silently
+# zero-fill at inference -- 30 of 128 features dead with only a log line to say
+# so (traffic_gateway/feature_bridge.py SemanticEncoder). A teammate cloning
+# the repo must not have to ask for it.
+!honeypot_dataset/data/
+!honeypot_dataset/data/processed/
+!honeypot_dataset/data/processed/semantic_pca.pkl
+
+# TEAMMATE_*.md above ignores the old working notes. TEAMMATE_SETUP.md is not
+# one of them -- it is how a teammate gets a fresh clone running, so it has to
+# be IN the repo. (This cost a silent omission once: `git add -A` skipped it and
+# the file simply never appeared in the commit.)
+!docs/TEAMMATE_SETUP.md

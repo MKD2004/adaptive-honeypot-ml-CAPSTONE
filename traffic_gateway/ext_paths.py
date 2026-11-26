@@ -16,7 +16,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATASET_ROOT = REPO_ROOT / "honeypot_dataset"
 DATA_PROCESSED = DATASET_ROOT / "data" / "processed"
-DATA_FINAL = DATASET_ROOT / "data" / "final"
+# final_v2, not final: `load_split()` RAISES on data/final/ by design -- it is
+# 60.3% fabricated temporal features in train (DATA_INTEGRITY.md 11b). The
+# gateway reads only the SCALER from here, and a scaler from the retired build
+# paired with a final_v2 checkpoint produces wrong predictions silently.
+DATA_FINAL = DATASET_ROOT / "data" / "final_v2"
 
 _done = False
 

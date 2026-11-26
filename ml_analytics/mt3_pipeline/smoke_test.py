@@ -38,7 +38,9 @@ if __package__ in (None, ""):
     __package__ = "ml_analytics.mt3_pipeline"
 
 from . import data as D  # noqa: E402
-from .data import DEFAULT_DATA_DIR, N_CLASSES, N_FEATURES, REPO_ROOT  # noqa: E402
+from .data import (  # noqa: E402
+    DEFAULT_DATA_DIR, N_CLASSES, N_FEATURES, N_LABELS, REPO_ROOT,
+)
 
 SMOKE_DIR = REPO_ROOT / "ml_analytics" / "artifacts" / "smoke"
 
@@ -77,6 +79,7 @@ def t_constants(data_dir: Path) -> str:
         DEFAULT_IDX_TO_PHASE,
         FEATURE_GROUPS as MT3_GROUPS,
         N_CLASSES as MT3_NC,
+        idx_to_phase_for,
         N_FEATURES as MT3_NF,
         N_PHASES as MT3_NP,
     )
@@ -118,25 +121,29 @@ def t_constants(data_dir: Path) -> str:
 # --------------------------------------------------------------------------- #
 
 def t_dataset(data_dir: Path) -> str:
-    expected = {
-        "train": (756_000, 45),
-        "val": (84_000, 45),
-        "test_real": (60_000, 21),
-        "test_synth": (60_000, 45),
-    }
+    """Shape, dtype, label range and finiteness -- the real invariants.
+
+    It used to assert exact row counts and class counts from data/final/
+    (756,000 train, 21 classes in test_real). Those are properties of ONE
+    retired build: final_v2 has 1,466,849 train rows and 46 labels, and a pilot
+    has fewer still, so the assert failed on every dataset the project actually
+    uses. Row and class counts are now REPORTED; only what must be true of any
+    build is asserted. load_split() already warns on row counts for the
+    canonical directory, which is the right place for that check.
+    """
     lines = []
-    for name, (n_exp, cls_exp) in expected.items():
+    for name in ("train", "val", "test_real", "test_synth"):
         sp = D.load_split(name, data_dir, mmap=True)
         assert sp.X.shape[1] == N_FEATURES, f"{name}: {sp.X.shape}"
         assert sp.X.dtype == np.float32, f"{name}: dtype {sp.X.dtype}"
         assert sp.y.dtype == np.int64, f"{name}: y dtype {sp.y.dtype}"
-        n_cls = len(sp.classes_present)
-        if len(sp) != n_exp:
-            lines.append(f"{name}: n={len(sp):,} (expected {n_exp:,})")
-        assert n_cls == cls_exp, f"{name}: {n_cls} classes present, expected {cls_exp}"
+        assert len(sp.X) == len(sp.y), f"{name}: X/y length mismatch"
+        assert sp.y.min() >= 0 and sp.y.max() < N_LABELS, (
+            f"{name}: labels outside [0,{N_LABELS}): "
+            f"[{sp.y.min()}, {sp.y.max()}]")
         chunk = np.asarray(sp.X[: min(50_000, len(sp))])
         assert np.isfinite(chunk).all(), f"{name}: non-finite values in X"
-        lines.append(f"{name} n={len(sp):,} cls={n_cls}")
+        lines.append(f"{name} n={len(sp):,} labels={len(sp.classes_present)}")
     return "; ".join(lines)
 
 
@@ -182,19 +189,19 @@ def t_scaler(data_dir: Path) -> str:
 
 def t_forward(data_dir: Path) -> str:
     import torch
-    from ml_analytics.models.mt3 import MT3
+    from ml_analytics.models.mt3 import MT3, idx_to_phase_for
 
     torch.manual_seed(0)
-    model = MT3()
+    model = MT3(n_classes=N_LABELS, idx_to_phase=idx_to_phase_for(N_LABELS))
     x = torch.randn(8, N_FEATURES)
-    y = torch.randint(0, N_CLASSES, (8,))
+    y = torch.randint(0, N_LABELS, (8,))
 
     # eval mode: dropout off, so the labels-vs-no-labels paths are comparable
     model.eval()
     with torch.no_grad():
         e_eval, h_eval, l_eval = model(x, y)
         e2, h2, l2 = model(x)
-    assert e_eval.shape == (8, N_CLASSES), e_eval.shape
+    assert e_eval.shape == (8, N_LABELS), e_eval.shape
     assert h_eval.shape == (8, 9), h_eval.shape
     assert torch.isfinite(e_eval).all() and torch.isfinite(h_eval).all(), "non-finite logits"
     assert l_eval is not None and torch.isfinite(l_eval), "built-in loss missing/non-finite"
@@ -225,14 +232,14 @@ def t_forward(data_dir: Path) -> str:
 
 def t_loss_parity(data_dir: Path) -> str:
     import torch
-    from ml_analytics.models.mt3 import MT3
+    from ml_analytics.models.mt3 import MT3, idx_to_phase_for
 
     from .losses import MT3Objective, build_class_weights, build_state_criterion
 
     torch.manual_seed(1)
-    model = MT3().eval()
+    model = MT3(n_classes=N_LABELS, idx_to_phase=idx_to_phase_for(N_LABELS)).eval()
     x = torch.randn(64, N_FEATURES)
-    y = torch.randint(0, N_CLASSES, (64,))
+    y = torch.randint(0, N_LABELS, (64,))
 
     with torch.no_grad():
         emissions, hp_logits, builtin = model(x, y)
@@ -246,7 +253,7 @@ def t_loss_parity(data_dir: Path) -> str:
     assert torch.equal(derived, model.idx_to_phase[y])
 
     # weighted / focal variants must differ from plain CE but stay finite
-    w = build_class_weights(y.numpy(), N_CLASSES, "balanced")
+    w = build_class_weights(y.numpy(), N_LABELS, "balanced")
     with torch.no_grad():
         wobj = MT3Objective(build_state_criterion("weighted_ce", w), model.idx_to_phase, 0.3)
         fobj = MT3Objective(build_state_criterion("focal", w, focal_gamma=1.5), model.idx_to_phase, 0.3)
@@ -279,14 +286,14 @@ def t_class_weights(data_dir: Path) -> str:
         out.append(f"{scheme}[{w[present].min():.2f},{w.max():.2f}]")
     from .losses import build_class_weights
 
-    assert build_class_weights(sp.y, N_CLASSES, "none") is None
+    assert build_class_weights(sp.y, N_LABELS, "none") is None
     return " ".join(out)
 
 
 def D_weights(y: np.ndarray, scheme: str) -> np.ndarray:
     from .losses import build_class_weights
 
-    w = build_class_weights(y, N_CLASSES, scheme)
+    w = build_class_weights(y, N_LABELS, scheme)
     assert w is not None
     return w
 
@@ -297,7 +304,7 @@ def D_weights(y: np.ndarray, scheme: str) -> np.ndarray:
 
 def t_overfit_batch(data_dir: Path) -> str:
     import torch
-    from ml_analytics.models.mt3 import MT3
+    from ml_analytics.models.mt3 import MT3, idx_to_phase_for
 
     from .losses import MT3Objective, build_state_criterion
 
@@ -307,7 +314,7 @@ def t_overfit_batch(data_dir: Path) -> str:
     x = torch.from_numpy(sp.X[idx])
     y = torch.from_numpy(sp.y[idx])
 
-    model = MT3()
+    model = MT3(n_classes=N_LABELS, idx_to_phase=idx_to_phase_for(N_LABELS))
     obj = MT3Objective(build_state_criterion("ce", None), model.idx_to_phase, 0.3)
     opt = torch.optim.AdamW(model.parameters(), lr=3e-3)
 
@@ -391,23 +398,28 @@ def t_evaluate_cli(data_dir: Path) -> str:
     ]) == 0
 
     msgs = []
-    for split, n_exp, cls_exp in (("test_real", 60_000, 21), ("test_synth", 60_000, 45)):
+    # row and label counts come from the SPLIT, not from constants: they were
+    # 60,000 / 21 / 45 in data/final/ and are 59,784 / 16 / 45 in final_v2,
+    # different again in a pilot. What must hold is agreement with what is on
+    # disk, which the next assert checks exactly.
+    for split in ("test_real", "test_synth"):
         npz = out / f"preds_{split}.npz"
         assert npz.exists(), f"missing {npz}"
         with np.load(npz) as z:
             y_true, y_pred, prob = z["y_true"], z["y_pred"], z["y_prob"]
         truth = D.load_split(split, data_dir)
+        n_exp, cls_exp = len(truth.y), len(truth.classes_present)
         assert len(y_true) == n_exp
         assert np.array_equal(y_true, truth.y), f"{split}: saved y_true != on-disk labels"
-        assert y_pred.min() >= 0 and y_pred.max() < N_CLASSES
-        assert prob.shape == (n_exp, N_CLASSES)
+        assert y_pred.min() >= 0 and y_pred.max() < N_LABELS
+        assert prob.shape == (n_exp, N_LABELS)
         assert np.allclose(prob.astype(np.float32).sum(1), 1.0, atol=2e-2), "probs do not sum to 1"
 
         m = json.loads((out / f"metrics_{split}.json").read_text())
         assert m["n_classes_present"] == cls_exp
         assert 0.0 <= m["macro_f1"] <= 1.0 and 0.0 <= m["accuracy"] <= 1.0
-        assert len(m["per_class"]) == N_CLASSES
-        assert len(m["confusion_matrix"]) == N_CLASSES
+        assert len(m["per_class"]) == N_LABELS
+        assert len(m["confusion_matrix"]) == N_LABELS
         # macro-F1 over present classes must not be lower than the all-45 version
         assert m["macro_f1"] >= m["macro_f1_all45"] - 1e-9
         msgs.append(f"{split}: macroF1={m['macro_f1']:.4f} acc={m['accuracy']:.4f}")
@@ -437,11 +449,14 @@ def t_compare_cli(data_dir: Path) -> str:
             y_true, y_pred = z["y_true"], z["y_pred"]
         noisy = y_pred.copy()
         flip = rng.random(len(noisy)) < 0.3
-        noisy[flip] = rng.integers(0, N_CLASSES, flip.sum())
+        noisy[flip] = rng.integers(0, N_LABELS, flip.sum())
         np.savez_compressed(
             fake_dir / f"preds_{split}.npz",
             y_true=y_true, y_pred=noisy,
-            phase_pred=np.asarray(D.IDX_TO_PHASE)[noisy],
+            # IDX_TO_PHASE holds 45 entries and `noisy` can contain label 45
+            # (BENIGN), which has no phase -- same -1 convention as
+            # metrics._phase_of and MT3Inference.predict.
+            phase_pred=np.append(np.asarray(D.IDX_TO_PHASE), -1)[noisy],
             model=np.array("fake"), split=np.array(split),
         )
     out_json = SMOKE_DIR / "comparison.json"

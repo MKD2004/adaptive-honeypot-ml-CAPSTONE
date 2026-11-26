@@ -51,7 +51,9 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     __package__ = "ml_analytics.mt3_pipeline"
 
-from .data import DEFAULT_DATA_DIR, N_CLASSES, REPO_ROOT, load_label_names  # noqa: E402
+from .data import (  # noqa: E402
+    DEFAULT_DATA_DIR, N_CLASSES, N_LABELS, REPO_ROOT, load_label_names,
+)
 
 DEFAULT_OUT_DIR = REPO_ROOT / "ml_analytics" / "data" / "pilot_200k"
 SCHEMES = ("balanced", "proportional", "sqrt")
@@ -103,12 +105,18 @@ def allocate(counts: np.ndarray, total: int, scheme: str) -> np.ndarray:
 
 
 def subsample(y: np.ndarray, total: int, scheme: str, seed: int) -> np.ndarray:
-    """Row indices for a class-controlled subsample, sorted (cheap fancy-indexing)."""
-    counts = np.bincount(y, minlength=N_CLASSES)
+    """Row indices for a class-controlled subsample, sorted (cheap fancy-indexing).
+
+    Ranges over N_LABELS (46), not N_CLASSES (45). With 45 the pilot built a
+    train set WITHOUT BENIGN while copying test splits that contain 11,011
+    benign rows -- so a teammate trained a 45-way head, scored 0 on BENIGN, and
+    could not reproduce any published number. Measured 2026-11-26.
+    """
+    counts = np.bincount(y, minlength=N_LABELS)
     take = allocate(counts, total, scheme)
     rng = np.random.default_rng(seed)
     keep: List[np.ndarray] = []
-    for c in range(N_CLASSES):
+    for c in range(N_LABELS):
         if take[c] == 0:
             continue
         pool = np.flatnonzero(y == c)
@@ -116,6 +124,13 @@ def subsample(y: np.ndarray, total: int, scheme: str, seed: int) -> np.ndarray:
     idx = np.concatenate(keep)
     rng.shuffle(idx)          # break class ordering
     return np.sort(idx)       # then sort for fast row gather
+
+
+# Shipped beside X_/y_ for every split: the availability mask, the temporal
+# provenance level, which generator produced the row, how its timing was
+# obtained, and the micro-state walk. Absent from older builds, hence the
+# per-file existence check at each use.
+META_PREFIXES = ("M", "prov", "gen", "donor", "seq")
 
 
 def sha256(path: Path, chunk: int = 1 << 20) -> str:
@@ -159,7 +174,7 @@ def build(
     }
 
     # ---- train / val: subsampled ------------------------------------------ #
-    for split, total in (("train", n_train), ("val", val_per_class * N_CLASSES)):
+    for split, total in (("train", n_train), ("val", val_per_class * N_LABELS)):
         y = np.load(src / f"y_{split}.npy")
         idx = subsample(y, total, scheme, seed)
         X = np.load(src / f"X_{split}.npy", mmap_mode="r")
@@ -167,7 +182,15 @@ def build(
         ys = y[idx]
         np.save(out / f"X_{split}.npy", Xs)
         np.save(out / f"y_{split}.npy", ys)
-        c = np.bincount(ys, minlength=N_CLASSES)
+        # The provenance arrays ride along, subset by the SAME indices. Without
+        # them a pilot cannot report per donor_origin or split measured from
+        # imputed -- which DATA_INTEGRITY.md 11a requires of every result, so a
+        # pilot without them is not usable for the numbers the project quotes.
+        for pre in META_PREFIXES:
+            f = src / f"{pre}_{split}.npy"
+            if f.exists():
+                np.save(out / f"{pre}_{split}.npy", np.load(f, allow_pickle=False)[idx])
+        c = np.bincount(ys, minlength=N_LABELS)
         present = c > 0
         manifest["splits"][split] = {
             "rows": int(len(ys)),
@@ -177,17 +200,19 @@ def build(
             "imbalance_ratio": round(float(c.max() / c[present].min()), 3),
             "subsampled_from": int(len(y)),
         }
-        print(f"[pilot] {split:5s} {len(ys):>7,} rows  {int(present.sum())}/45 classes  "
+        print(f"[pilot] {split:5s} {len(ys):>7,} rows  {int(present.sum())}/{N_LABELS} labels  "
               f"per-class {c[present].min():,}-{c.max():,}  "
               f"(imbalance {c.max() / c[present].min():.2f}x)")
 
     # ---- test splits: copied unchanged ------------------------------------ #
     if copy_tests:
         for split in ("test_real", "test_synth"):
-            for pre in ("X", "y"):
-                shutil.copy2(src / f"{pre}_{split}.npy", out / f"{pre}_{split}.npy")
+            for pre in ("X", "y", *META_PREFIXES):
+                f = src / f"{pre}_{split}.npy"
+                if f.exists():
+                    shutil.copy2(f, out / f"{pre}_{split}.npy")
             y = np.load(out / f"y_{split}.npy")
-            c = np.bincount(y, minlength=N_CLASSES)
+            c = np.bincount(y, minlength=N_LABELS)
             manifest["splits"][split] = {
                 "rows": int(len(y)),
                 "classes": int((c > 0).sum()),
@@ -195,15 +220,15 @@ def build(
                 "per_class_max": int(c.max()),
                 "copied_unchanged": True,
             }
-            print(f"[pilot] {split:11s} {len(y):>6,} rows  {(c > 0).sum()}/45 classes  "
+            print(f"[pilot] {split:11s} {len(y):>6,} rows  {(c > 0).sum()}/{N_LABELS} labels  "
                   f"(copied UNCHANGED -- identical rows for every model)")
 
     shutil.copy2(src / "feature_scaler.pkl", out / "feature_scaler.pkl")
 
     # ---- class table ------------------------------------------------------- #
     ytr = np.load(out / "y_train.npy")
-    ctr = np.bincount(ytr, minlength=N_CLASSES)
-    manifest["per_class_train"] = {labels[i]: int(ctr[i]) for i in range(N_CLASSES)}
+    ctr = np.bincount(ytr, minlength=N_LABELS)
+    manifest["per_class_train"] = {labels[i]: int(ctr[i]) for i in range(N_LABELS)}
 
     files = sorted(p for p in out.iterdir() if p.suffix in (".npy", ".pkl"))
     manifest["files"] = {

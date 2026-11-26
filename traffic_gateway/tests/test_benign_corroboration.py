@@ -169,14 +169,21 @@ class TestEndToEnd(unittest.TestCase):
         self.assertFalse(r["auto_blacklisted"])
         self.assertFalse(blacklist_manager.is_blacklisted(ip))
 
-    def test_a_high_confidence_benign_session_is_also_protected(self):
+    def test_a_benign_session_is_protected_whatever_the_confidence(self):
         """The audit's worst case: `df -h ; free -m` came back DISC_PROC_ENUM at
-        0.995, which clears every confidence threshold there is."""
+        0.995 on the 45-class model, clearing every confidence threshold there
+        is. The 46-label model (2026-11-26) calls the same session
+        PRIVESC_SUID_EXPLOIT at 0.4828 -- still wrong, but no longer confident.
+
+        The protection asserted here does NOT depend on that: the gateway's own
+        benign verdict vetoes MT3 regardless of how sure MT3 is. That is the
+        property worth pinning, because the confidence drop is calibration and
+        could come back."""
         from traffic_gateway.blacklist_manager import blacklist_manager
         ip = "198.51.100.43"
         r = self._run(["df -h", "free -m", "exit"], ip, "e3", BENIGN_GW)
-        self.assertGreater(r["mt3_prediction"]["confidence"], 0.9,
-                           "if this is no longer confident the case has changed")
+        self.assertFalse(r["mt3_trusted"], "the gateway's benign verdict must veto")
+        self.assertIsNotNone(r["mt3_veto"])
         self.assertFalse(blacklist_manager.is_blacklisted(ip))
 
     def test_a_real_attack_is_still_blocked(self):
@@ -188,17 +195,43 @@ class TestEndToEnd(unittest.TestCase):
         self.assertTrue(r["mt3_trusted"])
         self.assertTrue(blacklist_manager.is_blacklisted(ip))
 
-    def test_the_residual_risk_is_real(self):
-        """DELIBERATE: a benign user the gateway ALSO finds suspicious is still
-        blocked. Recorded as a test so this file cannot be read as "#1 is fixed".
-        Closing it needs a benign class and a retrain."""
+    def test_the_residual_risk_is_still_real_for_a_new_reason(self):
+        """FINDINGS #1 is NOT closed, and this test is why it must not be read
+        that way.
+
+        The old docstring said closing it needed "a benign class and a retrain".
+        Both happened on 2026-11-25 -- BENIGN is label 45 and the model has 46
+        outputs -- and a benign user the gateway also finds suspicious is now
+        NOT blocked. But not because the model recognises benign traffic:
+
+          45-class model   DISC_PROC_ENUM        confidence 0.995  -> BLOCKED
+          46-label model   PRIVESC_SUID_EXPLOIT  confidence 0.4828 -> not blocked
+
+        It is still an attack label and still phase 4. The block is prevented
+        only by MT3_AUTO_BLACKLIST_CONF = 0.5, and 0.4828 clears it by 0.017.
+        That is calibration luck, not understanding.
+
+        The model cannot recognise a benign SSH session because it has never
+        seen one: all 193,000 BENIGN training rows are CIC/UNSW netflow and
+        ZERO are honeypot sessions (DATA_INTEGRITY.md 19a). Closing #1 for real
+        needs benign SSH data, which no capture we hold contains."""
         from traffic_gateway.blacklist_manager import blacklist_manager
+        from traffic_gateway.config import CONFIG
         ip = "198.51.100.45"
         r = self._run(["df -h", "free -m", "exit"], ip, "e5", SUSPICIOUS_GW)
-        self.assertTrue(r["mt3_trusted"])
-        self.assertTrue(blacklist_manager.is_blacklisted(ip),
-                        "if this ever stops being true the residual risk has "
-                        "been closed -- update FINDINGS #1 and this docstring")
+        p = r["mt3_prediction"]
+
+        self.assertTrue(r["mt3_trusted"], "no veto: the gateway agrees it is suspicious")
+        self.assertFalse(p["is_benign"],
+                         "the model still does NOT identify this as benign")
+        self.assertGreaterEqual(p["phase"], CONFIG.MT3_AUTO_BLACKLIST_MIN_PHASE,
+                                "and it still reports an actionable phase")
+        # the only thing standing between a benign user and a block
+        self.assertLess(p["confidence"], CONFIG.MT3_AUTO_BLACKLIST_CONF,
+                        "if confidence rises above the gate this blocks again")
+        self.assertLess(CONFIG.MT3_AUTO_BLACKLIST_CONF - p["confidence"], 0.1,
+                        "the margin is thin; if it widens, re-read this test")
+        self.assertFalse(blacklist_manager.is_blacklisted(ip))
 
     def test_the_distance_to_training_data_is_reported(self):
         r = self._run(["whoami", "exit"], "198.51.100.46", "e6", BENIGN_GW)

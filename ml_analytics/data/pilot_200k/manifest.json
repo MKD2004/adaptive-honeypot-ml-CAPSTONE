@@ -1,7 +1,7 @@
 {
   "name": "HoneySynth pilot (200k)",
   "pilot": true,
-  "source": "C:\\Users\\mahit\\OneDrive\\Desktop\\adaptive-honeypot-ml-CAPSTONE\\honeypot_dataset\\data\\final",
+  "source": "honeypot_dataset\\data\\final_v2",
   "built_from": "notebook 05 frozen splits -- SUBSAMPLED only, never regenerated",
   "scheme": "balanced",
   "seed": 42,
@@ -10,119 +10,200 @@
   "splits": {
     "train": {
       "rows": 200000,
-      "classes": 45,
-      "per_class_min": 4444,
-      "per_class_max": 4445,
+      "classes": 46,
+      "per_class_min": 4347,
+      "per_class_max": 4348,
       "imbalance_ratio": 1.0,
-      "subsampled_from": 756000
+      "subsampled_from": 1466849
     },
     "val": {
-      "rows": 22500,
-      "classes": 45,
+      "rows": 23000,
+      "classes": 46,
       "per_class_min": 500,
       "per_class_max": 500,
       "imbalance_ratio": 1.0,
-      "subsampled_from": 84000
+      "subsampled_from": 162767
     },
     "test_real": {
-      "rows": 60000,
-      "classes": 21,
-      "per_class_min": 6,
-      "per_class_max": 22608,
+      "rows": 59784,
+      "classes": 16,
+      "per_class_min": 2,
+      "per_class_max": 18765,
       "copied_unchanged": true
     },
     "test_synth": {
-      "rows": 60000,
+      "rows": 60005,
       "classes": 45,
-      "per_class_min": 581,
-      "per_class_max": 11367,
+      "per_class_min": 1325,
+      "per_class_max": 1341,
       "copied_unchanged": true
     }
   },
   "per_class_train": {
-    "RECON_DNS": 4445,
-    "RECON_IP_SCAN": 4445,
-    "RECON_VERSION_PROBE": 4444,
-    "RECON_OS_DETECT": 4444,
-    "RECON_VULN_SCAN": 4445,
-    "RECON_USER_ENUM": 4445,
-    "ACCESS_BRUTE_SSH": 4445,
-    "ACCESS_BRUTE_HTTP": 4444,
-    "ACCESS_CRED_STUFF": 4444,
-    "ACCESS_DEFAULT_CRED": 4445,
-    "ACCESS_KEX_EXPLOIT": 4445,
-    "ACCESS_AUTH_BYPASS": 4445,
-    "EXEC_SHELL_OPEN": 4445,
-    "EXEC_PYTHON_SCRIPT": 4444,
-    "EXEC_PERL_SCRIPT": 4444,
-    "EXEC_CURL_BASH": 4444,
-    "EXEC_WGET_EXEC": 4444,
-    "EXEC_MEMFD_EXEC": 4445,
-    "DISC_ENV_PROBE": 4445,
-    "DISC_NETSTAT_SCAN": 4445,
-    "DISC_PROC_ENUM": 4445,
-    "DISC_SUID_HUNT": 4444,
-    "DISC_CVE_SEARCH": 4444,
-    "PRIVESC_SUDO_ABUSE": 4444,
-    "PRIVESC_SUID_EXPLOIT": 4445,
-    "PRIVESC_KERNEL_XPLOIT": 4444,
-    "PRIVESC_CONTAINER_ESC": 4444,
-    "PERSIST_CRONTAB": 4445,
-    "PERSIST_BASHRC": 4445,
-    "PERSIST_SSH_KEY_ADD": 4444,
-    "PERSIST_BACKDOOR_ADD": 4445,
-    "PERSIST_SYSTEMD_SVC": 4444,
-    "EVASION_LOG_WIPE": 4444,
-    "EVASION_HIST_ERASE": 4444,
-    "EVASION_CHMOD_HIDE": 4445,
-    "EVASION_CURL_OBFUS": 4444,
-    "EVASION_PROC_INJECT": 4444,
-    "LATERAL_SSH_SPREAD": 4444,
-    "LATERAL_SCAN_PIVOT": 4444,
-    "LATERAL_CRED_REUSE": 4444,
-    "EXFIL_SCP_DATA": 4444,
-    "EXFIL_CURL_C2": 4445,
-    "EXFIL_DNS_TUNNEL": 4444,
-    "EXFIL_STAGING_TAR": 4444,
-    "EXFIL_TUNNEL_NGROK": 4445
+    "RECON_DNS": 4347,
+    "RECON_IP_SCAN": 4348,
+    "RECON_VERSION_PROBE": 4348,
+    "RECON_OS_DETECT": 4347,
+    "RECON_VULN_SCAN": 4348,
+    "RECON_USER_ENUM": 4348,
+    "ACCESS_BRUTE_SSH": 4348,
+    "ACCESS_BRUTE_HTTP": 4348,
+    "ACCESS_CRED_STUFF": 4348,
+    "ACCESS_DEFAULT_CRED": 4348,
+    "ACCESS_KEX_EXPLOIT": 4348,
+    "ACCESS_AUTH_BYPASS": 4348,
+    "EXEC_SHELL_OPEN": 4348,
+    "EXEC_PYTHON_SCRIPT": 4348,
+    "EXEC_PERL_SCRIPT": 4348,
+    "EXEC_CURL_BASH": 4348,
+    "EXEC_WGET_EXEC": 4348,
+    "EXEC_MEMFD_EXEC": 4348,
+    "DISC_ENV_PROBE": 4348,
+    "DISC_NETSTAT_SCAN": 4348,
+    "DISC_PROC_ENUM": 4348,
+    "DISC_SUID_HUNT": 4348,
+    "DISC_CVE_SEARCH": 4348,
+    "PRIVESC_SUDO_ABUSE": 4348,
+    "PRIVESC_SUID_EXPLOIT": 4348,
+    "PRIVESC_KERNEL_XPLOIT": 4348,
+    "PRIVESC_CONTAINER_ESC": 4348,
+    "PERSIST_CRONTAB": 4348,
+    "PERSIST_BASHRC": 4348,
+    "PERSIST_SSH_KEY_ADD": 4348,
+    "PERSIST_BACKDOOR_ADD": 4348,
+    "PERSIST_SYSTEMD_SVC": 4348,
+    "EVASION_LOG_WIPE": 4347,
+    "EVASION_HIST_ERASE": 4348,
+    "EVASION_CHMOD_HIDE": 4347,
+    "EVASION_CURL_OBFUS": 4348,
+    "EVASION_PROC_INJECT": 4348,
+    "LATERAL_SSH_SPREAD": 4348,
+    "LATERAL_SCAN_PIVOT": 4348,
+    "LATERAL_CRED_REUSE": 4348,
+    "EXFIL_SCP_DATA": 4348,
+    "EXFIL_CURL_C2": 4347,
+    "EXFIL_DNS_TUNNEL": 4347,
+    "EXFIL_STAGING_TAR": 4347,
+    "EXFIL_TUNNEL_NGROK": 4347,
+    "BENIGN": 4348
   },
   "files": {
+    "donor_test_real.npy": {
+      "bytes": 3348032,
+      "sha256": "aa3c10514230ece1"
+    },
+    "donor_test_synth.npy": {
+      "bytes": 3360408,
+      "sha256": "b8c712ddc46c3435"
+    },
+    "donor_train.npy": {
+      "bytes": 11200128,
+      "sha256": "4020b64caf98428f"
+    },
+    "donor_val.npy": {
+      "bytes": 1288128,
+      "sha256": "ac39c16989907a50"
+    },
     "feature_scaler.pkl": {
       "bytes": 3655,
-      "sha256": "240473627270ab8e"
+      "sha256": "7369c0b31f55edfc"
+    },
+    "gen_test_real.npy": {
+      "bytes": 6217664,
+      "sha256": "3597aecef119cf09"
+    },
+    "gen_test_synth.npy": {
+      "bytes": 6240648,
+      "sha256": "79d6ec74d29dc7e8"
+    },
+    "gen_train.npy": {
+      "bytes": 20800128,
+      "sha256": "44d997078eb2c5aa"
+    },
+    "gen_val.npy": {
+      "bytes": 2392128,
+      "sha256": "3efd6e9c2efed9b2"
+    },
+    "M_test_real.npy": {
+      "bytes": 1434944,
+      "sha256": "48e0952e1c0ba438"
+    },
+    "M_test_synth.npy": {
+      "bytes": 1440248,
+      "sha256": "fcdb8c0d773ed9cd"
+    },
+    "M_train.npy": {
+      "bytes": 4800128,
+      "sha256": "825e2ce1eeba89f2"
+    },
+    "M_val.npy": {
+      "bytes": 552128,
+      "sha256": "a6e4c8e49428f506"
+    },
+    "prov_test_real.npy": {
+      "bytes": 3348032,
+      "sha256": "4affe1a4359634cc"
+    },
+    "prov_test_synth.npy": {
+      "bytes": 3360408,
+      "sha256": "0e9bfcb0480ff976"
+    },
+    "prov_train.npy": {
+      "bytes": 11200128,
+      "sha256": "cc4c676444612175"
+    },
+    "prov_val.npy": {
+      "bytes": 1288128,
+      "sha256": "d9504f0d9ede7a79"
+    },
+    "seq_test_real.npy": {
+      "bytes": 115263680,
+      "sha256": "c104e2f439fc2a60"
+    },
+    "seq_test_synth.npy": {
+      "bytes": 36963208,
+      "sha256": "a88832b4b075bd56"
+    },
+    "seq_train.npy": {
+      "bytes": 385600128,
+      "sha256": "03d5c11065eeb20e"
+    },
+    "seq_val.npy": {
+      "bytes": 44344128,
+      "sha256": "19a9bd100ae7d53d"
     },
     "X_test_real.npy": {
-      "bytes": 30720128,
-      "sha256": "0c1df3dd69d787c4"
+      "bytes": 30609536,
+      "sha256": "00ff966eb98922c9"
     },
     "X_test_synth.npy": {
-      "bytes": 30720128,
-      "sha256": "319293962b09d8c5"
+      "bytes": 30722688,
+      "sha256": "fc59f1066c46e327"
     },
     "X_train.npy": {
       "bytes": 102400128,
-      "sha256": "b6047955acd6a944"
+      "sha256": "159e868d0431fe91"
     },
     "X_val.npy": {
-      "bytes": 11520128,
-      "sha256": "032518f07fdb1583"
+      "bytes": 11776128,
+      "sha256": "2fb3d4d25faf143c"
     },
     "y_test_real.npy": {
-      "bytes": 480128,
-      "sha256": "37c5ff62303c43ed"
+      "bytes": 478400,
+      "sha256": "709c45a0d0e0f457"
     },
     "y_test_synth.npy": {
-      "bytes": 480128,
-      "sha256": "7200f0f73808655b"
+      "bytes": 480168,
+      "sha256": "7ef4626f152b16cc"
     },
     "y_train.npy": {
       "bytes": 1600128,
-      "sha256": "2aee25a375b8c8b5"
+      "sha256": "10b7b673ca7b5e18"
     },
     "y_val.npy": {
-      "bytes": 180128,
-      "sha256": "4c34b2e4560117d4"
+      "bytes": 184128,
+      "sha256": "6a737c9653589553"
     }
   },
-  "total_bytes": 178104679
+  "total_bytes": 842697511
 }

@@ -13,10 +13,10 @@ python -m ml_analytics.mt3_pipeline.make_pilot --n 200000 \
 
 | file | rows | classes | how |
 |---|---|---|---|
-| `X_train.npy` / `y_train.npy` | 200,000 | 45 | balanced subsample |
-| `X_val.npy` / `y_val.npy` | 22,500 | 45 | balanced subsample |
-| `X_test_real.npy` / `y_test_real.npy` | 60,000 | 21 | copied unchanged |
-| `X_test_synth.npy` / `y_test_synth.npy` | 60,000 | 45 | copied unchanged |
+| `X_train.npy` / `y_train.npy` | 200,000 | 46 | balanced subsample |
+| `X_val.npy` / `y_val.npy` | 23,000 | 46 | balanced subsample |
+| `X_test_real.npy` / `y_test_real.npy` | 59,784 | 16 | copied unchanged |
+| `X_test_synth.npy` / `y_test_synth.npy` | 60,005 | 45 | copied unchanged |
 
 ## Two rules (same as `data/final/`)
 
@@ -30,7 +30,7 @@ python -m ml_analytics.mt3_pipeline.make_pilot --n 200000 \
 
 ## Train split is class-BALANCED
 
-4,444-4,445 rows per class (1.0x), drawn without
+4,347-4,348 rows per class (1.0x), drawn without
 replacement from the full train split (which is 28.7x imbalanced). No duplicated
 rows. Val is balanced the same way (500/class).
 

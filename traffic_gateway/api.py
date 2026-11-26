@@ -137,7 +137,9 @@ def stats():
     alerts = 0
     for r in rows:
         m = r.get("mt3_prediction", {})
-        if m.get("phase") is not None:
+        # BENIGN reports phase -1 (no kill-chain phase). Without the bound it
+        # would index the LAST bucket and show benign traffic as Exfiltration.
+        if m.get("phase") is not None and int(m["phase"]) >= 0:
             phases[int(m["phase"])] += 1
         if m.get("micro_state"):
             states[m["micro_state"]] += 1

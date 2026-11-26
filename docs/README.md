@@ -30,6 +30,7 @@ you add a doc, keep its name unique for the same reason.
 | `SCHEMA.md` | The 45 micro-states and 128 features, for writing prompts fast. `configs/schema.py` is the source of truth if they disagree. |
 | `MULTI_HONEYPOT.md` | The plan for growing from one honeypot to four. Expansion of ROADMAP M4. Read before adding a honeypot or claiming the system has more than one. |
 | `TEAMMATES.md` | Hard rules for collaborators and any AI assistant. |
+| `TEAMMATE_SETUP.md` | **How a teammate gets working from a fresh clone.** What git carries and what it cannot (the 4.4 GB dataset and the 91 MB checkpoints are ignored), the 75 MB pilot, the `smoke_test` gate, and the checkpoint/scaler mistake that corrupts results without raising. |
 | `ANUSHKA_TASKS.md` | What Anushka works on while the dataset is being rebuilt: commit the held-back dashboard work, put the mitigation layer on the real VM with Anusha, and watch a real block work for the first time. Includes the file-level split so nobody collides. |
 | `Heralding_deployment_update.md` | **Anusha's deployment report, 2026-11-15.** Heralding live since 11-14 19:07 UTC. Lists the seven errors in the runbook she had to fix on the VM, and the sessions to exclude as her own tests. |
 | `ANUSHA_HERALDING.md` | Deployment runbook for the second sensor, for Anusha, who runs the Oracle Cloud VM that produced the Cowrie capture. Ports, the two Oracle firewalls, why the database sensors stay off, and what to send back. |
@@ -61,7 +62,7 @@ follow another machine's copy.
 | `HARDWARE.md` | GPU/VRAM/venv specs and what they imply for batch sizes. |
 | `SETUP.md` | Environment setup for this OS and GPU. |
 | `DEMORUN.md` | The screen-recording script for the live demo. Five acts, with the traps that break each one. |
-| `FINDINGS_2026-08-30.md`, `TEAMMATE_*.md` | Older working notes. |
+| `FINDINGS_2026-08-30.md`, `TEAMMATE_CNN_LSTM_PROMPT.md`, `TEAMMATE_DEDUP_NOTE.md`, `TEAMMATE_MERGE_REPLY.md` | Older working notes. Listed individually because `TEAMMATE_*.md` would also catch `TEAMMATE_SETUP.md`, which is current. |
 
 `DGX.md` is committed rather than ignored, because every machine needs to know
 what the DGX was for — even though it is no longer in use.
